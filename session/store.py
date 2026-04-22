@@ -7,7 +7,13 @@ SESSION_DIR = os.path.expanduser('~/.harness/sessions')
 
 
 def _ensure_dir():
+    # CONCERNS.md §2.9 대응: 세션에는 프롬프트/툴 결과가 포함되어 잠재적으로
+    # 민감. 디렉토리·파일 모두 소유자 전용 권한.
     os.makedirs(SESSION_DIR, exist_ok=True)
+    try:
+        os.chmod(SESSION_DIR, 0o700)
+    except OSError:
+        pass
 
 
 def save(messages: list, working_dir: str) -> str:
@@ -18,6 +24,10 @@ def save(messages: list, working_dir: str) -> str:
     path = os.path.join(SESSION_DIR, filename)
     with open(path, 'w', encoding='utf-8') as f:
         json.dump({'working_dir': working_dir, 'messages': messages}, f, ensure_ascii=False, indent=2)
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
     return filename
 
 

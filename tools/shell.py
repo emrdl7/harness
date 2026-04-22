@@ -52,6 +52,14 @@ _DANGEROUS = [
     r'>\s*~/\.ssh',
     r'\beval\b',
     r'\bexec\b',
+    # CONCERNS.md §2.1 대응: exfiltration 및 shadow path 차단 강화
+    r'\bnc\b', r'\bncat\b', r'\bnetcat\b',    # 네트워크 파이프
+    r'\bssh\b', r'\bscp\b', r'\brsync\b',     # 원격 전송
+    r'\bsource\b', r'\.\s+\S+\.sh\b',         # 원격 스크립트 소싱
+    r'\b/bin/(rm|mv|cp|sh|bash)\b',           # absolute path 우회 차단
+    r'\bpython\b.*-c\b', r'\bbash\b.*-c\b',   # inline 스크립트 실행
+    r'`[^`]+`', r'\$\(',                      # 명령 치환
+    r'\btar\b.*\|',                           # tar + pipe = 흔한 exfil
 ]
 
 _DANGEROUS_RE = re.compile('|'.join(_DANGEROUS))

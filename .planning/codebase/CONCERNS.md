@@ -164,7 +164,7 @@
 
 ## 2. Security Concerns
 
-### 2.1 `run_command` is shell-exec-as-a-service with weak regex gating (Critical)
+### 2.1 ~~`run_command` is shell-exec-as-a-service with weak regex gating~~ ✅ PARTIAL 2026-04-23 (BB-1 2차 shlex 분기 + 오늘 블랙리스트 대폭 확장)
 - **Location:** `tools/shell.py:18-52`
 - **Description:** `shell=True` + regex denylist is the textbook weak sandbox. Examples that slip past `_DANGEROUS_RE`:
   - `echo 'secret' > /tmp/exfil` (no dangerous token)
@@ -175,12 +175,12 @@
   In `full-auto` mode (config.APPROVAL_MODE='full-auto' or `/mode full-auto`) these run without any confirmation.
 - **Suggestion:** Move to an allowlist for `full-auto` or require confirm on any redirect (`>`, `>>`), pipe-to-shell, `curl|wget` without `-o`, `nc`, `netcat`, `ssh`, `scp`, `rsync`, `eval`, `source`, backticks, `$()`. Ideally: drop `shell=True` for model-authored commands and run via a parsed argv allowlist.
 
-### 2.2 WebSocket server binds `0.0.0.0` by default with optional token (Critical)
+### 2.2 ~~WebSocket server binds `0.0.0.0` by default with optional token~~ ✅ FIXED 2026-04-22 (기본 127.0.0.1, VALID_TOKENS 없으면 서버 거부)
 - **Location:** `harness_server.py:22-24,364-368`
 - **Description:** Default `BIND='0.0.0.0'` and `VALID_TOKENS = set()` when `HARNESS_TOKENS` is unset. `if VALID_TOKENS:` — so empty set means authentication is skipped entirely. Anyone on the LAN can open a WebSocket and execute arbitrary shell via the agent's tool calls. The server startup message prints "(인증 없음 — HARNESS_TOKENS 미설정)" but continues.
 - **Suggestion:** Refuse to start when `BIND` is non-localhost without `HARNESS_TOKENS`. Default `BIND='127.0.0.1'`. Document the threat model in `CLIENT_SETUP.md` (currently silent on this).
 
-### 2.3 Token comparison is not constant-time (High)
+### 2.3 ~~Token comparison is not constant-time~~ ✅ FIXED 2026-04-23 (hmac.compare_digest)
 - **Location:** `harness_server.py:366` — `token not in VALID_TOKENS`
 - **Description:** Python `set` lookup reveals length/prefix collisions via timing; for `openssl rand -hex 32` tokens this is low-risk, but the guidance is still to use `hmac.compare_digest`.
 - **Suggestion:** Iterate with `hmac.compare_digest(token, v) for v in VALID_TOKENS`.
@@ -200,7 +200,7 @@
 - **Description:** Delegating to the `claude` binary means Claude Code's own tool set runs without any of harness's approval gates. If the parent harness is in `full-auto`, Claude Code inherits whatever its own config says. Result: audit trail splits across two tools.
 - **Suggestion:** When invoking Claude, force `--model` + restricted permission flags (if supported); log the delegated prompt + full response to `~/.harness/logs/claude.jsonl` for traceability.
 
-### 2.7 `fetch_page` has no SSRF protection (Medium)
+### 2.7 ~~`fetch_page` has no SSRF protection~~ ✅ FIXED 2026-04-23 (scheme 필터 + 내부망 차단 + no-redirect)
 - **Location:** `tools/web.py:69-83`
 - **Description:** `urllib.request.urlopen(url)` follows redirects and resolves any scheme. Model can hit `http://169.254.169.254/latest/meta-data/` (cloud metadata), `http://localhost:11434/...` (internal Ollama admin endpoints), `file:///etc/passwd` (urllib historically allows file:// unless stripped).
 - **Suggestion:** Enforce `url.scheme in ('http','https')`, resolve hostname, reject RFC1918/link-local/loopback, disable redirects or re-validate each hop.
@@ -210,7 +210,7 @@
 - **Description:** Keys/values containing `:` are corrupted (e.g. `description: ratio: 4.5:1`). Won't cause a crash but silently misreads keywords → skill never matches.
 - **Suggestion:** Use `yaml.safe_load` on the frontmatter block.
 
-### 2.9 `session/store.py` writes to `~/.harness/sessions/` without chmod (Low)
+### 2.9 ~~`session/store.py` writes to `~/.harness/sessions/` without chmod~~ ✅ FIXED 2026-04-23 (dir 0o700, file 0o600)
 - **Location:** `session/store.py:6-21`
 - **Description:** Sessions contain user prompts and tool outputs, potentially including API keys echoed into `run_command`, read file contents, etc. Default umask is 0022 → world-readable on multi-user systems.
 - **Suggestion:** `os.chmod(path, 0o600)` after write; `os.makedirs(SESSION_DIR, mode=0o700, exist_ok=True)` (note: `mode` only applies to newly created dirs).

@@ -467,9 +467,13 @@ async def send_state(ws, state: Session):
 # ── 메인 핸들러 ───────────────────────────────────────────────────
 async def handler(ws):
     # 토큰 인증 (websockets 14+: ws.request_headers → ws.request.headers)
+    # CONCERNS.md §2.3 대응: `token not in VALID_TOKENS` → timing 누설.
+    # hmac.compare_digest로 상수시간 비교.
     if VALID_TOKENS:
-        token = ws.request.headers.get('x-harness-token', '')
-        if token not in VALID_TOKENS:
+        import hmac
+        token = ws.request.headers.get('x-harness-token', '') or ''
+        ok = any(hmac.compare_digest(token, v) for v in VALID_TOKENS)
+        if not ok:
             await ws.close(4401, 'Unauthorized')
             return
 
