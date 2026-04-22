@@ -225,7 +225,9 @@ def _flush_tokens():
     text = ''.join(_token_buf).strip()
     if text:
         console.print(f'\n[orange3]● {config.MODEL}[/orange3]')
-        console.out(text, highlight=False)
+        # 각 줄에 2칸 들여쓰기 적용
+        indented = '\n'.join('  ' + l for l in text.splitlines())
+        console.out(indented, highlight=False)
     _token_buf.clear()
 
 
@@ -306,12 +308,12 @@ def confirm_write(path: str, content: str = None) -> bool:
                 console.print(f'  [dim]변경 없음[/dim]')
         except Exception:
             pass
-    return Confirm.ask(f'  [warn]Write[/warn] [bold]{path}[/bold]')
+    return Confirm.ask(f'[bold]●[/bold] [warn]Write[/warn] [bold]{path}[/bold]')
 
 
 def confirm_bash(command: str) -> bool:
     _flush_tokens()
-    return Confirm.ask(f'  [bold red]Run[/bold red] [bold]{command[:100]}[/bold]')
+    return Confirm.ask(f'[bold]●[/bold] [bold red]Run[/bold red] [bold]{command[:100]}[/bold]')
 
 
 # ── 미등록 툴 제안 ────────────────────────────────────────────────
@@ -363,22 +365,21 @@ def _suggest_unknown_tools(items: list[tuple[str, dict]]):
         info = _INSTALLABLE_TOOLS.get(name)
         if info:
             module_file, pkg = info
-            pkg_note = f'  [dim](pip install {pkg})[/dim]' if pkg else ''
+            pkg_note = f' [dim](pip install {pkg})[/dim]' if pkg else ''
             console.print(
-                f'\n  [warn]⚠[/warn]  미등록 툴: [bold]{name}[/bold]{pkg_note}\n'
+                f'\n[bold]●[/bold] [warn]미등록 툴:[/warn] [bold]{name}[/bold]{pkg_note}\n'
                 f'  [dim]tools/{module_file} 에 구현 후 tools/__init__.py에 등록하세요[/dim]'
             )
         else:
             purpose, args_str = _infer_tool_purpose(name, args)
-            console.print(
-                f'\n  [warn]⚠[/warn]  미등록 툴 감지: [bold]{name}[/bold]\n'
-                f'  추정 기능: {purpose}\n'
-                f'  추가 방법: tools/{name}.py 구현 → tools/__init__.py 에 등록\n'
-                + (f'  {args_str}\n' if args_str else '')
-            )
+            console.print(f'\n[bold]●[/bold] [warn]미등록 툴 감지:[/warn] [bold]{name}[/bold]')
+            console.print(f'  추정 기능: {purpose}')
+            console.print(f'  추가 방법: [dim]tools/{name}.py 구현 → tools/__init__.py 에 등록[/dim]')
+            if args_str:
+                console.print(f'  {args_str}')
             if Confirm.ask('  하네스에 추가할까요?', default=False):
                 console.print(
-                    f'  [tool.ok]✓[/tool.ok]  /improve 를 실행하면 자동 구현을 시도합니다\n'
+                    f'  [tool.ok]✓[/tool.ok] /improve 를 실행하면 자동 구현을 시도합니다\n'
                     f'  [dim]또는 tools/{name}.py 를 직접 작성하세요[/dim]'
                 )
 
@@ -697,7 +698,7 @@ def _run_claude_cli(query: str, session_msgs: list | None = None, working_dir: s
                 _flush_tokens()  # 스피너 정지
                 console.print('\n[bold blue]● Claude[/bold blue]')
             collected.append(line)
-            console.print(line, end='', highlight=False, markup=False)
+            console.print('  ' + line, end='', highlight=False, markup=False)
         claude_ask(full_query, on_token=_tok, cwd=working_dir, model=model)
     except RuntimeError as e:
         _spinner.stop()
