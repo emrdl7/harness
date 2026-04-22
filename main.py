@@ -321,10 +321,26 @@ _INSTALLABLE_TOOLS = {
     'search_code': ('search.py', None),
 }
 
+# 모델이 대화용으로 만들어내는 가짜 툴 패턴 — 제안 불필요
+_SOCIAL_TOOL_PATTERNS = (
+    'acknowledge', 'confirm', 'respond', 'reply', 'answer', 'clarif',
+    'greet', 'apologize', 'thank', 'sorry',
+    'get_status', 'get_project', 'check_status', 'project_status',
+    'no_op', 'noop', 'done', 'finish', 'complete',
+)
+
+
+def _is_social_tool(name: str) -> bool:
+    n = name.lower()
+    return any(p in n for p in _SOCIAL_TOOL_PATTERNS)
+
+
 def _suggest_unknown_tools(names: list[str]):
     if not names:
         return
     for name in names:
+        if _is_social_tool(name):
+            continue
         info = _INSTALLABLE_TOOLS.get(name)
         if info:
             module_file, pkg = info
