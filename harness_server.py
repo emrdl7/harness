@@ -321,8 +321,9 @@ async def handle_slash(ws, state: Session, cmd: str):
                    sessions=result.data.get('sessions', [])[:10])
 
     elif name == '/files':
-        tree = _build_file_tree(state.working_dir)
-        await send(ws, type='slash_result', cmd='files', tree=tree)
+        result = harness_core.dispatch(cmd, _to_core_state(state))
+        await send(ws, type='slash_result', cmd='files',
+                   tree=result.data.get('tree', {}))
 
     elif name == '/init':
         result = harness_core.dispatch(cmd, _to_core_state(state))
@@ -404,32 +405,6 @@ async def send_state(ws, state: Session):
 
 
 # ── 파일 트리 빌드 ────────────────────────────────────────────────
-_IGNORE = {'.git', '__pycache__', 'node_modules', '.venv', 'venv', 'dist', 'build', '.next'}
-
-
-def _build_file_tree(working_dir: str, max_depth: int = 3) -> dict:
-    def _walk(path, depth):
-        if depth > max_depth:
-            return None
-        try:
-            entries = sorted(os.listdir(path))
-        except PermissionError:
-            return None
-        node = {'name': os.path.basename(path), 'children': []}
-        for e in entries:
-            fp = os.path.join(path, e)
-            if os.path.isdir(fp):
-                if e not in _IGNORE:
-                    child = _walk(fp, depth + 1)
-                    if child:
-                        node['children'].append(child)
-            else:
-                node['children'].append({'name': e})
-        return node
-
-    return _walk(working_dir, 1) or {'name': os.path.basename(working_dir), 'children': []}
-
-
 # ── 메인 핸들러 ───────────────────────────────────────────────────
 async def handler(ws):
     # 토큰 인증 (websockets 14+: ws.request_headers → ws.request.headers)

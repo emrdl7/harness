@@ -1051,7 +1051,7 @@ def do_claude_loop(task: str, session_msgs: list, working_dir: str, profile: dic
 
 # ── 슬래시 핸들러 ─────────────────────────────────────────────────
 # harness_core로 위임할 슬래시. /help는 _print_help의 풍성한 표를 유지하기 위해 제외.
-_CORE_DELEGATED_SLASHES = {'/clear', '/undo', '/cd', '/init', '/save', '/resume', '/sessions'}
+_CORE_DELEGATED_SLASHES = {'/clear', '/undo', '/cd', '/init', '/save', '/resume', '/sessions', '/files'}
 
 
 def _render_core_notice(notice: str, level: str) -> None:
@@ -1081,6 +1081,28 @@ def _render_sessions_table(sessions: list) -> None:
     console.print(t)
 
 
+def _render_files_tree(tree_dict: dict) -> None:
+    '''harness_core가 빌드한 트리 dict를 Rich Tree로 변환해 출력.'''
+    root_name = tree_dict.get('name', '?') or '?'
+    rich_tree = Tree(f'[bold cyan]{root_name}[/bold cyan]', guide_style='dim')
+
+    def _add(parent_node, children: list):
+        # 디렉토리(children 키 보유) 먼저, 파일 나중 — 기존 시각 유지
+        dirs = [c for c in children if 'children' in c]
+        files = [c for c in children if 'children' not in c]
+        for d in dirs:
+            branch = parent_node.add(f'[bold]{_DIR_ICON} {d["name"]}[/bold]')
+            _add(branch, d.get('children', []))
+        for f in files:
+            ext = os.path.splitext(f['name'])[1].lower()
+            icon = _FILE_ICONS.get(ext, '  ')
+            parent_node.add(f'[dim]{icon}[/dim] {f["name"]}')
+
+    _add(rich_tree, tree_dict.get('children', []))
+    console.print(rich_tree)
+    console.print()
+
+
 def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, undo_count: int = 0, run_agent=None) -> tuple[list, str, int]:
     '''run_agent: main()의 nested _run_agent 함수를 DI로 받음.
     /plan 같은 슬래시는 agent 실행이 필요하므로 호출자가 주입해야 한다.
@@ -1101,6 +1123,8 @@ def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, 
             # 추가 데이터 렌더 (notice로 표현 안 되는 것)
             if name == '/sessions':
                 _render_sessions_table(result.data.get('sessions', []))
+            elif name == '/files':
+                _render_files_tree(result.data.get('tree', {}))
             elif result.notice:
                 _render_core_notice(result.notice, result.level)
             return (result.state.messages, result.state.working_dir, result.state.undo_count)
@@ -1331,10 +1355,6 @@ def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, 
             console.print(f'  [tool.fail]✗[/tool.fail] {r.stderr.strip()}')
         return session_msgs, working_dir, undo_count
 
-    if name == '/files':
-        _print_file_tree(working_dir)
-        return session_msgs, working_dir, undo_count
-
     if name == '/claude':
         query = parts[1] if len(parts) > 1 else ''
         if not query:
@@ -1364,39 +1384,12 @@ def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, 
 
 
 # ── /files 트리 ───────────────────────────────────────────────────
-_IGNORE = {'.git', '__pycache__', 'node_modules', '.venv', 'venv', 'dist', 'build', '.next'}
 _DIR_ICON = '📁'
 _FILE_ICONS = {
     '.py': '🐍', '.js': '📜', '.ts': '📘', '.tsx': '📘', '.jsx': '📜',
     '.md': '📝', '.json': '📋', '.toml': '⚙', '.yaml': '⚙', '.yml': '⚙',
     '.sh': '⚡', '.go': '🐹', '.rs': '🦀', '.sql': '🗃',
 }
-
-
-def _print_file_tree(working_dir: str, max_depth: int = 3):
-    root_name = os.path.basename(working_dir) or working_dir
-    tree = Tree(f'[bold cyan]{root_name}[/bold cyan]', guide_style='dim')
-
-    def _add(node, path: str, depth: int):
-        if depth > max_depth:
-            return
-        try:
-            entries = sorted(os.listdir(path))
-        except PermissionError:
-            return
-        dirs = [e for e in entries if os.path.isdir(os.path.join(path, e)) and e not in _IGNORE]
-        files = [e for e in entries if os.path.isfile(os.path.join(path, e))]
-        for d in dirs:
-            branch = node.add(f'[bold]{_DIR_ICON} {d}[/bold]')
-            _add(branch, os.path.join(path, d), depth + 1)
-        for f in files:
-            ext = os.path.splitext(f)[1].lower()
-            icon = _FILE_ICONS.get(ext, '  ')
-            node.add(f'[dim]{icon}[/dim] {f}')
-
-    _add(tree, working_dir, 1)
-    console.print(tree)
-    console.print()
 
 
 # ── /help ─────────────────────────────────────────────────────────

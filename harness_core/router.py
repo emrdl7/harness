@@ -14,6 +14,7 @@ KNOWN_COMMANDS = {
     '/save':     (h.slash_save,     False),
     '/resume':   (h.slash_resume,   True),   # 인자 옵셔널이지만 라우터는 '있어도 됨'으로 처리
     '/sessions': (h.slash_sessions, False),
+    '/files':    (h.slash_files,    False),
 }
 
 

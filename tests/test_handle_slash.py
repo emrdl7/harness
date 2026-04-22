@@ -166,3 +166,13 @@ class TestCoreDelegation:
         # 메시지/wd 변경 없음, 크래시 없이 반환
         assert new_msgs == []
         assert wd == '/tmp'
+
+    def test_files_via_core(self, tmp_path):
+        '''/files는 Rich Tree 렌더 — 크래시 없이 반환되면 통합 OK.'''
+        (tmp_path / 'a.py').write_text('x')
+        (tmp_path / 'sub').mkdir()
+        new_msgs, wd, undo = main.handle_slash(
+            '/files', [], str(tmp_path), {}, 0,
+        )
+        assert new_msgs == []
+        assert wd == str(tmp_path)

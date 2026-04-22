@@ -232,6 +232,55 @@ class TestSessions:
             assert 'working_dir' in sess
 
 
+# ── slash_files ──────────────────────────────────────────────────────
+class TestFiles:
+    def test_returns_tree_dict(self, tmp_path):
+        # 디렉토리 구조: a.txt, sub/b.txt
+        (tmp_path / 'a.txt').write_text('x')
+        (tmp_path / 'sub').mkdir()
+        (tmp_path / 'sub' / 'b.txt').write_text('y')
+        state = SlashState(working_dir=str(tmp_path))
+        result = h.slash_files(state)
+        assert result.handled
+        assert result.level == 'ok'
+        tree = result.data['tree']
+        assert tree['name'] == tmp_path.name
+        # children에 a.txt + sub 두 개
+        names = {c['name'] for c in tree['children']}
+        assert 'a.txt' in names
+        assert 'sub' in names
+        # sub는 children 키 보유 (디렉토리 마커)
+        sub_node = next(c for c in tree['children'] if c['name'] == 'sub')
+        assert 'children' in sub_node
+
+    def test_ignores_common_dirs(self, tmp_path):
+        (tmp_path / 'a.txt').write_text('x')
+        (tmp_path / '.git').mkdir()
+        (tmp_path / '.git' / 'config').write_text('x')
+        (tmp_path / '__pycache__').mkdir()
+        (tmp_path / 'node_modules').mkdir()
+        state = SlashState(working_dir=str(tmp_path))
+        result = h.slash_files(state)
+        names = {c['name'] for c in result.data['tree']['children']}
+        assert '.git' not in names
+        assert '__pycache__' not in names
+        assert 'node_modules' not in names
+
+    def test_max_depth_respected(self, tmp_path):
+        # 깊이 5의 nested 디렉토리. _walk(path, 1)로 시작이라
+        # max_depth=3이면 root → l1(d=2) → l2(d=3)까지만 나옴.
+        deep = tmp_path / 'l1' / 'l2' / 'l3' / 'l4' / 'l5'
+        deep.mkdir(parents=True)
+        (deep / 'leaf.txt').write_text('x')
+        result = h.slash_files(SlashState(working_dir=str(tmp_path)))
+        l1 = result.data['tree']['children'][0]
+        assert l1['name'] == 'l1'
+        l2 = l1['children'][0]
+        assert l2['name'] == 'l2'
+        # l3은 depth=4가 되어 None 반환 → l2.children에 안 들어감
+        assert l2['children'] == []
+
+
 # ── slash_help ───────────────────────────────────────────────────────
 class TestHelp:
     def test_returns_text(self):

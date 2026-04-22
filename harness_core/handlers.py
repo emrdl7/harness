@@ -90,6 +90,42 @@ def slash_sessions(state: SlashState) -> SlashResult:
     return SlashResult.ok(state, f'{len(sessions)}개 세션', sessions=sessions)
 
 
+_FILES_IGNORE = {'.git', '__pycache__', 'node_modules', '.venv', 'venv', 'dist', 'build', '.next'}
+
+
+def _build_tree(working_dir: str, max_depth: int = 3) -> dict:
+    '''파일 트리 dict — main과 server가 공유.
+
+    노드 형식: {'name': str, 'children': [...]} (children 없으면 파일).
+    '''
+    def _walk(path: str, depth: int):
+        if depth > max_depth:
+            return None
+        try:
+            entries = sorted(os.listdir(path))
+        except PermissionError:
+            return None
+        node = {'name': os.path.basename(path), 'children': []}
+        for e in entries:
+            fp = os.path.join(path, e)
+            if os.path.isdir(fp):
+                if e not in _FILES_IGNORE:
+                    child = _walk(fp, depth + 1)
+                    if child:
+                        node['children'].append(child)
+            else:
+                node['children'].append({'name': e})
+        return node
+
+    return _walk(working_dir, 1) or {'name': os.path.basename(working_dir), 'children': []}
+
+
+def slash_files(state: SlashState) -> SlashResult:
+    '''/files — working_dir의 파일 트리. data={'tree': {...}}.'''
+    tree = _build_tree(state.working_dir)
+    return SlashResult.ok(state, '', tree=tree)
+
+
 def slash_help(state: SlashState) -> SlashResult:
     '''/help — 정적 도움말. 프런트엔드는 notice를 그대로 보여주거나 자체 헬프 사용.'''
     text = (
