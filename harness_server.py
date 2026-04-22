@@ -19,7 +19,12 @@ import evolution
 from tools.claude_cli import ask as claude_ask, is_available as claude_available
 from session.compactor import needs_compaction, compact
 
-PORT = int(os.environ.get('HARNESS_PORT', '7891'))
+PORT         = int(os.environ.get('HARNESS_PORT', '7891'))
+BIND         = os.environ.get('HARNESS_BIND', '0.0.0.0')
+VALID_TOKENS = set(filter(None, os.environ.get('HARNESS_TOKENS', '').split(',')))
+
+# Ollama는 동시 추론 불가 — 요청 1개씩 처리
+_ollama_lock = asyncio.Semaphore(1)
 
 
 # ── 메시지 전송 헬퍼 ──────────────────────────────────────────────
@@ -130,7 +135,8 @@ async def run_agent(ws, state: Session, user_input: str, plan_mode: bool = False
                 send(ws, type='error', text=str(e)), loop
             )
 
-    await asyncio.get_event_loop().run_in_executor(None, _run)
+    async with _ollama_lock:
+        await asyncio.get_event_loop().run_in_executor(None, _run)
     await send(ws, type='agent_end')
 
 
@@ -354,6 +360,13 @@ def _build_file_tree(working_dir: str, max_depth: int = 3) -> dict:
 
 # ── 메인 핸들러 ───────────────────────────────────────────────────
 async def handler(ws):
+    # 토큰 인증
+    if VALID_TOKENS:
+        token = ws.request_headers.get('x-harness-token', '')
+        if token not in VALID_TOKENS:
+            await ws.close(4401, 'Unauthorized')
+            return
+
     state = Session()
 
     # 초기 상태 전송
@@ -421,8 +434,9 @@ async def handler(ws):
 async def main():
     import logging
     logging.getLogger('websockets').setLevel(logging.CRITICAL)
-    print(f'harness server  ws://localhost:{PORT}', flush=True)
-    async with websockets.serve(handler, 'localhost', PORT):
+    auth_info = f'  (토큰 인증 {len(VALID_TOKENS)}개)' if VALID_TOKENS else '  (인증 없음 — HARNESS_TOKENS 미설정)'
+    print(f'harness server  ws://{BIND}:{PORT}{auth_info}', flush=True)
+    async with websockets.serve(handler, BIND, PORT):
         await asyncio.Future()  # 영원히 실행
 
 

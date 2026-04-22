@@ -3,8 +3,10 @@ import WebSocket from 'ws'
 import os from 'os'
 import path from 'path'
 
-const PORT = process.env.HARNESS_PORT || '7891'
-const MODEL = 'qwen2.5-coder:32b'
+const PORT   = process.env.HARNESS_PORT   || '7891'
+const HOST   = process.env.HARNESS_HOST   || 'localhost'
+const TOKEN  = process.env.HARNESS_TOKEN  || ''
+const MODEL  = 'qwen3-coder:30b'
 
 // ── ANSI ─────────────────────────────────────────────────────────
 const C = {
@@ -226,10 +228,11 @@ function showPrompt() {
 }
 
 // ── WebSocket ────────────────────────────────────────────────────
-const ws = new WebSocket(`ws://localhost:${PORT}`)
+const wsUrl = `ws://${HOST}:${PORT}`
+const ws = new WebSocket(wsUrl, { headers: TOKEN ? { 'x-harness-token': TOKEN } : {} })
 
 ws.on('error', () => {
-  console.error(`\nharness server 연결 실패 (ws://localhost:${PORT})`)
+  console.error(`\nharness server 연결 실패 (${wsUrl})`)
   console.error('먼저: cd ~/harness && .venv/bin/python harness_server.py\n')
   process.exit(1)
 })
