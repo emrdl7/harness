@@ -115,6 +115,8 @@ SLASH_COMMANDS = {
     '/history':  '진화 이력 및 품질 트렌드 확인',
     '/restore':  '이전 백업으로 롤백',
     '/commit':   'git add -A + commit  ex) /commit 버튼 스타일 수정',
+    '/push':     'git push',
+    '/pull':     'git pull',
     '/cd':       '작업 디렉토리 변경  ex) /cd ~/myproject',
     '/files':    '현재 디렉토리 파일 트리',
     '/save':     '현재 세션 저장',
@@ -630,6 +632,49 @@ def do_learn(session_msgs: list, working_dir: str, profile: dict) -> list:
 
 
 # ── 자연어 /cplan 의도 감지 ───────────────────────────────────────
+_COMMIT_TRIGGERS = [
+    '커밋해', '커밋 해', '커밋하자', '커밋해줘', '커밋해주세요',
+    '저장해', '저장하자', '저장해줘', 'commit해', 'commit 해',
+    '변경사항 저장', '변경사항 커밋', '지금 커밋', '그냥 커밋',
+]
+_PUSH_TRIGGERS = [
+    '푸시해', '푸시 해', '푸시하자', '푸시해줘', 'push해', 'push 해',
+    '올려줘', '올리자', '원격에 올려', '커밋/푸시', '커밋 푸시',
+    '커밋하고 푸시', '저장하고 올려',
+]
+_PULL_TRIGGERS = [
+    '풀받아', '풀 받아', '풀받자', '풀해줘', 'pull해', 'pull 해',
+    '최신 받아', '최신화', '동기화해', '받아와',
+]
+
+
+def _is_commit_intent(text: str) -> bool:
+    lower = text.lower()
+    return any(t in lower for t in _COMMIT_TRIGGERS)
+
+
+def _is_push_intent(text: str) -> bool:
+    lower = text.lower()
+    return any(t in lower for t in _PUSH_TRIGGERS)
+
+
+def _is_pull_intent(text: str) -> bool:
+    lower = text.lower()
+    return any(t in lower for t in _PULL_TRIGGERS)
+
+
+def _extract_commit_msg(text: str) -> str:
+    '''트리거 이후 텍스트를 커밋 메시지로 추출. 없으면 빈 문자열.'''
+    lower = text.lower()
+    for t in _COMMIT_TRIGGERS:
+        idx = lower.find(t)
+        if idx != -1:
+            after = text[idx + len(t):].strip(' ,.:;줘')
+            if after:
+                return after
+    return ''
+
+
 _CPLAN_TRIGGERS = [
     '클로드로 계획', '클로드가 계획', '클로드로 플랜', '클로드가 플랜',
     '클로드한테 계획', '클로드한테 플랜', '클로드가 설계', '클로드로 설계',
@@ -1013,6 +1058,28 @@ def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, 
             console.print(f'  [tool.fail]✗[/tool.fail] {commit.stderr.strip()}')
         return session_msgs, working_dir, undo_count
 
+    if name == '/push':
+        import subprocess as _sp
+        console.print('  [dim]git push...[/dim]')
+        r = _sp.run(['git', 'push'], cwd=working_dir, capture_output=True, text=True)
+        if r.returncode == 0:
+            out = r.stdout.strip() or r.stderr.strip() or '완료'
+            console.print(f'  [tool.ok]✓[/tool.ok] {out}')
+        else:
+            console.print(f'  [tool.fail]✗[/tool.fail] {r.stderr.strip()}')
+        return session_msgs, working_dir, undo_count
+
+    if name == '/pull':
+        import subprocess as _sp
+        console.print('  [dim]git pull...[/dim]')
+        r = _sp.run(['git', 'pull'], cwd=working_dir, capture_output=True, text=True)
+        if r.returncode == 0:
+            out = r.stdout.strip() or '완료'
+            console.print(f'  [tool.ok]✓[/tool.ok] {out}')
+        else:
+            console.print(f'  [tool.fail]✗[/tool.fail] {r.stderr.strip()}')
+        return session_msgs, working_dir, undo_count
+
     if name == '/files':
         _print_file_tree(working_dir)
         return session_msgs, working_dir, undo_count
@@ -1124,7 +1191,7 @@ def _print_help():
         '실행': ['/plan', '/cplan'],
         '인덱스': ['/index'],
         '진화': ['/improve', '/learn', '/evolve', '/history', '/restore'],
-        '파일': ['/commit', '/cd', '/files'],
+        '파일': ['/commit', '/push', '/pull', '/cd', '/files'],
         '세션': ['/save', '/resume', '/sessions', '/init'],
         'Claude': ['/claude'],
         '설정': ['/mode'],
@@ -1399,6 +1466,32 @@ def main():
                 )
                 if user_input.startswith('/cd'):
                     profile = prof.load(working_dir)
+                continue
+
+            # 자연어로 /commit+push / /push / /pull 트리거 감지
+            if _is_push_intent(user_input):
+                msg = _extract_commit_msg(user_input)
+                if msg or _is_commit_intent(user_input):
+                    # "커밋/푸시" 또는 "커밋하고 푸시" → commit 후 push
+                    commit_cmd = f'/commit {msg}' if msg else '/commit'
+                    session_msgs, working_dir, undo_count = handle_slash(
+                        commit_cmd, session_msgs, working_dir, profile, undo_count
+                    )
+                session_msgs, working_dir, undo_count = handle_slash(
+                    '/push', session_msgs, working_dir, profile, undo_count
+                )
+                continue
+            if _is_pull_intent(user_input):
+                session_msgs, working_dir, undo_count = handle_slash(
+                    '/pull', session_msgs, working_dir, profile, undo_count
+                )
+                continue
+            if _is_commit_intent(user_input):
+                msg = _extract_commit_msg(user_input)
+                commit_cmd = f'/commit {msg}' if msg else '/commit'
+                session_msgs, working_dir, undo_count = handle_slash(
+                    commit_cmd, session_msgs, working_dir, profile, undo_count
+                )
                 continue
 
             # 자연어로 /cplan 트리거 감지
