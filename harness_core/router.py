@@ -18,6 +18,7 @@ KNOWN_COMMANDS = {
     '/index':    (h.slash_index,    False),
     '/plan':     (h.slash_plan,     True),
     '/improve':  (h.slash_improve,  False),
+    '/learn':    (h.slash_learn,    False),
 }
 
 

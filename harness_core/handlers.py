@@ -207,6 +207,45 @@ def slash_improve(state: SlashState, ctx: SlashContext) -> SlashResult:
                             backup=backup_path, validation=validation)
 
 
+_LEARN_SYSTEM = '''당신은 하네스의 자기학습 에이전트입니다.
+세션 분석 결과를 바탕으로 HARNESS.md 파일을 개선하세요.
+
+규칙:
+- 기존 내용을 먼저 read_file로 확인 후 수정
+- 중복 내용 추가 금지
+- 마크다운 형식 유지
+- 변경이 없으면 파일을 건드리지 말 것
+- 완료 후 어떤 내용을 추가/수정했는지 한 줄 요약
+'''
+
+
+def slash_learn(state: SlashState, ctx: SlashContext) -> SlashResult:
+    '''/learn — 현재 세션을 요약해 HARNESS.md에 반영.
+
+    drift 정리: 기존 server는 profile={}로 agent.run 호출 → state.profile 사용으로 통일.
+    '''
+    if ctx.run_agent_ephemeral is None:
+        return SlashResult.error(state, '내부 오류: run_agent_ephemeral 콜백이 없습니다')
+    user_msgs = [m for m in state.messages if m.get('role') == 'user']
+    if not user_msgs:
+        return SlashResult.info(state, '학습할 세션 내용이 없습니다')
+
+    from session.analyzer import summarize_session, build_learn_prompt
+
+    summary = summarize_session(state.messages)
+    global_doc = state.profile.get('global_doc', '')
+    project_doc = state.profile.get('project_doc', '')
+    learn_prompt = build_learn_prompt(summary, global_doc, project_doc, state.working_dir)
+
+    ctx.run_agent_ephemeral(
+        learn_prompt,
+        system_prompt=_LEARN_SYSTEM,
+        working_dir=state.working_dir,
+        profile=state.profile,
+    )
+    return SlashResult.ok(state, 'HARNESS.md 갱신 완료')
+
+
 def slash_plan(state: SlashState, ctx: SlashContext, query: str) -> SlashResult:
     '''/plan <작업> — agent를 plan_mode=True로 실행.
 

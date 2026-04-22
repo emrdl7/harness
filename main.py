@@ -1051,7 +1051,7 @@ def do_claude_loop(task: str, session_msgs: list, working_dir: str, profile: dic
 
 # ── 슬래시 핸들러 ─────────────────────────────────────────────────
 # harness_core로 위임할 슬래시. /help는 _print_help의 풍성한 표를 유지하기 위해 제외.
-_CORE_DELEGATED_SLASHES = {'/clear', '/undo', '/cd', '/init', '/save', '/resume', '/sessions', '/files', '/index', '/plan', '/improve'}
+_CORE_DELEGATED_SLASHES = {'/clear', '/undo', '/cd', '/init', '/save', '/resume', '/sessions', '/files', '/index', '/plan', '/improve', '/learn'}
 
 
 def _render_core_notice(notice: str, level: str) -> None:
@@ -1175,10 +1175,6 @@ def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, 
             console.print('  [warn]사용법:[/warn] /cloop <작업 내용>')
             return session_msgs, working_dir, undo_count
         session_msgs = do_claude_loop(query, session_msgs, working_dir, profile)
-        return session_msgs, working_dir, undo_count
-
-    if name == '/learn':
-        session_msgs = do_learn(session_msgs, working_dir, profile)
         return session_msgs, working_dir, undo_count
 
     if name == '/evolve':
