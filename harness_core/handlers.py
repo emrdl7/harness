@@ -5,6 +5,7 @@
 '''
 import os
 
+import context
 import profile as prof
 import session as sess
 
@@ -118,6 +119,21 @@ def _build_tree(working_dir: str, max_depth: int = 3) -> dict:
         return node
 
     return _walk(working_dir, 1) or {'name': os.path.basename(working_dir), 'children': []}
+
+
+def slash_index(state: SlashState, ctx: SlashContext) -> SlashResult:
+    '''/index — working_dir 인덱싱. data={'indexed': N, 'skipped': M}.
+
+    context.index_directory는 I/O + 토크나이징이 있어 수초 소요될 수 있음.
+    프런트엔드가 spinner/상태 알림을 띄워야 한다면 호출 전에 처리.
+    '''
+    result = context.index_directory(state.working_dir)
+    return SlashResult.ok(
+        state,
+        f'인덱싱 완료 {result["indexed"]}개 청크',
+        indexed=result['indexed'],
+        skipped=result['skipped'],
+    )
 
 
 def slash_files(state: SlashState, ctx: SlashContext) -> SlashResult:

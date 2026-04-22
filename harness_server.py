@@ -284,12 +284,13 @@ async def handle_slash(ws, state: Session, cmd: str):
         await send(ws, type='info', text='인덱싱 중...')
         loop = asyncio.get_event_loop()
 
-        def _idx():
-            return context.index_directory(state.working_dir)
+        def _run_dispatch():
+            return harness_core.dispatch(cmd, _to_core_state(state))
 
-        result = await loop.run_in_executor(None, _idx)
+        result = await loop.run_in_executor(None, _run_dispatch)
         await send(ws, type='slash_result', cmd='index',
-                   indexed=result['indexed'], skipped=result['skipped'])
+                   indexed=result.data.get('indexed', 0),
+                   skipped=result.data.get('skipped', 0))
 
     elif name == '/cd':
         if len(parts) < 2:

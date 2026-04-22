@@ -1051,7 +1051,7 @@ def do_claude_loop(task: str, session_msgs: list, working_dir: str, profile: dic
 
 # ── 슬래시 핸들러 ─────────────────────────────────────────────────
 # harness_core로 위임할 슬래시. /help는 _print_help의 풍성한 표를 유지하기 위해 제외.
-_CORE_DELEGATED_SLASHES = {'/clear', '/undo', '/cd', '/init', '/save', '/resume', '/sessions', '/files'}
+_CORE_DELEGATED_SLASHES = {'/clear', '/undo', '/cd', '/init', '/save', '/resume', '/sessions', '/files', '/index'}
 
 
 def _render_core_notice(notice: str, level: str) -> None:
@@ -1126,6 +1126,12 @@ def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, 
                 _render_sessions_table(result.data.get('sessions', []))
             elif name == '/files':
                 _render_files_tree(result.data.get('tree', {}))
+            elif name == '/index':
+                console.print(
+                    f'  [tool.ok]✓[/tool.ok] 인덱싱 완료  '
+                    f'[bold]{result.data.get("indexed", 0)}[/bold]개 청크  '
+                    f'[dim](건너뜀 {result.data.get("skipped", 0)}개)[/dim]\n'
+                )
             elif result.notice:
                 _render_core_notice(result.notice, result.level)
             return (result.state.messages, result.state.working_dir, result.state.undo_count)
@@ -1170,10 +1176,6 @@ def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, 
             console.print('  [warn]사용법:[/warn] /cloop <작업 내용>')
             return session_msgs, working_dir, undo_count
         session_msgs = do_claude_loop(query, session_msgs, working_dir, profile)
-        return session_msgs, working_dir, undo_count
-
-    if name == '/index':
-        do_index(working_dir)
         return session_msgs, working_dir, undo_count
 
     if name == '/improve':
