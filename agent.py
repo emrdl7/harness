@@ -16,7 +16,17 @@ Anthropic의 Claude가 아니며, Claude 기반이라고 주장하지 마세요.
 툴 호출 후 실패하면 원인을 분석하고 다른 방법으로 재시도하세요.
 작업 완료 후 결과를 간결하게 한국어로 보고하세요.
 
-규칙:
+웹 검색 규칙 (최우선):
+- 다음 유형의 질문은 반드시 search_web을 먼저 호출한 뒤 답변하세요. 스스로 안다고 생각해도 검색을 먼저 하세요:
+  · 특정 모델/라이브러리/프레임워크의 버전 비교 또는 성능 차이
+  · 특정 제품·서비스의 출시일, 기능, 스펙
+  · 2024년 이후 출시되거나 업데이트된 것들
+  · 뉴스, 최신 동향, 릴리즈 노트
+- 검색 결과가 충분하지 않으면 쿼리를 바꿔 재검색하거나 fetch_page로 관련 URL을 직접 열어보세요.
+- 검색 결과를 받으면 그 내용을 바탕으로 구체적으로 답변하세요. "결과에 없다"는 이유로 포기하지 마세요.
+- 성능 비교 질문은 반드시 수치(벤치마크 점수, 배수, %, 순위 등)로 답하세요. "더 빠르다", "더 좋다" 같은 막연한 표현은 금지. 수치가 스니펫에 없으면 fetch_page로 상세 페이지를 열어 수치를 직접 확인하세요.
+
+일반 규칙:
 - 현재 작업 디렉토리는 이 프롬프트에 명시되어 있으므로 별도 툴 호출 없이 직접 답변하세요.
 - 존재하지 않는 툴을 절대 호출하지 마세요. 사용 가능한 툴만 사용하세요.
 - 파일 경로는 항상 절대 경로 또는 working_dir 기준 상대 경로를 사용하세요.'''
@@ -70,16 +80,26 @@ def _stream_response(messages: list, on_token=None) -> dict:
 
 
 def _parse_text_tool_calls(text: str) -> list:
-    '''모델이 텍스트로 툴콜을 출력한 경우 파싱. 미등록 툴도 포함해 반환.'''
+    '''모델이 텍스트로 툴콜을 출력한 경우 파싱. JSON/XML 두 형식 모두 지원.'''
     calls = []
-    pattern = r'\{[^{}]*"name"\s*:\s*"([^"]+)"[^{}]*"arguments"\s*:\s*(\{[^{}]*\})[^{}]*\}'
-    for m in re.finditer(pattern, text, re.DOTALL):
+
+    # JSON 형식: {"name": "...", "arguments": {...}}
+    json_pattern = r'\{[^{}]*"name"\s*:\s*"([^"]+)"[^{}]*"arguments"\s*:\s*(\{[^{}]*\})[^{}]*\}'
+    for m in re.finditer(json_pattern, text, re.DOTALL):
         try:
-            name = m.group(1)
-            args = json.loads(m.group(2))
-            calls.append({'function': {'name': name, 'arguments': args}})
+            calls.append({'function': {'name': m.group(1), 'arguments': json.loads(m.group(2))}})
         except json.JSONDecodeError:
             pass
+
+    # XML 형식: <function=name><parameter=key>value</parameter></function>
+    xml_pattern = r'<function=(\w+)>(.*?)</function>'
+    for m in re.finditer(xml_pattern, text, re.DOTALL):
+        name = m.group(1)
+        args = {}
+        for p in re.finditer(r'<parameter=(\w+)>\s*(.*?)\s*</parameter>', m.group(2), re.DOTALL):
+            args[p.group(1)] = p.group(2).strip()
+        calls.append({'function': {'name': name, 'arguments': args}})
+
     return calls
 
 

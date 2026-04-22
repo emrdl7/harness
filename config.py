@@ -1,7 +1,7 @@
 import os
 
 OLLAMA_BASE_URL = os.environ.get('HARNESS_OLLAMA_URL', 'http://localhost:11434')
-MODEL           = os.environ.get('HARNESS_MODEL',      'qwen2.5-coder:32b')
+MODEL           = os.environ.get('HARNESS_MODEL',      'qwen3-coder:30b')
 MAX_RETRIES     = 3
 
 # 승인 모드: suggest(제안만) | auto-edit(파일자동+쉘확인) | full-auto(모두자동)

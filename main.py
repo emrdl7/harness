@@ -392,10 +392,10 @@ def _suggest_unknown_tools(items: list[tuple[str, dict]]):
 _ctx_display: list = ['']  # main()이 _run_agent 전에 갱신
 
 
-def _response_header(model_label: str = 'qwen2.5-coder'):
+def _response_header(model_label: str | None = None):
     ctx = _ctx_display[0]
     suffix = f'  {ctx}' if ctx else ''
-    console.print(f'\n[dim]{model_label}[/dim]{suffix}')
+    console.print(f'\n[dim]{model_label or config.MODEL}[/dim]{suffix}')
 
 
 def _response_footer():
@@ -488,7 +488,7 @@ def print_banner():
     console.out(f'{" " * pad}{_D}{tag}{_R}', highlight=False)
     console.out(
         f'\n  {_C}local AI coding agent{_R}  '
-        f'{_D}·  qwen2.5-coder:32b{_R}\n',
+        f'{_D}·  {config.MODEL}{_R}\n',
         highlight=False,
     )
 
@@ -503,7 +503,7 @@ def print_welcome(working_dir: str):
     short = _short_dir(working_dir)
 
     console.print(
-        f'  [bold cyan]qwen2.5-coder:32b[/bold cyan]'
+        f'  [bold cyan]{config.MODEL}[/bold cyan]'
         f'[dim]  ·  {short}  ·  [/dim]'
         f'{idx_badge}[dim]  ·  [/dim]{claude_badge}'
     )
@@ -708,7 +708,7 @@ def _build_claude_context(session_msgs: list, max_turns: int = 6) -> str:
     recent = non_system[-(max_turns * 2):]
     if not recent:
         return ''
-    local_model = config.MODEL  # 예: qwen2.5-coder:32b
+    local_model = config.MODEL  # 예: qwen3-coder:30b
     lines = [f'아래는 현재 세션의 최근 대화 기록이다. 에이전트는 로컬 모델({local_model})이고 너(Claude)와 다른 모델임:\n']
     for m in recent:
         if m['role'] == 'user':

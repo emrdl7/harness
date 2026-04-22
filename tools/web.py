@@ -5,10 +5,14 @@ import re
 import unicodedata
 
 try:
-    from duckduckgo_search import DDGS
+    from ddgs import DDGS
     _DDGS_AVAILABLE = True
 except ImportError:
-    _DDGS_AVAILABLE = False
+    try:
+        from duckduckgo_search import DDGS
+        _DDGS_AVAILABLE = True
+    except ImportError:
+        _DDGS_AVAILABLE = False
 
 
 def _clean_query(query: str) -> str:
