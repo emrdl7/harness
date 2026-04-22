@@ -46,7 +46,7 @@
 
 ### 🟠 잔여 미해결 항목 요약 (2026-04-23 기준)
 
-- §1 Bugs: **5건** — 1.4(M, /commit+/push double-run), 1.9(M, hooks swallow), 1.10(H, run_command shell-quoting), 1.12(M, spinner vs Live), 1.21(H, no Ollama retry)
+- §1 Bugs: **4건** — 1.4(M, /commit+/push double-run), 1.9(M, hooks swallow), 1.10(H, run_command shell-quoting — sticky-deny로 부분 완화), 1.12(M, spinner vs Live)
 - §2 Security: **2건** — 2.8(L, manual YAML), 2.10(M, per-conn HARNESS_CWD)
 - §3 Architecture: ~11건 (3.2/3.3 닫힘) — 3.1(H, main.py 1666줄)이 가장 큼
 - §4 Performance: 5건 (전부 L/M)
@@ -157,10 +157,10 @@
 - **Description:** First call uses empty `session_id`, second uses the real one. First call pollutes the sequence store with a `''` bucket that accumulates forever.
 - **Suggestion:** Remove the first call.
 
-### 1.21 `_stream_response` has no retry — any Ollama transient failure kills the turn (High)
-- **Location:** `agent.py:57-71`
-- **Description:** `requests.post(f'{config.OLLAMA_BASE_URL}/api/chat', ..., timeout=300)` followed by `raise_for_status()`. No retry, no backoff. If Ollama returns 503 (common during model load, GPU pressure, or connection blip on a remote setup) the entire iteration fails and the session turn is lost. In the home-server + remote-users deployment this will surface as visible flakiness to users.
-- **Suggestion:** Wrap in a retry loop (3 attempts, exponential 1s→2s→4s) on `requests.ConnectionError`, `requests.Timeout`, and HTTP 5xx. Surface each retry via `on_token` so the UI can display "재시도 2/3". Also emit `retry` event on the WS protocol so `ui/index.js` can render it.
+### 1.21 ~~`_stream_response` has no retry — any Ollama transient failure kills the turn~~ ✅ FIXED (커밋 `0e65f0c` 코드 + 단위 테스트 보강 2026-04-23)
+- **Location:** `agent.py:57-92`
+- **Description (당시):** `requests.post` 후 `raise_for_status()`. retry/backoff 없음 → 503/Timeout/ConnectionError 한 번에 turn 사망.
+- **Fix applied:** 1s→2s→4s 지수 백오프 3회 retry. `requests.ConnectionError`, `requests.Timeout`, HTTP 5xx 모두 대상. 매 시도마다 `on_token`으로 `[Ollama 재연결 N/3 — Xs 대기: …]` 알림. 4xx는 즉시 raise. 단위 테스트 6건(`tests/test_agent_retry.py` — connection/timeout/5xx 재시도 + 4xx 즉시/3회 모두 실패 시 raise) 추가.
 
 ### 1.22 ~~`MAX_TOOL_RESULT_CHARS = 20_000` silently truncates without telling the model~~ ✅ ALREADY HANDLED (verified 2026-04-22)
 - **Location:** `agent.py:13, 287-289`
