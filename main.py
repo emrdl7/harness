@@ -221,7 +221,7 @@ def _flush_tokens():
     _spinner.stop()
     text = ''.join(_token_buf).strip()
     if text:
-        console.print(f'\n[orange3]● {_BANNER_MODEL}[/orange3]')
+        console.print(f'\n[orange3]● {config.MODEL}[/orange3]')
         console.out(text, highlight=False)
     _token_buf.clear()
 
