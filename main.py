@@ -109,6 +109,7 @@ SLASH_COMMANDS = {
     '/undo':     '마지막 질문·응답 취소',
     '/plan':     '로컬 모델이 플랜 작성 후 실행  ex) /plan 인증 모듈 리팩터링',
     '/cplan':    'Claude가 플랜 작성 → 로컬 모델이 실행  ex) /cplan 인증 모듈 리팩터링',
+    '/cloop':    'Claude ↔ 로컬 모델 협업 루프 (계획→실행→검토 반복)  ex) /cloop 인증 모듈 리팩터링',
     '/index':    '코드베이스 인덱싱',
     '/improve':  '하네스 자기 분석 및 개선',
     '/learn':    '세션 분석 후 HARNESS.md 즉시 갱신',
@@ -856,6 +857,118 @@ def do_cplan(task: str, session_msgs: list, working_dir: str, profile: dict) -> 
     return session_msgs
 
 
+# ── /cloop: Claude ↔ harness 협업 루프 ───────────────────────────
+_CLOOP_PLAN_TMPL = '''\
+다음 작업을 분석하고 실행 계획을 작성해줘.
+작업 디렉토리: {working_dir}
+작업: {task}
+
+형식:
+1. 각 단계를 번호 목록으로
+2. 어떤 파일을 읽고/쓸지 명시
+3. 코드 변경이 필요하면 핵심 로직 포함
+4. 주의사항/엣지케이스 언급
+
+로컬 코딩 모델이 이 플랜만 보고 바로 실행할 수 있도록 구체적으로 작성해.
+'''
+
+_CLOOP_REVIEW_TMPL = '''\
+로컬 모델이 작업을 실행했습니다. 결과를 검토하고 다음 중 하나로 답해줘:
+
+[실행 결과]
+{result_summary}
+
+원래 작업: {task}
+
+- 작업이 완료됐으면: 첫 줄에 [완료] 라고 쓰고 요약해줘
+- 수정/추가 작업이 필요하면: 구체적인 보정 지시사항을 작성해줘 (로컬 모델이 바로 실행할 수 있게)
+'''
+
+_CLOOP_MAX_ROUNDS = 5
+
+
+def _summarize_session_for_claude(msgs: list, last_n: int = 10) -> str:
+    '''최근 메시지에서 툴 실행 결과를 요약.'''
+    parts = []
+    for m in msgs[-last_n:]:
+        role = m.get('role', '')
+        content = str(m.get('content', ''))[:500]
+        if role == 'tool':
+            parts.append(f'[툴 결과] {content}')
+        elif role == 'assistant' and content:
+            parts.append(f'[모델 응답] {content}')
+    return '\n'.join(parts) or '(결과 없음)'
+
+
+def do_claude_loop(task: str, session_msgs: list, working_dir: str, profile: dict) -> list:
+    if not claude_available():
+        console.print('  [tool.fail]✗[/tool.fail] claude CLI를 찾을 수 없습니다')
+        return session_msgs
+
+    snippets = get_context_snippets(task, working_dir, profile)
+
+    for round_num in range(1, _CLOOP_MAX_ROUNDS + 1):
+        # ── Claude: 계획 or 검토 ──────────────────────────────────
+        if round_num == 1:
+            prompt = _CLOOP_PLAN_TMPL.format(task=task, working_dir=working_dir)
+            console.print(f'\n[bold blue]● Claude[/bold blue] [dim]({round_num}라운드) 플랜 작성 중...[/dim]')
+        else:
+            result_summary = _summarize_session_for_claude(session_msgs)
+            prompt = _CLOOP_REVIEW_TMPL.format(task=task, result_summary=result_summary)
+            console.print(f'\n[bold blue]● Claude[/bold blue] [dim]({round_num}라운드) 결과 검토 중...[/dim]')
+
+        collected = []
+        try:
+            def _tok(line):
+                collected.append(line)
+                console.print(line, end='', highlight=False, markup=False)
+            claude_ask(prompt, on_token=_tok, cwd=working_dir)
+        except (RuntimeError, KeyboardInterrupt) as e:
+            console.print(f'\n  [tool.fail]✗[/tool.fail] {e}')
+            break
+
+        claude_response = ''.join(collected).strip()
+        console.print('\n')
+
+        if not claude_response:
+            break
+
+        session_msgs.append({'role': 'user', 'content': f'[Claude {round_num}라운드]\n{claude_response}'})
+
+        # 완료 신호 감지
+        if '[완료]' in claude_response or '[DONE]' in claude_response.upper():
+            console.print('  [tool.ok]✓[/tool.ok] [bold]Claude가 작업 완료를 확인했습니다[/bold]')
+            break
+
+        # ── harness: 실행 ─────────────────────────────────────────
+        execute_prompt = (
+            f'아래 지시사항을 실행해줘. 파일 읽기/쓰기가 필요하면 도구를 사용해.\n\n'
+            f'{claude_response}\n\n원래 작업: {task}'
+        )
+
+        console.print(f'\n[dim]● {config.MODEL} ({round_num}라운드 실행)[/dim]')
+        _ui.reset()
+
+        _, session_msgs = agent.run(
+            execute_prompt,
+            session_messages=session_msgs,
+            working_dir=working_dir,
+            profile=profile,
+            context_snippets=snippets,
+            on_token=on_token,
+            on_tool=on_tool,
+            confirm_write=confirm_write if profile.get('confirm_writes', True) else None,
+            confirm_bash=confirm_bash if profile.get('confirm_bash', True) else None,
+            hooks=profile.get('hooks', {}),
+        )
+        _response_footer()
+
+    else:
+        console.print(f'  [warn]⚠[/warn] 최대 라운드({_CLOOP_MAX_ROUNDS})에 도달했습니다')
+
+    return session_msgs
+
+
 # ── 슬래시 핸들러 ─────────────────────────────────────────────────
 def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, undo_count: int = 0) -> tuple[list, str, int]:
     parts = cmd.strip().split(maxsplit=1)
@@ -894,6 +1007,14 @@ def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, 
             console.print('  [warn]사용법:[/warn] /cplan <작업 내용>')
             return session_msgs, working_dir, undo_count
         session_msgs = do_cplan(query, session_msgs, working_dir, profile)
+        return session_msgs, working_dir, undo_count
+
+    if name == '/cloop':
+        query = parts[1] if len(parts) > 1 else ''
+        if not query:
+            console.print('  [warn]사용법:[/warn] /cloop <작업 내용>')
+            return session_msgs, working_dir, undo_count
+        session_msgs = do_claude_loop(query, session_msgs, working_dir, profile)
         return session_msgs, working_dir, undo_count
 
     if name == '/index':
