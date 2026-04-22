@@ -661,6 +661,24 @@ def _extract_cplan_task(text: str) -> str:
 
 
 # ── Claude CLI 호출 ───────────────────────────────────────────────
+_CLAUDE_CTX_HEAD = 400
+_CLAUDE_CTX_TAIL = 400
+
+
+def _truncate_for_claude(content: str) -> str:
+    '''CONCERNS.md §1.15 대응: head만 자르면 tool 결과(가장 중요한 tail)가
+    날아갔음. head+tail을 유지하고 중간 생략을 명시 마커로 표시.'''
+    max_chars = _CLAUDE_CTX_HEAD + _CLAUDE_CTX_TAIL
+    if len(content) <= max_chars:
+        return content
+    omitted = len(content) - max_chars
+    return (
+        content[:_CLAUDE_CTX_HEAD]
+        + f'\n…[중간 {omitted}자 생략]…\n'
+        + content[-_CLAUDE_CTX_TAIL:]
+    )
+
+
 def _build_claude_context(session_msgs: list, max_turns: int = 6) -> str:
     '''session_msgs에서 최근 대화를 컨텍스트 블록으로 변환.
     에이전트 레이블에 모델명을 붙여 Claude가 로컬 모델 답변임을 인식하게 함.'''
@@ -677,7 +695,7 @@ def _build_claude_context(session_msgs: list, max_turns: int = 6) -> str:
             role = f'로컬모델({local_model})'
         content = (m.get('content') or '').strip()
         if content:
-            lines.append(f'[{role}]: {content[:800]}')
+            lines.append(f'[{role}]: {_truncate_for_claude(content)}')
     lines.append('')
     return '\n'.join(lines)
 

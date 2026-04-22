@@ -19,8 +19,36 @@ _SUMMARY_PROMPT = (
 )
 
 
+_TOOL_RESULT_MAX_CHARS = 4000  # tool 결과 1개가 이 크기 넘으면 head+tail truncate
+
+
 def _chars(messages: list) -> int:
     return sum(len(json.dumps(m, ensure_ascii=False)) for m in messages)
+
+
+def _truncate_large_tool_outputs(messages: list) -> list:
+    '''CONCERNS.md §1.13 대응: 거대한 tool 결과가 KEEP_RECENT 윈도우에 남으면
+    compact해도 threshold를 못 내려 다음 턴에도 needs_compaction=True로 남는다.
+    개별 tool 메시지를 head+tail로 줄여 threshold 안쪽으로 끌어내린다.'''
+    out = []
+    for m in messages:
+        content = m.get('content')
+        if m.get('role') != 'tool' or not isinstance(content, str):
+            out.append(m)
+            continue
+        if len(content) <= _TOOL_RESULT_MAX_CHARS:
+            out.append(m)
+            continue
+        head = _TOOL_RESULT_MAX_CHARS // 2
+        tail = _TOOL_RESULT_MAX_CHARS - head
+        omitted = len(content) - _TOOL_RESULT_MAX_CHARS
+        new_content = (
+            content[:head]
+            + f'\n…[tool 결과 중간 {omitted}자 생략]…\n'
+            + content[-tail:]
+        )
+        out.append({**m, 'content': new_content})
+    return out
 
 
 def needs_compaction(messages: list) -> bool:
@@ -76,10 +104,14 @@ def compact(messages: list) -> tuple[list, int]:
 
     summary = _summarize(to_summarize)
     if not summary:
-        # 요약 실패 — 원본을 그대로 유지해 컨텍스트 손실 방지
+        # 요약 실패 — 원본 유지하되 거대 tool 결과는 줄여 다음 턴의 spin 방지
         import sys as _sys
         print('[compactor] 요약 생성 실패 — 세션 원본 유지', file=_sys.stderr)
-        return messages, 0
+        safe_messages = sys_msgs + _truncate_large_tool_outputs(non_sys)
+        return safe_messages, 0
+
+    # 성공 시에도 to_keep 내 대용량 tool 결과는 다듬어 threshold 여유 확보
+    to_keep = _truncate_large_tool_outputs(to_keep)
 
     # 기존 system 메시지에 요약을 덧붙임
     if sys_msgs:

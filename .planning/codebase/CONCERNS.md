@@ -110,7 +110,7 @@
 - **Description:** The custom spinner writes `\x1b[1A\r\x1b[K` directly to stdout from a daemon thread. If a `rich.Live` renderer is active concurrently (e.g. `/index` + pipe input race), the two compete for cursor position and produce broken frames. Low-probability but observed pattern with rich + raw ANSI.
 - **Suggestion:** Use `rich.live.Live` + `Spinner` everywhere and delete the hand-rolled spinner.
 
-### 1.13 `compact` recursion hazard on tiny sessions (Low)
+### 1.13 ~~`compact` recursion hazard on tiny sessions~~ ✅ FIXED 2026-04-23
 - **Location:** `session/compactor.py:26-29,66-70`
 - **Description:** `needs_compaction` returns True when non-system chars > 20 000. If `KEEP_RECENT=10` recent messages alone exceed 20 000 chars (single large tool output can do that — `MAX_TOOL_RESULT_CHARS=20_000` by itself), `compact` keeps returning the same list with `dropped=0` and the condition stays true → possible spin in long loops. Currently only called once per user turn, so it does not loop, but the invariant is fragile.
 - **Suggestion:** Compact based on token-weighted budget and truncate the largest individual message if trimming recents is insufficient.
@@ -120,12 +120,12 @@
 - **Description:** If Ollama is unreachable during compaction, the summary becomes `"(이전 N개 메시지 압축됨)"` — the original messages are still discarded. Agent continues with a system prompt that only says "N messages were compressed", losing all prior state.
 - **Suggestion:** On summarization failure, keep the original messages and skip compaction; surface the error.
 
-### 1.15 `_build_claude_context` truncates each message to 800 chars without marking truncation (Low)
+### 1.15 ~~`_build_claude_context` truncates each message to 800 chars without marking truncation~~ ✅ FIXED 2026-04-23
 - **Location:** `main.py:720-723`
 - **Description:** The slice `content[:800]` silently drops the tail. Claude reviewing results in `/cloop` may miss the actual outcome (tool outputs are the last part).
 - **Suggestion:** Use head+tail truncation with a `…[N chars omitted]…` marker, or prioritize the final N chars for tool outputs.
 
-### 1.16 `/improve` and `/learn` ignore `confirm_bash` and run hooks on a different working_dir (Medium)
+### 1.16 ~~`/improve` and `/learn` ignore `confirm_bash` and run hooks on a different working_dir~~ ✅ FIXED 2026-04-23 (BB-1 7차에서 confirm_bash 회복, 이번에 hooks 스코프 정리)
 - **Location:** `main.py:562-570` (improve), `main.py:622-630` (learn)
 - **Description:** `do_improve` passes `working_dir=HARNESS_DIR` but `profile=profile` (user's project profile). Hooks are loaded from the user project profile yet triggered for commands executed inside harness itself — wrong scope. Also no `confirm_bash` is wired, so `run_command` is uncontrolled.
 - **Suggestion:** When running self-improvement, load a `HARNESS_DIR`-scoped profile or use `profile={}` and wire both confirm callbacks.

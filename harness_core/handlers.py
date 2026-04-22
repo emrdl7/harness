@@ -155,6 +155,16 @@ _IMPROVE_VALIDATE_FILES = [
 ]
 
 
+def _profile_without_user_hooks(profile: dict) -> dict:
+    '''CONCERNS.md §1.16 대응: /improve, /learn은 HARNESS_DIR 또는 하네스 자기
+    맥락에서 실행되지만 state.profile은 사용자 프로젝트 설정. 그 프로젝트의
+    hooks가 잘못된 working_dir에서 발화되는 문제를 막기 위해 hooks만 비운다.
+    다른 키(모델·confirm_writes 등)는 유지.'''
+    out = dict(profile)
+    out['hooks'] = {}
+    return out
+
+
 def slash_improve(state: SlashState, ctx: SlashContext) -> SlashResult:
     '''/improve — 하네스 자기 개선.
 
@@ -192,7 +202,7 @@ def slash_improve(state: SlashState, ctx: SlashContext) -> SlashResult:
         prompt,
         system_prompt=system_prompt,
         working_dir=HARNESS_DIR,
-        profile=state.profile,
+        profile=_profile_without_user_hooks(state.profile),
     )
 
     validation = []
@@ -246,11 +256,13 @@ def slash_learn(state: SlashState, ctx: SlashContext) -> SlashResult:
     project_doc = state.profile.get('project_doc', '')
     learn_prompt = build_learn_prompt(summary, global_doc, project_doc, state.working_dir)
 
+    # /learn은 HARNESS.md 갱신만 수행 — 사용자 project의 임의 훅을 발화시키지 않도록
+    # hooks만 비운 profile로 실행.
     ctx.run_agent_ephemeral(
         learn_prompt,
         system_prompt=_LEARN_SYSTEM,
         working_dir=state.working_dir,
-        profile=state.profile,
+        profile=_profile_without_user_hooks(state.profile),
     )
     return SlashResult.ok(state, 'HARNESS.md 갱신 완료')
 
