@@ -12,4 +12,3 @@ benchmarks/
 .claw/
 .context-handoff.md
 harness_app.py
-harness_server.py
