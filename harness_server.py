@@ -9,6 +9,7 @@ import uuid
 from dataclasses import dataclass, field
 
 import websockets
+from websockets.exceptions import ConnectionClosed
 
 import agent
 import profile as prof
@@ -115,7 +116,7 @@ class Session:
         self.compact_count: int = 0
 
 
-# ── 공유 룸 (BB-2 Phase 1) ───────────────────────────────────────
+# ── 공유 룸 (BB-2 Phase 1+2.5) ───────────────────────────────────
 # 같은 room_name으로 접속한 WS들이 하나의 Session을 공유한다.
 # 헤더가 없는 솔로 모드는 매 연결마다 고유 UUID 룸을 받아 격리된다.
 @dataclass
@@ -123,8 +124,15 @@ class Room:
     name: str
     state: Session
     subscribers: set = field(default_factory=set)        # 현재 연결된 ws
+    # busy: 단일 스레드 asyncio라 await 없는 체크-set은 race-free.
+    # _handle_input 진입 시 set, finally에서 clear.
+    busy: bool = False
+    active_input_from: object = None                      # 현재 입력 중인 ws (DQ2 confirm 격리에 사용)
+    # 진행 중인 _handle_input task의 강한 참조 유지 (asyncio.create_task GC 회피).
+    # done 콜백으로 자동 discard.
+    input_tasks: set = field(default_factory=set)
+    # input_lock은 향후 Phase에서 더 정교한 큐잉이 필요할 때를 위해 유지 (현재 미사용).
     input_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    active_input_from: object = None                      # 현재 입력 중인 ws (Phase 2~4에서 사용)
 
 
 ROOMS: dict[str, Room] = {}
@@ -562,6 +570,125 @@ async def handler(ws):
         await _bump_remote_active(-1)
 
 
+async def _reader_loop(ws, queue: asyncio.Queue):
+    '''ws에서 raw를 받아 JSON 디코드 후 queue에 put. 종료 시 None 신호.
+
+    dispatch_loop가 input 처리에 막혀도 confirm_*_response 같은 후속 메시지를
+    계속 큐잉할 수 있게 하는 핵심 — Phase 2.5 deadlock 회피.
+    '''
+    try:
+        async for raw in ws:
+            try:
+                msg = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            await queue.put(msg)
+    except ConnectionClosed:
+        pass
+    finally:
+        await queue.put(None)
+
+
+def _spawn_input_task(room: 'Room', coro):
+    '''_handle_input task 생성 + room.input_tasks 강한 참조 유지.
+
+    asyncio.create_task만으로는 GC될 위험 — 명시적으로 set에 저장하고
+    done 콜백으로 자동 discard.
+    '''
+    task = asyncio.create_task(coro)
+    room.input_tasks.add(task)
+    task.add_done_callback(room.input_tasks.discard)
+    return task
+
+
+async def _handle_input(ws, room: 'Room', text: str):
+    '''스폰된 input 처리 — busy/active_input_from clear는 finally에서만.
+
+    busy/active_input_from의 set은 _dispatch_loop에서 atomic하게 끝낸 후
+    이 함수를 spawn한다 (race 회피).
+    '''
+    try:
+        if text.startswith('/'):
+            await handle_slash(ws, room, text)
+        elif text.startswith('@claude '):
+            await run_claude(ws, room, text[8:].strip(), add_to_session=True)
+        else:
+            await run_agent(ws, room, text)
+            await broadcast_state(room)
+    except Exception as e:
+        await broadcast(room, type='error', text=f'입력 처리 오류: {e}')
+    finally:
+        room.busy = False
+        room.active_input_from = None
+
+
+async def _handle_cplan_execute(ws, room: 'Room', task: str):
+    '''cplan 승인 후 실행 — _handle_input과 동일한 busy 사이클을 따른다.'''
+    try:
+        execute_prompt = (
+            f'위에서 Claude가 작성한 플랜을 그대로 실행해줘.\n'
+            f'각 단계를 순서대로 처리하고 도구를 사용해.\n\n작업: {task}'
+        )
+        await run_agent(ws, room, execute_prompt)
+        await broadcast_state(room)
+    except Exception as e:
+        await broadcast(room, type='error', text=f'cplan 실행 오류: {e}')
+    finally:
+        room.busy = False
+        room.active_input_from = None
+
+
+async def _dispatch_loop(ws, room: 'Room', queue: asyncio.Queue):
+    '''queue에서 메시지 받아 dispatch. input/cplan_execute는 spawn해서
+    dispatch_loop가 confirm_*_response 같은 후속 메시지를 즉시 처리할 수 있도록.
+
+    busy 체크/set/spawn은 await 없는 동기 블록이라 race-free
+    (단일 스레드 asyncio + 다른 코루틴 양보 시점 없음).
+    '''
+    state = room.state
+    while True:
+        msg = await queue.get()
+        if msg is None:
+            return
+        t = msg.get('type')
+
+        if t == 'input':
+            text = msg.get('text', '').strip()
+            if not text:
+                continue
+            if room.busy:
+                # DQ3: 동시 입력 거부 + 룸 전체에 알림
+                await broadcast(room, type='room_busy')
+                continue
+            room.busy = True
+            room.active_input_from = ws
+            _spawn_input_task(room, _handle_input(ws, room, text))
+
+        elif t == 'cplan_execute':
+            task_text = msg.get('task', '')
+            if not task_text:
+                continue
+            if room.busy:
+                await broadcast(room, type='room_busy')
+                continue
+            room.busy = True
+            room.active_input_from = ws
+            _spawn_input_task(room, _handle_cplan_execute(ws, room, task_text))
+
+        elif t == 'confirm_write_response':
+            state._confirm_result = msg.get('result', False)
+            if state._confirm_event:
+                state._confirm_event.set()
+
+        elif t == 'confirm_bash_response':
+            state._confirm_bash_result = msg.get('result', False)
+            if state._confirm_bash_event:
+                state._confirm_bash_event.set()
+
+        elif t == 'ping':
+            await send(ws, type='pong')
+
+
 async def _run_session(ws):
     # 룸 식별: 헤더 있으면 공유 룸, 없으면 연결 단위 솔로 룸 (UUID).
     # 솔로 모드는 매 연결마다 고유 이름이라 회귀 없음.
@@ -585,52 +712,17 @@ async def _run_session(ws):
                 await send(ws, type='info', text=f'인덱싱 완료 {result["indexed"]}개 청크')
                 await send_state(ws, state)
 
+        # reader/dispatch 분리 (Phase 2.5):
+        # reader가 별도 코루틴이라 dispatch가 input 처리에 막혀도 큐는 계속 채워짐.
+        # → confirm_*_response가 즉시 dispatch에 도달해 데드락 회피.
+        queue: asyncio.Queue = asyncio.Queue()
+        reader_task = asyncio.create_task(_reader_loop(ws, queue))
         try:
-            async for raw in ws:
-                try:
-                    msg = json.loads(raw)
-                except json.JSONDecodeError:
-                    continue
-
-                t = msg.get('type')
-
-                if t == 'input':
-                    text = msg.get('text', '').strip()
-                    if not text:
-                        continue
-                    if text.startswith('/'):
-                        await handle_slash(ws, room, text)
-                    elif text.startswith('@claude '):
-                        await run_claude(ws, room, text[8:].strip(), add_to_session=True)
-                    else:
-                        await run_agent(ws, room, text)
-                        await broadcast_state(room)
-
-                elif t == 'confirm_write_response':
-                    state._confirm_result = msg.get('result', False)
-                    if state._confirm_event:
-                        state._confirm_event.set()
-
-                elif t == 'confirm_bash_response':
-                    state._confirm_bash_result = msg.get('result', False)
-                    if state._confirm_bash_event:
-                        state._confirm_bash_event.set()
-
-                elif t == 'cplan_execute':
-                    task = msg.get('task', '')
-                    if task:
-                        execute_prompt = (
-                            f'위에서 Claude가 작성한 플랜을 그대로 실행해줘.\n'
-                            f'각 단계를 순서대로 처리하고 도구를 사용해.\n\n작업: {task}'
-                        )
-                        await run_agent(ws, room, execute_prompt)
-                        await broadcast_state(room)
-
-                elif t == 'ping':
-                    await send(ws, type='pong')
-
-        except websockets.exceptions.ConnectionClosed:
-            pass
+            await _dispatch_loop(ws, room, queue)
+        finally:
+            reader_task.cancel()
+            # 진행 중인 input task는 자연 종료를 기대.
+            # 끊긴 ws에 대한 broadcast는 dead 정리 로직이 자동 처리.
     finally:
         room.subscribers.discard(ws)
         _maybe_drop_room(room)

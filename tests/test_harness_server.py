@@ -220,3 +220,176 @@ class TestBroadcastState:
         assert decoded['working_dir'] == room.state.working_dir
         assert 'compact_count' in decoded
         assert 'claude_available' in decoded
+
+
+# ── BB-2 Phase 2.5: reader/dispatch + busy turn-taking ──────────
+class TestRoomBusyDefaults:
+    def test_initial_state(self, isolated_rooms):
+        '''신규 Room은 busy/active_input_from 미설정, input_tasks 비어있음.'''
+        room = srv._get_or_create_room('r')
+        assert room.busy is False
+        assert room.active_input_from is None
+        assert room.input_tasks == set()
+
+
+class TestSpawnInputTask:
+    def test_task_kept_in_set_until_done(self, isolated_rooms):
+        '''create_task GC 회피 — input_tasks에 추가되고 완료 후 자동 제거.'''
+        room = srv._get_or_create_room('r')
+
+        async def _payload():
+            return 'done'
+
+        async def _go():
+            t = srv._spawn_input_task(room, _payload())
+            assert t in room.input_tasks
+            await t
+            return t
+
+        task = asyncio.run(_go())
+        # done callback이 즉시 실행됐는지 확인 — asyncio.run 종료 후 자연스럽게 비어있음
+        assert task.done()
+
+
+class TestDispatchLoop:
+    @staticmethod
+    def _make_queue(items):
+        '''미리 준비한 메시지 리스트를 담은 asyncio.Queue 반환 (None 종료 포함).'''
+        q: asyncio.Queue = asyncio.Queue()
+        for item in items:
+            q.put_nowait(item)
+        q.put_nowait(None)
+        return q
+
+    def test_ping_returns_pong(self, isolated_rooms):
+        room = srv._get_or_create_room('r')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        q = self._make_queue([{'type': 'ping'}])
+        asyncio.run(srv._dispatch_loop(ws, room, q))
+        assert any('"type": "pong"' in p for p in ws.received)
+
+    def test_confirm_response_sets_event_and_result(self, isolated_rooms):
+        '''confirm_*_response가 즉시 처리되어 state.event를 set한다 (deadlock 회피 핵심).'''
+        room = srv._get_or_create_room('r')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+
+        async def _go():
+            ev = asyncio.Event()
+            room.state._confirm_event = ev
+            room.state._confirm_result = False
+            q = self._make_queue([
+                {'type': 'confirm_write_response', 'result': True},
+            ])
+            await srv._dispatch_loop(ws, room, q)
+            return ev.is_set(), room.state._confirm_result
+
+        was_set, result = asyncio.run(_go())
+        assert was_set is True
+        assert result is True
+
+    def test_input_busy_rejects_second(self, isolated_rooms, monkeypatch):
+        '''두 번째 input이 들어오면 room_busy로 거부 (DQ3).
+
+        첫 번째 input은 spawn되어 busy=True 상태로 진행 중. 두 번째는
+        busy 체크에서 broadcast로 거부.
+        '''
+        import json as _json
+
+        room = srv._get_or_create_room('r')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+
+        # _handle_input을 잠시 멈추는 fake로 교체 — 첫 task가 진짜 busy 상태로 머물게.
+        slow_started = asyncio.Event()
+        slow_release = asyncio.Event()
+
+        async def _slow(ws_, room_, text_):
+            try:
+                slow_started.set()
+                await slow_release.wait()
+            finally:
+                room_.busy = False
+                room_.active_input_from = None
+
+        monkeypatch.setattr(srv, '_handle_input', _slow)
+
+        async def _go():
+            q: asyncio.Queue = asyncio.Queue()
+            q.put_nowait({'type': 'input', 'text': 'first'})
+            # dispatch_loop를 background에서 돌리고, 첫 task가 busy=True 잡을 시간을 줌
+            dispatch_task = asyncio.create_task(srv._dispatch_loop(ws, room, q))
+            await slow_started.wait()
+            assert room.busy is True
+            assert room.active_input_from is ws
+            # 두 번째 input — busy라 거부되어야
+            q.put_nowait({'type': 'input', 'text': 'second'})
+            # 거부 메시지 broadcast가 돌도록 잠시 양보
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            # spawn된 첫 task 풀어주고 dispatch 종료
+            slow_release.set()
+            q.put_nowait(None)
+            await dispatch_task
+
+        asyncio.run(_go())
+        decoded = [_json.loads(p) for p in ws.received]
+        # room_busy가 한 번 도달해야 함
+        assert any(d.get('type') == 'room_busy' for d in decoded)
+
+    def test_empty_input_ignored(self, isolated_rooms):
+        room = srv._get_or_create_room('r')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        q = self._make_queue([{'type': 'input', 'text': '   '}])
+        asyncio.run(srv._dispatch_loop(ws, room, q))
+        # busy 변화 없음, ws에 아무것도 안 보냄
+        assert room.busy is False
+        assert ws.received == []
+
+    def test_cplan_execute_busy_check(self, isolated_rooms, monkeypatch):
+        '''cplan_execute도 busy 시 거부된다.'''
+        import json as _json
+        room = srv._get_or_create_room('r')
+        room.busy = True  # 미리 busy 상태
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        q = self._make_queue([{'type': 'cplan_execute', 'task': 'do something'}])
+        asyncio.run(srv._dispatch_loop(ws, room, q))
+        decoded = [_json.loads(p) for p in ws.received]
+        assert any(d.get('type') == 'room_busy' for d in decoded)
+
+
+class TestReaderLoop:
+    def test_invalid_json_skipped_then_none(self, isolated_rooms):
+        '''JSON 파싱 실패는 무시, ws 종료 시 None.'''
+        from websockets.exceptions import ConnectionClosed
+
+        class _ClosingWS:
+            '''몇 개 메시지를 yield 후 ConnectionClosed 발생.'''
+            def __init__(self, items):
+                self.items = items
+
+            def __aiter__(self):
+                self._iter = iter(self.items)
+                return self
+
+            async def __anext__(self):
+                try:
+                    return next(self._iter)
+                except StopIteration:
+                    raise ConnectionClosed(None, None)
+
+        async def _go():
+            ws = _ClosingWS(['not json', '{"type":"ping"}'])
+            q: asyncio.Queue = asyncio.Queue()
+            await srv._reader_loop(ws, q)
+            collected = []
+            while not q.empty():
+                collected.append(await q.get())
+            return collected
+
+        items = asyncio.run(_go())
+        # 잘못된 JSON은 스킵, 유효한 메시지만 + 종료 None
+        assert items == [{'type': 'ping'}, None]
