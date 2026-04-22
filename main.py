@@ -31,9 +31,8 @@ import context
 import harness_core
 import session as sess
 from session.logger import read_recent
-from session.analyzer import summarize_session, build_learn_prompt
 from session.compactor import needs_compaction, compact
-from tools.improve import backup_sources, validate_python, read_sources, list_backups, restore_backup, HARNESS_DIR
+from tools.improve import list_backups, restore_backup, HARNESS_DIR
 from tools.mcp import StdioMCPClient
 from tools import register_mcp_tools
 import evolution
@@ -591,126 +590,6 @@ def print_welcome(working_dir: str):
     console.print(
         '  [dim]/ 명령어  ·  @claude 질문  ·  /help 도움말[/dim]\n'
     )
-
-
-# ── /improve ──────────────────────────────────────────────────────
-IMPROVE_SYSTEM = '''당신은 이 하네스 시스템의 자기 개선 전문가입니다.
-다음 단계로 개선을 수행하세요:
-
-1. 실패 로그를 분석해 반복되는 문제 패턴을 파악하세요
-2. 소스 코드를 읽어 해당 문제의 근본 원인을 찾으세요
-3. 구체적인 개선안을 코드로 작성하고 write_file로 적용하세요
-
-수정 가능한 파일 (HARNESS_DIR 기준):
-- config.py, agent.py
-- tools/__init__.py, tools/fs.py, tools/shell.py, tools/git.py
-- context/indexer.py, context/retriever.py
-
-주의사항:
-- 파일 전체를 교체할 때만 write_file을 사용하세요
-- 수정 후 반드시 run_command("python3 -m py_compile <파일>")로 검증하세요
-- 검증 실패 시 원래대로 복구하세요
-- 작업이 끝나면 어떤 파일을 왜 수정했는지 요약하세요
-'''
-
-
-def do_improve(session_msgs: list, working_dir: str, profile: dict) -> list:
-    console.print('[dim]최근 실패 로그 수집 중...[/dim]')
-    logs = read_recent(days=7)
-    sources = read_sources()
-
-    console.print('[dim]백업 생성 중...[/dim]')
-    backup_path = backup_sources()
-    console.print(f'  [tool.ok]✓[/tool.ok] 백업  [dim]{backup_path}[/dim]\n')
-
-    improve_input = f'''최근 실패 로그:
-{logs}
-
----
-하네스 소스 코드:
-{sources[:12000]}
-
-위 로그와 소스를 분석해 개선이 필요한 부분을 찾고 수정하세요.
-수정 후 각 파일을 py_compile로 검증하세요.'''
-
-    improve_session = [{'role': 'system', 'content': IMPROVE_SYSTEM + f'\nHARNESS_DIR: {HARNESS_DIR}'}]
-
-    console.print('[bold cyan]── 자기 개선[/bold cyan]')
-    _ui.reset()
-
-    _, improve_session = agent.run(
-        improve_input,
-        session_messages=improve_session,
-        working_dir=HARNESS_DIR,
-        profile=profile,
-        on_token=on_token,
-        on_tool=on_tool,
-        confirm_write=confirm_write,
-    )
-
-    _response_footer()
-
-    console.print('[dim]수정 파일 검증 중...[/dim]')
-    all_ok = True
-    for rel in ['config.py', 'agent.py', 'tools/__init__.py', 'tools/fs.py', 'tools/shell.py']:
-        fpath = os.path.join(HARNESS_DIR, rel)
-        if os.path.exists(fpath):
-            r = validate_python(fpath)
-            if r['ok']:
-                console.print(f'  [tool.ok]✓[/tool.ok] {rel}')
-            else:
-                console.print(f'  [tool.fail]✗[/tool.fail] {rel}  [dim]{r["error"]}[/dim]')
-                all_ok = False
-
-    if not all_ok:
-        console.print('\n[warn]문법 오류 발견 — /restore 로 롤백 가능[/warn]')
-    else:
-        console.print('\n  [tool.ok]✓[/tool.ok] 모든 파일 검증 통과')
-
-    return session_msgs
-
-
-# ── /learn ────────────────────────────────────────────────────────
-LEARN_SYSTEM = '''당신은 하네스의 자기학습 에이전트입니다.
-세션 분석 결과를 바탕으로 HARNESS.md 파일을 개선하세요.
-
-규칙:
-- 기존 내용을 먼저 read_file로 확인 후 수정
-- 중복 내용 추가 금지
-- 마크다운 형식 유지
-- 변경이 없으면 파일을 건드리지 말 것
-- 완료 후 어떤 내용을 추가/수정했는지 한 줄 요약
-'''
-
-
-def do_learn(session_msgs: list, working_dir: str, profile: dict) -> list:
-    if not session_msgs or len([m for m in session_msgs if m['role'] == 'user']) == 0:
-        console.print('[dim]학습할 세션 내용이 없습니다[/dim]')
-        return session_msgs
-
-    console.print('[dim]세션 분석 중...[/dim]')
-    summary = summarize_session(session_msgs)
-    global_doc = profile.get('global_doc', '')
-    project_doc = profile.get('project_doc', '')
-    learn_prompt = build_learn_prompt(summary, global_doc, project_doc, working_dir)
-    learn_session = [{'role': 'system', 'content': LEARN_SYSTEM}]
-
-    console.print('[bold cyan]── 세션 학습[/bold cyan]')
-    _ui.reset()
-
-    _, learn_session = agent.run(
-        learn_prompt,
-        session_messages=learn_session,
-        working_dir=working_dir,
-        profile={},
-        on_token=on_token,
-        on_tool=on_tool,
-        confirm_write=confirm_write,
-    )
-
-    _response_footer()
-    console.print('  [tool.ok]✓[/tool.ok] HARNESS.md 갱신 완료\n')
-    return session_msgs
 
 
 # ── 자연어 /cplan 의도 감지 ───────────────────────────────────────
