@@ -11,12 +11,16 @@ class SlashContext:
     기존 순수 핸들러(/clear, /undo 등)는 ctx를 받지만 무시한다.
 
     Fields:
-      run_agent: agent 실행 콜백.
+      run_agent: 메인 세션용 agent 실행 콜백.
         시그니처: (user_input: str, *, plan_mode: bool = False, context_snippets: str = '') -> None
         main의 _run_agent / server의 run_agent를 어댑트해서 주입.
-        None이면 agent 의존 핸들러는 error notice 반환.
+
+      run_agent_ephemeral: 별도 임시 세션 실행용. /improve, /learn에서 사용.
+        시그니처: (user_input: str, *, system_prompt: str, working_dir: str, profile: dict) -> None
+        에이전트는 별도 세션으로 실행되고 그 결과는 main 세션(state.messages)에 반영되지 않는다.
     '''
     run_agent: Optional[Callable] = None
+    run_agent_ephemeral: Optional[Callable] = None
 
 
 @dataclass

@@ -1051,7 +1051,7 @@ def do_claude_loop(task: str, session_msgs: list, working_dir: str, profile: dic
 
 # ── 슬래시 핸들러 ─────────────────────────────────────────────────
 # harness_core로 위임할 슬래시. /help는 _print_help의 풍성한 표를 유지하기 위해 제외.
-_CORE_DELEGATED_SLASHES = {'/clear', '/undo', '/cd', '/init', '/save', '/resume', '/sessions', '/files', '/index', '/plan'}
+_CORE_DELEGATED_SLASHES = {'/clear', '/undo', '/cd', '/init', '/save', '/resume', '/sessions', '/files', '/index', '/plan', '/improve'}
 
 
 def _render_core_notice(notice: str, level: str) -> None:
@@ -1103,10 +1103,9 @@ def _render_files_tree(tree_dict: dict) -> None:
     console.print()
 
 
-def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, undo_count: int = 0, run_agent=None) -> tuple[list, str, int]:
-    '''run_agent: main()의 nested _run_agent 함수를 DI로 받음.
-    /plan 같은 슬래시는 agent 실행이 필요하므로 호출자가 주입해야 한다.
-    None인 경우 해당 슬래시는 내부 오류로 처리된다.'''
+def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, undo_count: int = 0, run_agent=None, run_agent_ephemeral=None) -> tuple[list, str, int]:
+    '''run_agent / run_agent_ephemeral: main()의 nested 함수들을 DI로 받아
+    harness_core.SlashContext로 포장해 dispatch에 전달.'''
     parts = cmd.strip().split(maxsplit=1)
     name = parts[0]
 
@@ -1118,7 +1117,10 @@ def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, 
             profile=profile,
             undo_count=undo_count,
         )
-        core_ctx = harness_core.SlashContext(run_agent=run_agent)
+        core_ctx = harness_core.SlashContext(
+            run_agent=run_agent,
+            run_agent_ephemeral=run_agent_ephemeral,
+        )
         result = harness_core.dispatch(cmd, core_state, core_ctx)
         if result.handled:
             # 추가 데이터 렌더 (notice로 표현 안 되는 것)
@@ -1132,6 +1134,18 @@ def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, 
                     f'[bold]{result.data.get("indexed", 0)}[/bold]개 청크  '
                     f'[dim](건너뜀 {result.data.get("skipped", 0)}개)[/dim]\n'
                 )
+            elif name == '/improve':
+                backup = result.data.get('backup', '')
+                if backup:
+                    console.print(f'  [tool.ok]✓[/tool.ok] 백업  [dim]{backup}[/dim]')
+                for v in result.data.get('validation', []):
+                    if v['ok']:
+                        console.print(f'  [tool.ok]✓[/tool.ok] {v["file"]}')
+                    else:
+                        console.print(f'  [tool.fail]✗[/tool.fail] {v["file"]}  [dim]{v["error"]}[/dim]')
+                if result.notice:
+                    _render_core_notice(result.notice, result.level)
+                console.print()
             elif result.notice:
                 _render_core_notice(result.notice, result.level)
             return (result.state.messages, result.state.working_dir, result.state.undo_count)
@@ -1161,11 +1175,6 @@ def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, 
             console.print('  [warn]사용법:[/warn] /cloop <작업 내용>')
             return session_msgs, working_dir, undo_count
         session_msgs = do_claude_loop(query, session_msgs, working_dir, profile)
-        return session_msgs, working_dir, undo_count
-
-    if name == '/improve':
-        session_msgs = do_improve(session_msgs, working_dir, profile)
-        console.print()
         return session_msgs, working_dir, undo_count
 
     if name == '/learn':
@@ -1619,6 +1628,28 @@ def main():
         _run_agent(user_input, plan_mode=plan_mode, context_snippets=context_snippets)
         _response_footer()
 
+    def _run_agent_ephemeral(user_input, *, system_prompt, working_dir, profile):
+        '''/improve, /learn용 — 메인 세션과 분리된 임시 세션으로 agent 실행.'''
+        session = [{'role': 'system', 'content': system_prompt}]
+        _token_buf.clear()
+        _unknown_tools.clear()
+        _response_header()
+        _ui.reset()
+        _spinner.start()
+        agent.run(
+            user_input,
+            session_messages=session,
+            working_dir=working_dir,
+            profile=profile,
+            on_token=on_token,
+            on_tool=_effective_on_tool,
+            confirm_write=_cw if profile.get('confirm_writes', True) else None,
+            confirm_bash=_cb if profile.get('confirm_bash', True) else None,
+            hooks=profile.get('hooks', {}),
+        )
+        _flush_tokens()
+        _response_footer()
+
     # -p / --print one-shot 모드
     if args.one_shot:
         query = args.one_shot
@@ -1719,6 +1750,7 @@ def main():
                 session_msgs, working_dir, undo_count = handle_slash(
                     user_input, session_msgs, working_dir, profile, undo_count,
                     run_agent=_run_agent_for_core,
+                    run_agent_ephemeral=_run_agent_ephemeral,
                 )
                 if user_input.startswith('/cd'):
                     profile = prof.load(working_dir)

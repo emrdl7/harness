@@ -121,6 +121,92 @@ def _build_tree(working_dir: str, max_depth: int = 3) -> dict:
     return _walk(working_dir, 1) or {'name': os.path.basename(working_dir), 'children': []}
 
 
+_IMPROVE_SYSTEM = '''당신은 이 하네스 시스템의 자기 개선 전문가입니다.
+다음 단계로 개선을 수행하세요:
+
+1. 실패 로그를 분석해 반복되는 문제 패턴을 파악하세요
+2. 소스 코드를 읽어 해당 문제의 근본 원인을 찾으세요
+3. 구체적인 개선안을 코드로 작성하고 write_file로 적용하세요
+
+수정 가능한 파일 (HARNESS_DIR 기준):
+- config.py, agent.py
+- tools/__init__.py, tools/fs.py, tools/shell.py, tools/git.py
+- context/indexer.py, context/retriever.py
+
+주의사항:
+- 파일 전체를 교체할 때만 write_file을 사용하세요
+- 수정 후 반드시 run_command("python3 -m py_compile <파일>")로 검증하세요
+- 검증 실패 시 원래대로 복구하세요
+- 작업이 끝나면 어떤 파일을 왜 수정했는지 요약하세요
+'''
+
+_IMPROVE_VALIDATE_FILES = [
+    'config.py', 'agent.py',
+    'tools/__init__.py', 'tools/fs.py', 'tools/shell.py',
+]
+
+
+def slash_improve(state: SlashState, ctx: SlashContext) -> SlashResult:
+    '''/improve — 하네스 자기 개선.
+
+    1. 최근 실패 로그 수집 + 현재 소스 읽기
+    2. backup_sources()로 스냅샷
+    3. ctx.run_agent_ephemeral로 별도 세션에서 agent 실행
+    4. py_compile 검증 결과 data['validation']에 담아 반환
+
+    drift 정리: server와 main이 이제 동일한 검증/피드백 경로를 사용.
+    '''
+    if ctx.run_agent_ephemeral is None:
+        return SlashResult.error(state, '내부 오류: run_agent_ephemeral 콜백이 없습니다')
+
+    from session.logger import read_recent
+    from tools.improve import (
+        backup_sources, read_sources, validate_python, HARNESS_DIR,
+    )
+
+    logs = read_recent(days=7)
+    sources = read_sources()
+    backup_path = backup_sources()
+
+    prompt = (
+        '최근 실패 로그:\n'
+        f'{logs}\n\n'
+        '---\n'
+        '하네스 소스 코드:\n'
+        f'{sources[:12000]}\n\n'
+        '위 로그와 소스를 분석해 개선이 필요한 부분을 찾고 수정하세요.\n'
+        '수정 후 각 파일을 py_compile로 검증하세요.'
+    )
+    system_prompt = _IMPROVE_SYSTEM + f'\nHARNESS_DIR: {HARNESS_DIR}'
+
+    ctx.run_agent_ephemeral(
+        prompt,
+        system_prompt=system_prompt,
+        working_dir=HARNESS_DIR,
+        profile=state.profile,
+    )
+
+    validation = []
+    all_ok = True
+    for rel in _IMPROVE_VALIDATE_FILES:
+        fpath = os.path.join(HARNESS_DIR, rel)
+        if not os.path.exists(fpath):
+            continue
+        r = validate_python(fpath)
+        validation.append({
+            'file': rel,
+            'ok': r['ok'],
+            'error': r.get('error', ''),
+        })
+        if not r['ok']:
+            all_ok = False
+
+    if all_ok:
+        return SlashResult.ok(state, '개선 완료', backup=backup_path, validation=validation)
+    return SlashResult.warn(state, '문법 오류 발견 — /restore 로 롤백 가능',
+                            backup=backup_path, validation=validation)
+
+
 def slash_plan(state: SlashState, ctx: SlashContext, query: str) -> SlashResult:
     '''/plan <작업> — agent를 plan_mode=True로 실행.
 
