@@ -36,13 +36,20 @@
 
 ### 🟡 개발 품질 — 여유 될 때
 
-- `main.py` ↔ `harness_server.py` 오케스트레이션 중복 (§3.2) — `HarnessCore` 공통 모듈로 추출. 이미 `confirm_write` 시그니처 drift 발생
-- 테스트 0개, `pyproject.toml` 없음, Python 3.14 venv (프리릴리스) — 최소 pytest + 핵심 플로우 smoke test
-- `.gitignore` 모순: `harness_server.py`, `harness_app.py`가 gitignore에 있는데 tracked 상태
+- [x] `main.py` ↔ `harness_server.py` 오케스트레이션 중복 (§3.2) — **✅ FIXED 2026-04-23 (BB-1, harness_core/ 모듈로 13/14 슬래시 통합)**
+- [x] 테스트 0개, `pyproject.toml` 없음 — **✅ FIXED 2026-04-22 (`df96a0d`, smoke 52건 → 현재 pytest 160건)**
+- [x] `.gitignore` 모순 — **✅ FIXED 2026-04-22 (`22a8e23`)**
 
 ### ⚪ 나중에
 
-- `harness_app.py` 상태 결정 (Textual TUI 유지 vs 제거)
+- [x] `harness_app.py` 상태 결정 — **✅ 제거 완료 2026-04-22 (`22a8e23`)**
+
+### 🟠 잔여 미해결 항목 요약 (2026-04-23 기준)
+
+- §1 Bugs: **5건** — 1.4(M, /commit+/push double-run), 1.9(M, hooks swallow), 1.10(H, run_command shell-quoting), 1.12(M, spinner vs Live), 1.21(H, no Ollama retry)
+- §2 Security: **2건** — 2.8(L, manual YAML), 2.10(M, per-conn HARNESS_CWD)
+- §3 Architecture: ~11건 (3.2/3.3 닫힘) — 3.1(H, main.py 1666줄)이 가장 큼
+- §4 Performance: 5건 (전부 L/M)
 
 ---
 
@@ -236,15 +243,15 @@
 - **Description:** Symptoms: 3 duplicate spinners (`_Spinner` class, `rich.Live`, custom frames), global mutable state (`_token_buf`, `_ctx_display`, `_ui`, `_spinner`), 20+ module-level helpers, `handle_slash` is a ~300-line if/elif chain. Adding a new slash command requires editing 4 places (SLASH_COMMANDS, handler, help, completer meta).
 - **Suggestion:** Extract a `commands/` package where each slash command is a module with `{name, help, handler(ctx, args)}`. Register them in a dict. Move UI into `ui/cli.py`.
 
-### 3.2 `main.py` and `harness_server.py` re-implement the same orchestration (High)
-- **Location:** `main.py` 973-1287 vs `harness_server.py` 178-314
-- **Description:** Two divergent copies of `/improve`, `/learn`, `/cplan`, `/clear`, `/index`, `/cd` etc. Any bug fix must be applied twice (as seen with `confirm_write` signature drift — §1.3). `harness_app.py` (909 lines) is a third Textual-based copy.
-- **Suggestion:** Factor a pure `HarnessCore` class: `submit(input, callbacks) -> messages`. Have all three frontends (CLI / WS server / Textual) consume it. Delete `harness_app.py` or mark it experimental.
+### 3.2 ~~`main.py` and `harness_server.py` re-implement the same orchestration~~ ✅ FIXED (BB-1 1~9차 + 완결, 2026-04-23)
+- **Location (당시):** `main.py` 973-1287 vs `harness_server.py` 178-314
+- **Description:** Two divergent copies of `/improve`, `/learn`, `/cplan`, `/clear`, `/index`, `/cd` etc. Any bug fix must be applied twice (as seen with `confirm_write` signature drift — §1.3).
+- **Fix applied:** `harness_core/{types,handlers,router}.py` 신설. 13/14 슬래시 양쪽 통합 (`/clear /undo /cd /init /save /resume /sessions /files /index /plan /cplan /improve /learn`). `/help`만 main 특화 유지 의도. `harness_app.py`는 별도 커밋(`22a8e23`)에서 제거. confirm_write/learn profile/improve on_tool drift 모두 정리.
 
-### 3.3 Circular-import smell: `harness_server.py` imports `CPLAN_PROMPT_TMPL` from `main` (Medium)
-- **Location:** `harness_server.py:211`
-- **Description:** Server does `from main import CPLAN_PROMPT_TMPL` inside a handler. `main.py` imports `agent`, `session`, `evolution`, etc. at module top; importing `main` inside the server triggers the entire REPL module to execute (banner, argparse setup) — it "works" only because `if __name__ == '__main__'` gates the REPL loop.
-- **Suggestion:** Move shared prompts into `prompts.py`.
+### 3.3 ~~Circular-import smell: `harness_server.py` imports `CPLAN_PROMPT_TMPL` from `main`~~ ✅ FIXED (BB-1 완결 `045b246`, 2026-04-23)
+- **Location (당시):** `harness_server.py:211`
+- **Description:** Server did `from main import CPLAN_PROMPT_TMPL` inside a handler — entire REPL module executed.
+- **Fix applied:** `slash_cplan` 핸들러를 `harness_core/handlers.py`로 이관. server는 `_sync_ask_claude`만 주입하는 형태로 변경. 런타임 `from main import` 제거.
 
 ### 3.4 `EDITABLE_FILES` allowlist is hardcoded in two places with no schema (Medium)
 - **Location:** `tools/improve.py:11-20`, referenced in `evolution/executor.py:90-91`
