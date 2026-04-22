@@ -9,6 +9,8 @@ from tools.shell import classify_command
 from tools.hooks import run_hook
 from session.logger import log_tool_failure, log_reflection
 
+MAX_TOOL_RESULT_CHARS = 20_000
+
 SYSTEM_PROMPT = f'''당신은 코드 작성 전문 AI 에이전트입니다.
 당신의 실제 모델명은 {config.MODEL}입니다. 자신의 정체를 물으면 이 모델명을 정확히 답하세요.
 Anthropic의 Claude가 아니며, Claude 기반이라고 주장하지 마세요.
@@ -25,6 +27,15 @@ Anthropic의 Claude가 아니며, Claude 기반이라고 주장하지 마세요.
 - 검색 결과가 충분하지 않으면 쿼리를 바꿔 재검색하거나 fetch_page로 관련 URL을 직접 열어보세요.
 - 검색 결과를 받으면 그 내용을 바탕으로 구체적으로 답변하세요. "결과에 없다"는 이유로 포기하지 마세요.
 - 성능 비교 질문은 반드시 수치(벤치마크 점수, 배수, %, 순위 등)로 답하세요. "더 빠르다", "더 좋다" 같은 막연한 표현은 금지. 수치가 스니펫에 없으면 fetch_page로 상세 페이지를 열어 수치를 직접 확인하세요.
+
+Claude 위임 규칙 (ask_claude):
+- 다음 상황에서는 ask_claude를 호출해 Claude에게 위임하세요:
+  · 동일한 접근 방법으로 2회 이상 실패한 경우
+  · 5개 이상의 파일에 걸친 아키텍처 수준의 리팩토링
+  · 원인을 알 수 없는 버그 디버깅
+  · 사용자가 "Claude에게", "더 정확하게", "claude로" 등을 명시한 경우
+- 다음은 직접 처리하세요 (ask_claude 사용 금지):
+  · 단순 파일 편집, 단일 함수 구현, 반복 패턴 작업, 문서화
 
 일반 규칙:
 - 현재 작업 디렉토리는 이 프롬프트에 명시되어 있으므로 별도 툴 호출 없이 직접 답변하세요.
@@ -156,6 +167,7 @@ def run(
 
     consecutive_failures = 0
     _start = time.time()
+    _tool_call_history: list[tuple[str, str]] = []  # (tool_name, args_hash)
 
     for iteration in range(config.MAX_ITERATIONS):
         if time.time() - _start > config.AGENT_TIMEOUT:
@@ -251,6 +263,9 @@ def run(
             if on_tool:
                 on_tool(fn_name, args, result)
 
+            # 반복 감지용 히스토리 기록
+            _tool_call_history.append((fn_name, json.dumps(args, sort_keys=True)))
+
             # post_tool_use 훅 (비동기 무시)
             run_hook(_hooks.get('post_tool_use', ''), 'post_tool_use',
                      tool=fn_name, args=args, result_ok=result.get('ok'), working_dir=working_dir)
@@ -261,9 +276,13 @@ def run(
                 log_tool_failure(fn_name, args, str(err)[:200], working_dir)
                 iteration_errors.append(f'{fn_name}: {str(err)[:120]}')
 
+            result_str = json.dumps(result, ensure_ascii=False)
+            if len(result_str) > MAX_TOOL_RESULT_CHARS:
+                omitted = len(result_str) - MAX_TOOL_RESULT_CHARS
+                result_str = result_str[:MAX_TOOL_RESULT_CHARS] + f'... [truncated: {omitted}자 생략. offset/limit으로 부분 읽기 또는 grep_search 사용]'
             session_messages.append({
                 'role': 'tool',
-                'content': json.dumps(result, ensure_ascii=False),
+                'content': result_str,
             })
 
         # 미등록 툴만 호출한 경우: 즉시 자연어 답변 유도
@@ -274,6 +293,22 @@ def run(
             })
             consecutive_failures = 0
             continue
+
+        # 반복 감지: 최근 3회 동일 툴+인자 반복 시 강제 개입
+        REPEAT_WINDOW = 3
+        if len(_tool_call_history) >= REPEAT_WINDOW:
+            recent = _tool_call_history[-REPEAT_WINDOW:]
+            if all(tc == recent[0] for tc in recent):
+                session_messages.append({
+                    'role': 'user',
+                    'content': (
+                        f'동일한 툴({recent[0][0]})을 같은 인자로 {REPEAT_WINDOW}회 반복했습니다. '
+                        '다른 접근 방법을 시도하거나, 진행이 불가능한 이유를 사용자에게 설명하세요.'
+                    ),
+                })
+                _tool_call_history.clear()
+                consecutive_failures = 0
+                continue
 
         # 반성 루프: 연속 실패 시 분석 유도
         if had_failure:

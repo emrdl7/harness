@@ -2,6 +2,18 @@ from .fs import read_file, write_file, edit_file, list_files, grep_search
 from .shell import run_command, run_python
 from .git import git_status, git_diff, git_log, git_diff_full, git_add, git_commit, git_checkout, git_stash
 from .web import search_web, fetch_page
+from .claude_cli import ask as _claude_ask_raw, is_available as _claude_available
+
+def ask_claude(query: str, context: str = '') -> dict:
+    '''Claude CLI에 위임. 로컬 모델이 해결하기 어려운 복잡한 작업에 사용.'''
+    if not _claude_available():
+        return {'ok': False, 'error': 'claude CLI를 찾을 수 없습니다.'}
+    try:
+        full = f'{context}\n\n{query}' if context else query
+        result = _claude_ask_raw(full)
+        return {'ok': True, 'response': result}
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .mcp import StdioMCPClient
@@ -234,6 +246,26 @@ TOOL_DEFINITIONS = [
             'required': ['url'],
         },
     },
+    {
+        'name': 'ask_claude',
+        'description': (
+            'Claude CLI에 작업을 위임한다. 다음 경우에만 사용:\n'
+            '- 5개 이상의 파일에 걸친 복잡한 리팩토링\n'
+            '- 동일한 접근으로 2회 이상 실패한 경우\n'
+            '- 시스템 아키텍처 전반을 이해해야 하는 작업\n'
+            '- 사용자가 명시적으로 "Claude에게" 또는 "더 정확하게" 요청한 경우\n'
+            '다음에는 사용하지 말 것:\n'
+            '- 단순 파일 편집, 단일 함수 구현, 문서화, 반복 패턴 작업'
+        ),
+        'parameters': {
+            'type': 'object',
+            'properties': {
+                'query': {'type': 'string', 'description': 'Claude에게 전달할 질문 또는 작업 내용'},
+                'context': {'type': 'string', 'description': '추가로 전달할 배경 정보 (선택)'},
+            },
+            'required': ['query'],
+        },
+    },
 ]
 
 def register_mcp_tools(clients: 'dict[str, StdioMCPClient]') -> list[str]:
@@ -285,5 +317,6 @@ TOOL_MAP = {
     'git_checkout': git_checkout,
     'git_stash':    git_stash,
     'search_web':   search_web,
-    'fetch_page': fetch_page,
+    'fetch_page':   fetch_page,
+    'ask_claude':   ask_claude,
 }
