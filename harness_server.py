@@ -11,6 +11,7 @@ import websockets
 import agent
 import profile as prof
 import context
+import harness_core
 import session as sess
 from session.logger import read_recent
 from session.analyzer import summarize_session, build_learn_prompt
@@ -224,24 +225,40 @@ async def run_claude(ws, state: Session, query: str, add_to_session: bool = Fals
     await send(ws, type='claude_end')
 
 
+def _to_core_state(state: 'Session') -> harness_core.SlashState:
+    '''Session → SlashState (코어 입력 형식).'''
+    return harness_core.SlashState(
+        messages=state.messages,
+        working_dir=state.working_dir,
+        profile=state.profile,
+        undo_count=state.undo_count,
+    )
+
+
+def _apply_core_result(state: 'Session', result: harness_core.SlashResult) -> None:
+    '''SlashResult → Session in-place 갱신.'''
+    state.messages = result.state.messages
+    state.working_dir = result.state.working_dir
+    state.profile = result.state.profile
+    state.undo_count = result.state.undo_count
+
+
 # ── 슬래시 명령어 처리 ────────────────────────────────────────────
 async def handle_slash(ws, state: Session, cmd: str):
     parts = cmd.strip().split(maxsplit=1)
     name = parts[0]
 
     if name == '/clear':
-        state.messages = []
+        # 상태 변경은 harness_core에 위임. UI 호환 메시지는 그대로 유지.
+        result = harness_core.dispatch(cmd, _to_core_state(state))
+        _apply_core_result(state, result)
         await send(ws, type='slash_result', cmd='clear')
 
     elif name == '/undo':
-        non_sys = [m for m in state.messages if m['role'] != 'system']
-        if len(non_sys) >= 2:
-            sys_msgs = [m for m in state.messages if m['role'] == 'system']
-            state.messages = sys_msgs + non_sys[:-2]
-            state.undo_count += 1
-            await send(ws, type='slash_result', cmd='undo', ok=True)
-        else:
-            await send(ws, type='slash_result', cmd='undo', ok=False)
+        before = len(state.messages)
+        result = harness_core.dispatch(cmd, _to_core_state(state))
+        _apply_core_result(state, result)
+        await send(ws, type='slash_result', cmd='undo', ok=len(state.messages) < before)
 
     elif name == '/plan':
         query = parts[1] if len(parts) > 1 else ''
@@ -275,14 +292,15 @@ async def handle_slash(ws, state: Session, cmd: str):
                    indexed=result['indexed'], skipped=result['skipped'])
 
     elif name == '/cd':
-        new_dir = os.path.expanduser(parts[1]) if len(parts) > 1 else ''
-        if new_dir and os.path.isdir(new_dir):
-            state.working_dir = os.path.abspath(new_dir)
-            state.profile = prof.load(state.working_dir)
-            state.messages = []
-            await send(ws, type='slash_result', cmd='cd', working_dir=state.working_dir)
+        if len(parts) < 2:
+            await send(ws, type='error', text='사용법: /cd <경로>')
         else:
-            await send(ws, type='error', text=f'없는 경로: {new_dir}')
+            result = harness_core.dispatch(cmd, _to_core_state(state))
+            if result.level == 'error':
+                await send(ws, type='error', text=result.notice)
+            else:
+                _apply_core_result(state, result)
+                await send(ws, type='slash_result', cmd='cd', working_dir=state.working_dir)
 
     elif name == '/save':
         filename = sess.save(state.messages, state.working_dir)
@@ -308,8 +326,13 @@ async def handle_slash(ws, state: Session, cmd: str):
         await send(ws, type='slash_result', cmd='files', tree=tree)
 
     elif name == '/init':
-        path = prof.create_template(state.working_dir)
-        await send(ws, type='slash_result', cmd='init', path=path)
+        result = harness_core.dispatch(cmd, _to_core_state(state))
+        if result.level == 'ok':
+            path = os.path.join(state.working_dir, '.harness.toml')
+            await send(ws, type='slash_result', cmd='init', path=path)
+        else:
+            # 이미 존재 시 warn — UI는 error 메시지로 매핑
+            await send(ws, type='error', text=result.notice)
 
     elif name == '/improve':
         await send(ws, type='info', text='백업 생성 중...')
