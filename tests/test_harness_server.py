@@ -393,3 +393,89 @@ class TestReaderLoop:
         items = asyncio.run(_go())
         # 잘못된 JSON은 스킵, 유효한 메시지만 + 종료 None
         assert items == [{'type': 'ping'}, None]
+
+
+# ── BB-2 Phase 3: /who + room_joined ────────────────────────────
+class TestSlashWho:
+    @staticmethod
+    def _decode(ws):
+        import json
+        return [json.loads(p) for p in ws.received]
+
+    def test_who_returns_member_count(self, isolated_rooms):
+        '''/who는 subscribers 카운트 + members 배열을 반환한다.'''
+        room = srv._get_or_create_room('team')
+        a, b = _FakeWS(), _FakeWS()
+        room.subscribers.update({a, b})
+        asyncio.run(srv.handle_slash(a, room, '/who'))
+        msgs = self._decode(a)
+        who = next(m for m in msgs if m.get('type') == 'slash_result' and m.get('cmd') == 'who')
+        assert who['count'] == 2
+        assert who['shared'] is True
+        assert who['busy'] is False
+        assert len(who['members']) == 2
+        # 자기 자신은 self=True인 멤버 정확히 1개
+        selfs = [m for m in who['members'] if m['self']]
+        assert len(selfs) == 1
+
+    def test_who_marks_solo_room(self, isolated_rooms):
+        '''솔로 룸(_solo_ 접두)은 shared=false.'''
+        room = srv._get_or_create_room('_solo_abc')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        asyncio.run(srv.handle_slash(ws, room, '/who'))
+        who = next(m for m in self._decode(ws)
+                   if m.get('type') == 'slash_result' and m.get('cmd') == 'who')
+        assert who['shared'] is False
+        assert who['count'] == 1
+
+    def test_who_active_marker(self, isolated_rooms):
+        '''active_input_from으로 지정된 ws는 active=True.'''
+        room = srv._get_or_create_room('team')
+        a, b = _FakeWS(), _FakeWS()
+        room.subscribers.update({a, b})
+        room.active_input_from = b
+        room.busy = True
+        asyncio.run(srv.handle_slash(a, room, '/who'))
+        who = next(m for m in self._decode(a)
+                   if m.get('type') == 'slash_result' and m.get('cmd') == 'who')
+        assert who['busy'] is True
+        # 활성 멤버는 b 1명만
+        actives = [m for m in who['members'] if m['active']]
+        assert len(actives) == 1
+
+
+class TestRoomJoinedShape:
+    '''_run_session 직접 통합은 복잡 — room_joined 페이로드 형태만 단위 검증.
+
+    실제 송신 경로는 _run_session 내부에 인라인이라 함수 추출 X. 페이로드의
+    JSON 직렬화 가능성과 필드 셋만 확인.
+    '''
+    def test_payload_serializable(self, isolated_rooms):
+        import json
+        room = srv._get_or_create_room('team')
+        room.busy = False
+        # _run_session이 보내는 것과 동일한 형태
+        payload = dict(type='room_joined', room=room.name, shared=True,
+                       subscribers=1, busy=room.busy)
+        s = json.dumps(payload)
+        decoded = json.loads(s)
+        assert decoded['type'] == 'room_joined'
+        assert decoded['shared'] is True
+        assert 'subscribers' in decoded
+        assert 'busy' in decoded
+
+    def test_state_snapshot_carries_messages(self, isolated_rooms):
+        import json
+        room = srv._get_or_create_room('team')
+        room.state.messages = [
+            {'role': 'system', 'content': 's'},
+            {'role': 'user', 'content': 'q1'},
+            {'role': 'assistant', 'content': 'a1'},
+        ]
+        # _run_session에서 송신하는 형태
+        turns = len([m for m in room.state.messages if m['role'] == 'user'])
+        payload = dict(type='state_snapshot', turns=turns, messages=room.state.messages)
+        decoded = json.loads(json.dumps(payload))
+        assert decoded['turns'] == 1
+        assert len(decoded['messages']) == 3

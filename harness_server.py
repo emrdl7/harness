@@ -515,6 +515,21 @@ async def handle_slash(ws, room: 'Room', cmd: str):
         # 도움말은 개인 요청 — 입력자에게만
         await send(ws, type='slash_result', cmd='help')
 
+    elif name == '/who':
+        # 룸 subscribers 조회 — 카운트 + busy + active 마커.
+        # core 등록 X (server-only): subscribers는 server-side에만 존재.
+        # 식별자는 익명(active 여부만 표시) — IP 노출 회피.
+        members = [
+            {'self': s is ws, 'active': s is room.active_input_from}
+            for s in room.subscribers
+        ]
+        await send(ws, type='slash_result', cmd='who',
+                   room=room.name,
+                   shared=not room.name.startswith('_solo_'),
+                   busy=room.busy,
+                   members=members,
+                   count=len(members))
+
     elif name in ('/quit', '/exit', '/q'):
         # 본인 종료 신호 — 다른 subscriber를 쫓아내지 않음
         await send(ws, type='quit')
@@ -694,6 +709,7 @@ async def _run_session(ws):
     # 솔로 모드는 매 연결마다 고유 이름이라 회귀 없음.
     room_header = (ws.request.headers.get('x-harness-room', '') or '').strip()
     room_name = room_header if room_header else f'_solo_{uuid.uuid4().hex}'
+    is_shared = bool(room_header)  # 솔로 룸은 _solo_ 접두로 구분
     room = _get_or_create_room(room_name)
     room.subscribers.add(ws)
     state = room.state  # 같은 룸의 모든 ws가 같은 Session 공유
@@ -702,6 +718,21 @@ async def _run_session(ws):
         # 초기 상태 전송 (room은 신규 필드 — 모르는 UI는 무시함)
         await send_state(ws, state)
         await send(ws, type='ready', room=room_name)
+
+        # Phase 3-A: 룸 메타 + 과거 컨텍스트 snapshot (DQ4) — 새 join에게만
+        await send(ws, type='room_joined',
+                   room=room_name,
+                   shared=is_shared,
+                   subscribers=len(room.subscribers),
+                   busy=room.busy)
+        if state.messages:
+            await send(ws, type='state_snapshot',
+                       turns=len([m for m in state.messages if m['role'] == 'user']),
+                       messages=state.messages)
+        # 기존 멤버에게 새 사람 합류 알림 (자기 자신도 받지만 UI가 자체 식별)
+        if is_shared and len(room.subscribers) > 1:
+            await broadcast(room, type='room_member_joined',
+                            subscribers=len(room.subscribers))
 
         # 자동 인덱싱 — 룸의 working_dir 기준. 두 번째 join은 is_indexed=True로 자연 스킵.
         if state.profile.get('auto_index') and not context.is_indexed(state.working_dir):
@@ -725,6 +756,13 @@ async def _run_session(ws):
             # 끊긴 ws에 대한 broadcast는 dead 정리 로직이 자동 처리.
     finally:
         room.subscribers.discard(ws)
+        # Phase 3-A: 다른 멤버에게 이탈 알림 (룸이 비어 정리되기 전에 한 번)
+        if is_shared and room.subscribers:
+            try:
+                await broadcast(room, type='room_member_left',
+                                subscribers=len(room.subscribers))
+            except Exception:
+                pass
         _maybe_drop_room(room)
 
 

@@ -8,6 +8,13 @@ const HOST   = process.env.HARNESS_HOST   || 'localhost'
 const TOKEN  = process.env.HARNESS_TOKEN  || ''
 const MODEL  = 'qwen3-coder:30b'
 
+// CLI: --room <name> → 공유 룸 합류. 미지정 시 서버가 솔로 UUID 룸 부여.
+function getArg(name) {
+  const i = process.argv.indexOf(name)
+  return i >= 0 && i + 1 < process.argv.length ? process.argv[i + 1] : ''
+}
+const ROOM = getArg('--room') || process.env.HARNESS_ROOM || ''
+
 // ── ANSI ─────────────────────────────────────────────────────────
 const C = {
   reset:  '\x1b[0m',
@@ -89,6 +96,7 @@ let mode          = 'input'
 let confirmPath   = ''
 let confirmCmd    = ''
 let cplanTask     = ''
+let roomInfo      = { room: '', shared: false, subscribers: 1, busy: false }
 
 // ── 스피너 ────────────────────────────────────────────────────────
 const SPINNER_FRAMES = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏']
@@ -164,7 +172,19 @@ function printSlashResult(cmd, data) {
     case 'help':    printHelp(); break
     case 'files':   printFileTree(data.tree || {}); break
     case 'sessions':printSessions(data.sessions || []); break
+    case 'who':     printWho(data); break
     default:        println(`${C.dim}  /${cmd}${C.reset}`)
+  }
+}
+
+function printWho(data) {
+  const tag = data.shared ? '공유 룸' : '솔로'
+  const busyTag = data.busy ? `  ${C.yellow}(busy)${C.reset}` : ''
+  println(`${C.cyan}  ● 룸 '${data.room}' [${tag}]  ·  ${data.count}명${busyTag}`)
+  for (const m of (data.members || [])) {
+    const mark = m.self ? '★' : '·'
+    const act = m.active ? `  ${C.yellow}← 입력 중${C.reset}` : ''
+    println(`${C.dim}    ${mark}${C.reset}${m.self ? ' (나)' : ''}${act}`)
   }
 }
 
@@ -175,7 +195,8 @@ function printHelp() {
     ['/index','인덱싱'],      ['/improve','자기 개선'],
     ['/learn','HARNESS.md'], ['/cd','디렉토리 변경'],
     ['/save','세션 저장'],    ['/resume','세션 불러오기'],
-    ['/claude','Claude 질문'],['/quit','종료'],
+    ['/who','룸 멤버 보기'], ['/claude','Claude 질문'],
+    ['/quit','종료'],
   ]
   for (const [cmd, desc] of cmds) {
     println(`  ${C.cyan}${cmd.padEnd(12)}${C.reset}${C.dim}${desc}${C.reset}`)
@@ -229,7 +250,10 @@ function showPrompt() {
 
 // ── WebSocket ────────────────────────────────────────────────────
 const wsUrl = `ws://${HOST}:${PORT}`
-const ws = new WebSocket(wsUrl, { headers: TOKEN ? { 'x-harness-token': TOKEN } : {} })
+const wsHeaders = {}
+if (TOKEN) wsHeaders['x-harness-token'] = TOKEN
+if (ROOM)  wsHeaders['x-harness-room']  = ROOM
+const ws = new WebSocket(wsUrl, { headers: wsHeaders })
 
 ws.on('error', () => {
   console.error(`\nharness server 연결 실패 (${wsUrl})`)
@@ -344,6 +368,43 @@ ws.on('open', () => {
 
       case 'slash_result':
         printSlashResult(msg.cmd, msg)
+        if (!agentRunning) showPrompt()
+        break
+
+      // ── BB-2 Phase 3: 룸 이벤트 ──
+      case 'room_joined':
+        roomInfo = msg
+        if (msg.shared) {
+          clearPromptLine()
+          println(`${C.green}  ✓ 룸 '${msg.room}' 합류 (현재 ${msg.subscribers}명)${C.reset}`)
+          if (!agentRunning) showPrompt()
+        }
+        break
+
+      case 'room_member_joined':
+        roomInfo.subscribers = msg.subscribers
+        clearPromptLine()
+        println(`${C.dim}  → 새 사용자 합류 (현재 ${msg.subscribers}명)${C.reset}`)
+        if (!agentRunning) showPrompt()
+        break
+
+      case 'room_member_left':
+        roomInfo.subscribers = msg.subscribers
+        clearPromptLine()
+        println(`${C.dim}  ← 사용자 나감 (현재 ${msg.subscribers}명)${C.reset}`)
+        if (!agentRunning) showPrompt()
+        break
+
+      case 'room_busy':
+        clearPromptLine()
+        println(`${C.yellow}  ⋯ 다른 사용자가 입력 중입니다${C.reset}`)
+        if (!agentRunning) showPrompt()
+        break
+
+      case 'state_snapshot':
+        // 옵션 B: 메시지 본문은 표시 안 함 — 헤더 요약만 (시각 부담 회피)
+        clearPromptLine()
+        println(`${C.dim}  ✓ 진행 중인 룸에 합류 — 과거 ${msg.turns}턴 컨텍스트 로드됨${C.reset}`)
         if (!agentRunning) showPrompt()
         break
 

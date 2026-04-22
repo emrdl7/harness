@@ -45,6 +45,24 @@ HARNESS_TOKEN=토큰문자열 \
 node index.js
 ```
 
+### 4-1. (선택) 공유 룸 합류
+
+여러 사용자가 같은 세션(messages·working_dir 공유)을 함께 보고 싶다면
+같은 룸 이름으로 접속:
+
+```bash
+node index.js --room team        # CLI 인자
+HARNESS_ROOM=team node index.js  # 환경변수도 지원
+```
+
+룸 안에서:
+- agent/claude 출력은 모든 멤버에게 broadcast
+- 한 명이 입력 중이면 나머지는 `room_busy`로 즉시 거부
+- `confirm_write`/`confirm_bash` 승인은 입력자만 가능
+- `/who` 슬래시로 현재 멤버·busy 상태 조회
+
+룸 이름을 안 주면 매 연결마다 격리된 솔로 룸이 부여됩니다.
+
 ### 5. (선택) 편의를 위한 alias 등록
 
 ⚠️ **토큰을 `~/.zshrc`에 직접 적지 마세요.** 셸 RC 파일은 기본적으로
