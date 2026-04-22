@@ -1051,7 +1051,7 @@ def do_claude_loop(task: str, session_msgs: list, working_dir: str, profile: dic
 
 # ── 슬래시 핸들러 ─────────────────────────────────────────────────
 # harness_core로 위임할 슬래시. /help는 _print_help의 풍성한 표를 유지하기 위해 제외.
-_CORE_DELEGATED_SLASHES = {'/clear', '/undo', '/cd', '/init'}
+_CORE_DELEGATED_SLASHES = {'/clear', '/undo', '/cd', '/init', '/save', '/resume', '/sessions'}
 
 
 def _render_core_notice(notice: str, level: str) -> None:
@@ -1065,6 +1065,20 @@ def _render_core_notice(notice: str, level: str) -> None:
         console.print(f'  [tool.fail]✗[/tool.fail] {notice}')
     else:
         console.print(f'  [dim]{notice}[/dim]')
+
+
+def _render_sessions_table(sessions: list) -> None:
+    if not sessions:
+        console.print('  [dim]저장된 세션이 없습니다[/dim]')
+        return
+    t = Table(box=box.SIMPLE, show_header=True, border_style='dim')
+    t.add_column('파일', style='dim')
+    t.add_column('디렉토리')
+    t.add_column('턴', justify='right', style='dim')
+    t.add_column('첫 질문', style='white')
+    for s in sessions[:10]:
+        t.add_row(s['filename'], s['working_dir'], str(s['turns']), s['preview'])
+    console.print(t)
 
 
 def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, undo_count: int = 0, run_agent=None) -> tuple[list, str, int]:
@@ -1084,7 +1098,11 @@ def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, 
         )
         result = harness_core.dispatch(cmd, core_state)
         if result.handled:
-            _render_core_notice(result.notice, result.level)
+            # 추가 데이터 렌더 (notice로 표현 안 되는 것)
+            if name == '/sessions':
+                _render_sessions_table(result.data.get('sessions', []))
+            elif result.notice:
+                _render_core_notice(result.notice, result.level)
             return (result.state.messages, result.state.working_dir, result.state.undo_count)
 
     if name == '/plan':
@@ -1315,37 +1333,6 @@ def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, 
 
     if name == '/files':
         _print_file_tree(working_dir)
-        return session_msgs, working_dir, undo_count
-
-    if name == '/save':
-        filename = sess.save(session_msgs, working_dir)
-        console.print(f'  [tool.ok]✓[/tool.ok] [dim]{filename}[/dim]')
-        return session_msgs, working_dir, undo_count
-
-    if name == '/resume':
-        filename = parts[1] if len(parts) > 1 else None
-        data = sess.load(filename) if filename else sess.load_latest(working_dir)
-        if not data:
-            console.print('  [dim]불러올 세션이 없습니다[/dim]')
-            return session_msgs, working_dir, undo_count
-        loaded = data['messages']
-        turns = len([m for m in loaded if m['role'] == 'user'])
-        console.print(f'  [tool.ok]✓[/tool.ok] 세션 복원  [dim]{turns}턴[/dim]')
-        return loaded, data.get('working_dir', working_dir), undo_count
-
-    if name == '/sessions':
-        sessions = sess.list_sessions()
-        if not sessions:
-            console.print('  [dim]저장된 세션이 없습니다[/dim]')
-            return session_msgs, working_dir, undo_count
-        t = Table(box=box.SIMPLE, show_header=True, border_style='dim')
-        t.add_column('파일', style='dim')
-        t.add_column('디렉토리')
-        t.add_column('턴', justify='right', style='dim')
-        t.add_column('첫 질문', style='white')
-        for s in sessions[:10]:
-            t.add_row(s['filename'], s['working_dir'], str(s['turns']), s['preview'])
-        console.print(t)
         return session_msgs, working_dir, undo_count
 
     if name == '/claude':

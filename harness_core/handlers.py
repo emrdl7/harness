@@ -1,11 +1,12 @@
-'''의존성 0~1인 슬래시 핸들러 — 1차 추출.
+'''의존성 0~1인 슬래시 핸들러.
 
-여기 모인 핸들러는 콘솔/네트워크/스레드 의존이 전혀 없다.
-agent 실행이 필요한 /plan, /cplan 등은 다음 단계에서 callback 인젝션으로 추가.
+콘솔/네트워크/스레드 의존이 없음. agent 실행이 필요한 /plan, /cplan은
+다음 단계에서 callback 인젝션으로 추가.
 '''
 import os
 
 import profile as prof
+import session as sess
 
 from .types import SlashState, SlashResult, evolve
 
@@ -53,6 +54,40 @@ def slash_init(state: SlashState) -> SlashResult:
         return SlashResult.warn(state, f'이미 존재합니다: {target}')
     created = prof.create_template(state.working_dir)
     return SlashResult.ok(state, f'생성됨: {created}')
+
+
+def slash_save(state: SlashState) -> SlashResult:
+    '''/save — 현재 세션을 디스크에 저장. data={'filename': ...}.'''
+    filename = sess.save(state.messages, state.working_dir)
+    return SlashResult.ok(state, f'저장됨: {filename}', filename=filename)
+
+
+def slash_resume(state: SlashState, filename: str = '') -> SlashResult:
+    '''/resume [filename] — 세션 복원. filename 없으면 working_dir 최신 세션.
+
+    성공 시: 메시지/working_dir 갱신 + data={'turns': N, 'filename': ...}.
+    데이터 없으면 정보 메시지 반환 + 상태 변경 없음.
+    '''
+    target = filename.strip() if filename else None
+    data = sess.load(target) if target else sess.load_latest(state.working_dir)
+    if not data:
+        return SlashResult.info(state, '불러올 세션이 없습니다')
+    loaded = data['messages']
+    new_state = evolve(
+        state,
+        messages=loaded,
+        working_dir=data.get('working_dir', state.working_dir),
+    )
+    turns = sum(1 for m in loaded if m.get('role') == 'user')
+    return SlashResult.ok(new_state, f'세션 복원 ({turns}턴)', turns=turns)
+
+
+def slash_sessions(state: SlashState) -> SlashResult:
+    '''/sessions — 저장된 세션 목록. data={'sessions': [...]} (전체, 호출자가 슬라이스).'''
+    sessions = sess.list_sessions()
+    if not sessions:
+        return SlashResult.info(state, '저장된 세션이 없습니다', sessions=[])
+    return SlashResult.ok(state, f'{len(sessions)}개 세션', sessions=sessions)
 
 
 def slash_help(state: SlashState) -> SlashResult:

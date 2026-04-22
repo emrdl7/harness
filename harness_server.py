@@ -303,23 +303,22 @@ async def handle_slash(ws, state: Session, cmd: str):
                 await send(ws, type='slash_result', cmd='cd', working_dir=state.working_dir)
 
     elif name == '/save':
-        filename = sess.save(state.messages, state.working_dir)
-        await send(ws, type='slash_result', cmd='save', filename=filename)
+        result = harness_core.dispatch(cmd, _to_core_state(state))
+        _apply_core_result(state, result)
+        await send(ws, type='slash_result', cmd='save', filename=result.data['filename'])
 
     elif name == '/resume':
-        filename = parts[1] if len(parts) > 1 else None
-        data = sess.load(filename) if filename else sess.load_latest(state.working_dir)
-        if data:
-            state.messages = data['messages']
-            state.working_dir = data.get('working_dir', state.working_dir)
-            turns = len([m for m in state.messages if m['role'] == 'user'])
-            await send(ws, type='slash_result', cmd='resume', turns=turns)
+        result = harness_core.dispatch(cmd, _to_core_state(state))
+        if result.level == 'ok':
+            _apply_core_result(state, result)
+            await send(ws, type='slash_result', cmd='resume', turns=result.data['turns'])
         else:
             await send(ws, type='slash_result', cmd='resume', turns=0, ok=False)
 
     elif name == '/sessions':
-        sessions = sess.list_sessions()
-        await send(ws, type='slash_result', cmd='sessions', sessions=sessions[:10])
+        result = harness_core.dispatch(cmd, _to_core_state(state))
+        await send(ws, type='slash_result', cmd='sessions',
+                   sessions=result.data.get('sessions', [])[:10])
 
     elif name == '/files':
         tree = _build_file_tree(state.working_dir)

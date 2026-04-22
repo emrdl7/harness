@@ -135,6 +135,103 @@ class TestInit:
         assert (tmp_path / '.harness.toml').read_text() == '# 기존 내용'
 
 
+# ── slash_save / resume / sessions ───────────────────────────────────
+@pytest.fixture
+def isolated_session_dir(monkeypatch, tmp_path):
+    '''~/.harness/sessions 격리 — 실제 사용자 세션과 충돌 방지.'''
+    import session.store as store
+    sessions_dir = tmp_path / 'sessions'
+    monkeypatch.setattr(store, 'SESSION_DIR', str(sessions_dir))
+    return sessions_dir
+
+
+class TestSave:
+    def test_save_creates_file(self, isolated_session_dir):
+        state = SlashState(
+            messages=[
+                {'role': 'system', 'content': 's'},
+                {'role': 'user', 'content': 'hello'},
+            ],
+            working_dir='/tmp',
+        )
+        result = h.slash_save(state)
+        assert result.handled
+        assert result.level == 'ok'
+        assert 'filename' in result.data
+        # 디스크에 실제 생성됨
+        assert (isolated_session_dir / result.data['filename']).exists()
+
+
+class TestResume:
+    def test_no_sessions_returns_info(self, isolated_session_dir):
+        state = SlashState(working_dir='/tmp')
+        result = h.slash_resume(state)
+        assert result.handled
+        assert result.level == 'info'
+        assert '불러올 세션이 없습니다' in result.notice
+        # 상태 변경 없음
+        assert result.state.messages == []
+
+    def test_resume_latest(self, isolated_session_dir):
+        # 먼저 세션 저장
+        from harness_core import handlers as hh
+        save_state = SlashState(
+            messages=[
+                {'role': 'system', 'content': 's'},
+                {'role': 'user', 'content': 'q1'},
+                {'role': 'assistant', 'content': 'a1'},
+            ],
+            working_dir='/tmp/foo',
+        )
+        save_result = hh.slash_save(save_state)
+        # 비어있는 세션에서 resume
+        empty_state = SlashState(working_dir='/tmp/foo')
+        result = hh.slash_resume(empty_state)
+        assert result.handled
+        assert result.level == 'ok'
+        assert result.data['turns'] == 1
+        assert len(result.state.messages) == 3
+        assert result.state.working_dir == '/tmp/foo'
+
+    def test_resume_by_filename(self, isolated_session_dir):
+        from harness_core import handlers as hh
+        save_state = SlashState(
+            messages=[{'role': 'user', 'content': 'q'}],
+            working_dir='/tmp/bar',
+        )
+        save_result = hh.slash_save(save_state)
+        fn = save_result.data['filename']
+        # 다른 working_dir에서 명시적으로 파일명 지정해 복원
+        empty_state = SlashState(working_dir='/tmp/elsewhere')
+        result = hh.slash_resume(empty_state, fn)
+        assert result.handled
+        # working_dir도 저장된 값으로 복원
+        assert result.state.working_dir == '/tmp/bar'
+
+
+class TestSessions:
+    def test_empty_returns_info(self, isolated_session_dir):
+        state = SlashState()
+        result = h.slash_sessions(state)
+        assert result.handled
+        assert result.level == 'info'
+        assert result.data['sessions'] == []
+
+    def test_lists_saved(self, isolated_session_dir):
+        from harness_core import handlers as hh
+        s1 = SlashState(messages=[{'role': 'user', 'content': 'first'}], working_dir='/tmp/a')
+        s2 = SlashState(messages=[{'role': 'user', 'content': 'second'}], working_dir='/tmp/b')
+        hh.slash_save(s1)
+        hh.slash_save(s2)
+        result = h.slash_sessions(SlashState())
+        assert result.level == 'ok'
+        assert len(result.data['sessions']) == 2
+        # 각 세션은 dict (filename, working_dir, turns, preview)
+        for sess in result.data['sessions']:
+            assert 'filename' in sess
+            assert 'working_dir' in sess
+
+
 # ── slash_help ───────────────────────────────────────────────────────
 class TestHelp:
     def test_returns_text(self):

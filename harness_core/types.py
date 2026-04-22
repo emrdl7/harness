@@ -25,27 +25,30 @@ class SlashResult:
             프런트엔드가 색상/아이콘을 결정하는 데 쓴다.
     handled: 핸들러가 명령을 인식했는지 여부.
              False면 라우터가 "알 수 없는 명령"으로 처리.
+    data: 구조화된 결과 페이로드 (filename, sessions[], tree 등).
+          notice로 표현하기 어려운 데이터를 프런트엔드가 자유롭게 렌더링.
     '''
     state: SlashState
     notice: str = ''
     level: str = 'info'
     handled: bool = True
+    data: dict = field(default_factory=dict)
 
     @classmethod
-    def info(cls, state: SlashState, notice: str = '') -> 'SlashResult':
-        return cls(state=state, notice=notice, level='info')
+    def info(cls, state: SlashState, notice: str = '', **data) -> 'SlashResult':
+        return cls(state=state, notice=notice, level='info', data=data)
 
     @classmethod
-    def ok(cls, state: SlashState, notice: str = '') -> 'SlashResult':
-        return cls(state=state, notice=notice, level='ok')
+    def ok(cls, state: SlashState, notice: str = '', **data) -> 'SlashResult':
+        return cls(state=state, notice=notice, level='ok', data=data)
 
     @classmethod
-    def warn(cls, state: SlashState, notice: str = '') -> 'SlashResult':
-        return cls(state=state, notice=notice, level='warn')
+    def warn(cls, state: SlashState, notice: str = '', **data) -> 'SlashResult':
+        return cls(state=state, notice=notice, level='warn', data=data)
 
     @classmethod
-    def error(cls, state: SlashState, notice: str = '') -> 'SlashResult':
-        return cls(state=state, notice=notice, level='error')
+    def error(cls, state: SlashState, notice: str = '', **data) -> 'SlashResult':
+        return cls(state=state, notice=notice, level='error', data=data)
 
     @classmethod
     def unknown(cls, state: SlashState, notice: str = '') -> 'SlashResult':

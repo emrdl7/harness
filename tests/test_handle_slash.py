@@ -117,3 +117,52 @@ class TestCoreDelegation:
         )
         # 보존
         assert (tmp_path / '.harness.toml').read_text() == '# 기존'
+
+    def test_save_via_core(self, tmp_path, monkeypatch):
+        '''/save도 코어 화이트리스트에 포함 — 디스크에 파일 생성.'''
+        import session.store as store
+        sessions_dir = tmp_path / 'sessions'
+        monkeypatch.setattr(store, 'SESSION_DIR', str(sessions_dir))
+        msgs = [
+            {'role': 'system', 'content': 's'},
+            {'role': 'user', 'content': 'q'},
+        ]
+        new_msgs, wd, undo = main.handle_slash(
+            '/save', msgs, str(tmp_path), {}, 0,
+        )
+        # 메시지/wd 변경 없음
+        assert new_msgs == msgs
+        assert wd == str(tmp_path)
+        # 디스크 검증
+        assert sessions_dir.exists()
+        assert any(p.suffix == '.json' for p in sessions_dir.iterdir())
+
+    def test_resume_via_core(self, tmp_path, monkeypatch):
+        '''/save → /resume 라운드트립.'''
+        import session.store as store
+        sessions_dir = tmp_path / 'sessions'
+        monkeypatch.setattr(store, 'SESSION_DIR', str(sessions_dir))
+        original = [
+            {'role': 'system', 'content': 's'},
+            {'role': 'user', 'content': 'q1'},
+            {'role': 'assistant', 'content': 'a1'},
+        ]
+        # save
+        main.handle_slash('/save', original, '/tmp/wd', {}, 0)
+        # 빈 세션에서 resume
+        new_msgs, wd, undo = main.handle_slash(
+            '/resume', [], '/tmp/wd', {}, 0,
+        )
+        assert len(new_msgs) == 3
+        assert wd == '/tmp/wd'
+
+    def test_sessions_via_core(self, tmp_path, monkeypatch):
+        '''/sessions는 Table 렌더라 결과 검증은 어려움 — 크래시만 안 나면 OK.'''
+        import session.store as store
+        monkeypatch.setattr(store, 'SESSION_DIR', str(tmp_path / 'sessions'))
+        new_msgs, wd, undo = main.handle_slash(
+            '/sessions', [], '/tmp', {}, 0,
+        )
+        # 메시지/wd 변경 없음, 크래시 없이 반환
+        assert new_msgs == []
+        assert wd == '/tmp'

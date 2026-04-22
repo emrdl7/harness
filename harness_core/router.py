@@ -6,11 +6,14 @@ from . import handlers as h
 # 라우터가 알고 있는 명령 → (핸들러, 인자가 필요한지)
 # 인자 필요 명령은 호출자가 cmd 문자열에서 추출해 핸들러에 전달.
 KNOWN_COMMANDS = {
-    '/clear': (h.slash_clear, False),
-    '/undo':  (h.slash_undo,  False),
-    '/cd':    (h.slash_cd,    True),
-    '/init':  (h.slash_init,  False),
-    '/help':  (h.slash_help,  False),
+    '/clear':    (h.slash_clear,    False),
+    '/undo':     (h.slash_undo,     False),
+    '/cd':       (h.slash_cd,       True),
+    '/init':     (h.slash_init,     False),
+    '/help':     (h.slash_help,     False),
+    '/save':     (h.slash_save,     False),
+    '/resume':   (h.slash_resume,   True),   # 인자 옵셔널이지만 라우터는 '있어도 됨'으로 처리
+    '/sessions': (h.slash_sessions, False),
 }
 
 
