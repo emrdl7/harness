@@ -138,3 +138,85 @@ class TestRoom:
         assert srv.ROOMS['dup'] is new
         srv._maybe_drop_room(old)  # old는 ROOMS에 없으므로 no-op
         assert srv.ROOMS.get('dup') is new
+
+
+# ── BB-2 Phase 2: broadcast / broadcast_state ────────────────────
+class _FakeWS:
+    '''ws.send(payload)만 흉내내는 stub. raise=True면 BrokenPipeError 시뮬.'''
+    def __init__(self, raise_on_send=False):
+        self.received: list[str] = []
+        self.raise_on_send = raise_on_send
+
+    async def send(self, payload):
+        if self.raise_on_send:
+            raise BrokenPipeError('simulated dead ws')
+        self.received.append(payload)
+
+
+class TestBroadcast:
+    def test_single_subscriber_receives(self, isolated_rooms):
+        room = srv._get_or_create_room('r')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        asyncio.run(srv.broadcast(room, type='token', text='hi'))
+        assert len(ws.received) == 1
+        assert '"text": "hi"' in ws.received[0]
+        assert '"type": "token"' in ws.received[0]
+
+    def test_multiple_subscribers_get_same_payload(self, isolated_rooms):
+        room = srv._get_or_create_room('r')
+        a, b, c = _FakeWS(), _FakeWS(), _FakeWS()
+        room.subscribers.update({a, b, c})
+        asyncio.run(srv.broadcast(room, type='agent_end'))
+        assert a.received == b.received == c.received
+        assert len(a.received) == 1
+
+    def test_dead_subscribers_are_pruned(self, isolated_rooms):
+        '''send에서 예외 던지는 ws는 broadcast 후 subscribers에서 제거된다.'''
+        room = srv._get_or_create_room('r')
+        alive = _FakeWS()
+        dead = _FakeWS(raise_on_send=True)
+        room.subscribers.update({alive, dead})
+        asyncio.run(srv.broadcast(room, type='ping'))
+        assert alive in room.subscribers
+        assert dead not in room.subscribers
+        assert len(alive.received) == 1
+
+    def test_empty_room_is_noop(self, isolated_rooms):
+        '''subscribers가 비어있어도 예외 없이 통과.'''
+        room = srv._get_or_create_room('r')
+        room.subscribers.clear()
+        asyncio.run(srv.broadcast(room, type='whatever'))  # 예외 안 나면 통과
+
+    def test_payload_is_valid_json(self, isolated_rooms):
+        '''broadcast 페이로드는 JSON 직렬화 가능해야 함.'''
+        import json
+        room = srv._get_or_create_room('r')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        asyncio.run(srv.broadcast(room, type='tool_end', name='write_file',
+                                  result={'ok': True, 'path': '/tmp/x'}))
+        decoded = json.loads(ws.received[0])
+        assert decoded == {'type': 'tool_end', 'name': 'write_file',
+                           'result': {'ok': True, 'path': '/tmp/x'}}
+
+
+class TestBroadcastState:
+    def test_state_payload_reaches_all_subscribers(self, isolated_rooms):
+        import json
+        room = srv._get_or_create_room('r')
+        room.state.messages = [
+            {'role': 'system', 'content': 's'},
+            {'role': 'user', 'content': 'q1'},
+            {'role': 'user', 'content': 'q2'},
+        ]
+        a, b = _FakeWS(), _FakeWS()
+        room.subscribers.update({a, b})
+        asyncio.run(srv.broadcast_state(room))
+        assert len(a.received) == 1 and len(b.received) == 1
+        decoded = json.loads(a.received[0])
+        assert decoded['type'] == 'state'
+        assert decoded['turns'] == 2  # user 메시지만 셈
+        assert decoded['working_dir'] == room.state.working_dir
+        assert 'compact_count' in decoded
+        assert 'claude_available' in decoded
