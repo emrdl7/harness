@@ -246,6 +246,63 @@ def slash_learn(state: SlashState, ctx: SlashContext) -> SlashResult:
     return SlashResult.ok(state, 'HARNESS.md 갱신 완료')
 
 
+_CPLAN_PROMPT_TMPL = '''\
+다음 작업에 대한 실행 계획을 작성해줘.
+작업 디렉토리: {working_dir}
+
+작업: {task}
+
+아래 형식으로 단계별 플랜을 작성해:
+1. 각 단계를 번호 목록으로
+2. 어떤 파일을 읽고/쓸지 명시
+3. 코드 변경이 필요하면 핵심 로직도 포함
+4. 주의사항/엣지케이스 언급
+
+실행 가능한 구체적인 플랜이어야 해. 로컬 코딩 모델이 이 플랜만 보고 바로 실행할 수 있도록.
+'''
+
+
+def slash_cplan(state: SlashState, ctx: SlashContext, task: str) -> SlashResult:
+    '''/cplan <task> — claude_cli로 플랜 작성 → 사용자 확인 → agent로 실행.
+
+    3-phase 흐름:
+      1. ctx.ask_claude(prompt) → plan_text 수집
+      2. state.messages에 플랜 기록
+      3. ctx.confirm_execute(plan_text, task)로 확인. False면 여기서 종료.
+      4. ctx.run_agent(execute_prompt) 호출.
+    '''
+    if not task:
+        return SlashResult.warn(state, '사용법: /cplan <작업 내용>')
+    if ctx.ask_claude is None or ctx.run_agent is None:
+        return SlashResult.error(state, '내부 오류: ask_claude/run_agent 콜백 없음')
+
+    from tools.claude_cli import is_available
+    if not is_available():
+        return SlashResult.error(state, 'claude CLI를 찾을 수 없습니다')
+
+    prompt = _CPLAN_PROMPT_TMPL.format(task=task, working_dir=state.working_dir)
+    plan_text = ctx.ask_claude(prompt)
+    if not plan_text:
+        return SlashResult.error(state, '플랜을 받지 못했습니다')
+
+    # 플랜을 세션에 기록 (in-place; 호출자의 messages와 같은 list 참조).
+    state.messages.append({'role': 'user', 'content': f'[Claude 플랜 작성 요청]\n{task}'})
+    state.messages.append({'role': 'assistant', 'content': f'[Claude 작성 플랜]\n{plan_text}'})
+
+    if ctx.confirm_execute is not None and not ctx.confirm_execute(plan_text, task):
+        return SlashResult.info(state, '실행 취소 — 플랜은 세션에 기록되었습니다')
+
+    execute_prompt = (
+        '위에서 Claude가 작성한 플랜을 그대로 실행해줘.\n'
+        '각 단계를 순서대로 처리하고, 파일 읽기/쓰기가 필요하면 도구를 사용해.\n\n'
+        f'작업: {task}'
+    )
+    snippets = context.search(task, state.working_dir) \
+        if context.is_indexed(state.working_dir) else ''
+    ctx.run_agent(execute_prompt, context_snippets=snippets)
+    return SlashResult.ok(state, '')
+
+
 def slash_plan(state: SlashState, ctx: SlashContext, query: str) -> SlashResult:
     '''/plan <작업> — agent를 plan_mode=True로 실행.
 

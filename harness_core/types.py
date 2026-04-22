@@ -21,6 +21,9 @@ class SlashContext:
     '''
     run_agent: Optional[Callable] = None
     run_agent_ephemeral: Optional[Callable] = None
+    # /cplan 전용 콜백
+    ask_claude: Optional[Callable] = None          # (prompt: str) -> str (plan_text)
+    confirm_execute: Optional[Callable] = None     # (plan_text, task) -> bool
 
 
 @dataclass

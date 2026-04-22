@@ -17,6 +17,7 @@ KNOWN_COMMANDS = {
     '/files':    (h.slash_files,    False),
     '/index':    (h.slash_index,    False),
     '/plan':     (h.slash_plan,     True),
+    '/cplan':    (h.slash_cplan,    True),
     '/improve':  (h.slash_improve,  False),
     '/learn':    (h.slash_learn,    False),
 }

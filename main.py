@@ -930,7 +930,7 @@ def do_claude_loop(task: str, session_msgs: list, working_dir: str, profile: dic
 
 # ── 슬래시 핸들러 ─────────────────────────────────────────────────
 # harness_core로 위임할 슬래시. /help는 _print_help의 풍성한 표를 유지하기 위해 제외.
-_CORE_DELEGATED_SLASHES = {'/clear', '/undo', '/cd', '/init', '/save', '/resume', '/sessions', '/files', '/index', '/plan', '/improve', '/learn'}
+_CORE_DELEGATED_SLASHES = {'/clear', '/undo', '/cd', '/init', '/save', '/resume', '/sessions', '/files', '/index', '/plan', '/cplan', '/improve', '/learn'}
 
 
 def _render_core_notice(notice: str, level: str) -> None:
@@ -982,9 +982,11 @@ def _render_files_tree(tree_dict: dict) -> None:
     console.print()
 
 
-def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, undo_count: int = 0, run_agent=None, run_agent_ephemeral=None) -> tuple[list, str, int]:
-    '''run_agent / run_agent_ephemeral: main()의 nested 함수들을 DI로 받아
-    harness_core.SlashContext로 포장해 dispatch에 전달.'''
+def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, undo_count: int = 0,
+                 run_agent=None, run_agent_ephemeral=None,
+                 ask_claude=None, confirm_execute=None) -> tuple[list, str, int]:
+    '''run_agent / run_agent_ephemeral / ask_claude / confirm_execute:
+    main()의 nested 함수들을 DI로 받아 harness_core.SlashContext로 포장해 dispatch에 전달.'''
     parts = cmd.strip().split(maxsplit=1)
     name = parts[0]
 
@@ -999,6 +1001,8 @@ def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, 
         core_ctx = harness_core.SlashContext(
             run_agent=run_agent,
             run_agent_ephemeral=run_agent_ephemeral,
+            ask_claude=ask_claude,
+            confirm_execute=confirm_execute,
         )
         result = harness_core.dispatch(cmd, core_state, core_ctx)
         if result.handled:
@@ -1028,14 +1032,6 @@ def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, 
             elif result.notice:
                 _render_core_notice(result.notice, result.level)
             return (result.state.messages, result.state.working_dir, result.state.undo_count)
-
-    if name == '/cplan':
-        query = parts[1] if len(parts) > 1 else ''
-        if not query:
-            console.print('  [warn]사용법:[/warn] /cplan <작업 내용>')
-            return session_msgs, working_dir, undo_count
-        session_msgs = do_cplan(query, session_msgs, working_dir, profile)
-        return session_msgs, working_dir, undo_count
 
     if name == '/compact':
         non_sys = [m for m in session_msgs if m['role'] != 'system']
@@ -1525,6 +1521,27 @@ def main():
         _flush_tokens()
         _response_footer()
 
+    def _ask_claude_for_core(prompt):
+        '''/cplan phase 1 — claude_cli로 플랜 스트리밍 수집.'''
+        collected = []
+        console.print('\n[bold blue]● Claude[/bold blue] [dim]플랜 작성 중...[/dim]')
+
+        def _tok(line):
+            collected.append(line)
+            console.print(line, end='', highlight=False, markup=False)
+        try:
+            claude_ask(prompt, on_token=_tok)
+        except (RuntimeError, KeyboardInterrupt) as e:
+            console.print(f'\n  [tool.fail]✗[/tool.fail] {e}')
+            return ''
+        console.print('\n')
+        return ''.join(collected).strip()
+
+    def _confirm_execute_for_core(plan_text, task):
+        '''/cplan phase 2 — 사용자 확인. 기본은 실행(True).'''
+        console.print()
+        return Confirm.ask('  위 플랜으로 [bold]로컬 모델이 실행[/bold]할까요?', default=True)
+
     # -p / --print one-shot 모드
     if args.one_shot:
         query = args.one_shot
@@ -1626,6 +1643,8 @@ def main():
                     user_input, session_msgs, working_dir, profile, undo_count,
                     run_agent=_run_agent_for_core,
                     run_agent_ephemeral=_run_agent_ephemeral,
+                    ask_claude=_ask_claude_for_core,
+                    confirm_execute=_confirm_execute_for_core,
                 )
                 if user_input.startswith('/cd'):
                     profile = prof.load(working_dir)
