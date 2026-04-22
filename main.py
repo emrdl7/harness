@@ -1257,24 +1257,6 @@ def _start_mcp_servers(profile: dict) -> dict:
     return clients
 
 
-def _make_write_callback(mode: str):
-    '''approval_mode에 따라 confirm_write 콜백 반환.'''
-    if mode == 'suggest':
-        return lambda path, content=None: False
-    if mode == 'full-auto':
-        return lambda path, content=None: True
-    return confirm_write  # auto-edit: 항상 confirm
-
-
-def _make_bash_callback(mode: str):
-    '''approval_mode에 따라 confirm_bash 콜백 반환.'''
-    if mode in ('suggest', ):
-        return lambda cmd: False
-    if mode == 'full-auto':
-        return lambda cmd: True
-    return confirm_bash  # auto-edit: 위험 명령만 확인
-
-
 def _ctx_status(session_msgs: list) -> str:
     '''ctx 토큰 상태 문자열 반환. 예: "ctx: 8k/32k (25%)"'''
     used = sum(len(m.get('content') or '') for m in session_msgs) // 4
