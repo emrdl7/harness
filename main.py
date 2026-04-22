@@ -702,14 +702,19 @@ def _extract_cplan_task(text: str) -> str:
 
 # ── Claude CLI 호출 ───────────────────────────────────────────────
 def _build_claude_context(session_msgs: list, max_turns: int = 6) -> str:
-    '''session_msgs에서 최근 대화를 컨텍스트 블록으로 변환.'''
+    '''session_msgs에서 최근 대화를 컨텍스트 블록으로 변환.
+    에이전트 레이블에 모델명을 붙여 Claude가 로컬 모델 답변임을 인식하게 함.'''
     non_system = [m for m in session_msgs if m['role'] in ('user', 'assistant')]
     recent = non_system[-(max_turns * 2):]
     if not recent:
         return ''
-    lines = ['아래는 현재 세션의 최근 대화 기록이다:\n']
+    local_model = config.MODEL  # 예: qwen2.5-coder:32b
+    lines = [f'아래는 현재 세션의 최근 대화 기록이다. 에이전트는 로컬 모델({local_model})이고 너(Claude)와 다른 모델임:\n']
     for m in recent:
-        role = '사용자' if m['role'] == 'user' else '에이전트'
+        if m['role'] == 'user':
+            role = '사용자'
+        else:
+            role = f'로컬모델({local_model})'
         content = (m.get('content') or '').strip()
         if content:
             lines.append(f'[{role}]: {content[:800]}')
