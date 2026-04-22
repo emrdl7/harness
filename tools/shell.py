@@ -2,6 +2,7 @@ import subprocess
 import tempfile
 import os
 import re
+import shlex
 
 TIMEOUT = 30
 _MAX_OUT = 8000
@@ -28,6 +29,7 @@ _DANGEROUS = [
     r'\bpkill\b',
     r'\bkillall\b',
     r'\bsudo\b',
+    r'\bsu\b',
     r'\bapt\b',
     r'\bapt-get\b',
     r'\byum\b',
@@ -42,26 +44,65 @@ _DANGEROUS = [
     r'\bmkfs\b',
     r'\bfdisk\b',
     r'\bdiskutil\s+(erase|format|partition)\b',
+    r'\bfind\b.*\s-delete\b',
+    r'\bfind\b.*\s-exec\b',
+    r'\b(curl|wget)\b.*\|\s*(bash|sh|zsh)',
+    r'>\s*/etc/',
+    r'>\s*/dev/',
+    r'>\s*~/\.ssh',
+    r'\beval\b',
+    r'\bexec\b',
 ]
 
 _DANGEROUS_RE = re.compile('|'.join(_DANGEROUS))
 
+# 셸 메타문자 — 존재하면 shell=True 필요, 동시에 dangerous 분류
+# |, &, ;, <, >, `, $, $(, ||, &&, >>
+_SHELL_META_RE = re.compile(r'[|&;<>`]|\$\(|\$\{')
+
 
 def classify_command(command: str) -> str:
-    '''위험 명령어면 "dangerous", 아니면 "safe" 반환'''
-    return 'dangerous' if _DANGEROUS_RE.search(command) else 'safe'
+    '''위험 명령어면 "dangerous", 아니면 "safe" 반환.
+
+    셸 메타문자(파이프/리다이렉트/명령치환 등)가 있거나
+    알려진 파괴적 명령 패턴에 매칭되면 dangerous.
+    '''
+    if _SHELL_META_RE.search(command):
+        return 'dangerous'
+    if _DANGEROUS_RE.search(command):
+        return 'dangerous'
+    return 'safe'
 
 
 def run_command(command: str, cwd: str = None) -> dict:
+    '''명령어를 가능하면 shell=False + shlex로 실행, 메타문자 있으면 shell=True.'''
+    has_shell_meta = bool(_SHELL_META_RE.search(command))
     try:
-        result = subprocess.run(
-            command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=TIMEOUT,
-            cwd=cwd,
-        )
+        if has_shell_meta:
+            # 파이프/리다이렉트 등 포함 → 셸 필요
+            result = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=TIMEOUT,
+                cwd=cwd,
+            )
+        else:
+            # 셸 개입 없이 argv로 직접 실행 (인젝션 방어)
+            try:
+                argv = shlex.split(command)
+            except ValueError as e:
+                return {'ok': False, 'error': f'명령어 파싱 실패: {e}'}
+            if not argv:
+                return {'ok': False, 'error': '빈 명령어'}
+            result = subprocess.run(
+                argv,
+                capture_output=True,
+                text=True,
+                timeout=TIMEOUT,
+                cwd=cwd,
+            )
         return {
             'ok': result.returncode == 0,
             'stdout': _truncate(result.stdout),
@@ -70,6 +111,8 @@ def run_command(command: str, cwd: str = None) -> dict:
         }
     except subprocess.TimeoutExpired:
         return {'ok': False, 'error': f'{TIMEOUT}초 초과'}
+    except FileNotFoundError as e:
+        return {'ok': False, 'error': f'명령어 없음: {e}'}
     except Exception as e:
         return {'ok': False, 'error': str(e)}
 

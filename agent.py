@@ -62,13 +62,34 @@ def _stream_response(messages: list, on_token=None) -> dict:
         'stream': True,
         'options': config.OLLAMA_OPTIONS,
     }
-    resp = requests.post(
-        f'{config.OLLAMA_BASE_URL}/api/chat',
-        json=payload,
-        stream=True,
-        timeout=300,
-    )
-    resp.raise_for_status()
+    url = f'{config.OLLAMA_BASE_URL}/api/chat'
+
+    # Ollama 연결 최대 3회 재시도 (지수 백오프 1s→2s→4s)
+    # 재시도 대상: ConnectionError, Timeout, 5xx 서버 에러. 4xx는 즉시 raise.
+    resp = None
+    for attempt in range(3):
+        try:
+            resp = requests.post(url, json=payload, stream=True, timeout=300)
+            if 500 <= resp.status_code < 600:
+                resp.close()
+                raise requests.HTTPError(f'HTTP {resp.status_code}', response=resp)
+            resp.raise_for_status()
+            break
+        except (requests.ConnectionError, requests.Timeout) as e:
+            if attempt == 2:
+                raise
+            delay = 2 ** attempt
+            if on_token:
+                on_token(f'\n[Ollama 재연결 {attempt + 2}/3 — {delay}s 대기: {type(e).__name__}]\n')
+            time.sleep(delay)
+        except requests.HTTPError as e:
+            status = e.response.status_code if e.response is not None else 0
+            if status < 500 or attempt == 2:
+                raise
+            delay = 2 ** attempt
+            if on_token:
+                on_token(f'\n[Ollama 재연결 {attempt + 2}/3 — {delay}s 대기: HTTP {status}]\n')
+            time.sleep(delay)
 
     accumulated = ''
     tool_calls = []
@@ -156,6 +177,11 @@ def run(
     if profile is None:
         profile = {}
 
+    # 파일 시스템 샌드박스 설정 (원격 사용자 working_dir 격리)
+    # profile.fs_sandbox 가 True면 fs 툴이 working_dir 밖 접근 거부
+    from tools import fs as _fs
+    _fs.set_sandbox(working_dir if profile.get('fs_sandbox') else None)
+
     if not session_messages:
         system_content = _build_system(working_dir, profile, context_snippets)
         session_messages.append({'role': 'system', 'content': system_content})
@@ -230,6 +256,20 @@ def run(
                             'content': json.dumps(result, ensure_ascii=False),
                         })
                         continue
+
+            # run_python: 임의 코드 실행이라 항상 confirm 요구 (샌드박스 대체)
+            if fn_name == 'run_python' and confirm_bash:
+                code = args.get('code', '')
+                preview = 'python: ' + code[:200].replace('\n', ' ⏎ ')
+                if not confirm_bash(preview):
+                    result = {'ok': False, 'error': '사용자가 취소했습니다'}
+                    if on_tool:
+                        on_tool(fn_name, args, result)
+                    session_messages.append({
+                        'role': 'tool',
+                        'content': json.dumps(result, ensure_ascii=False),
+                    })
+                    continue
 
             # pre_tool_use 훅 — False 반환 시 툴 차단
             _hooks = hooks or {}

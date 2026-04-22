@@ -20,11 +20,51 @@ from tools.claude_cli import ask as claude_ask, is_available as claude_available
 from session.compactor import needs_compaction, compact
 
 PORT         = int(os.environ.get('HARNESS_PORT', '7891'))
-BIND         = os.environ.get('HARNESS_BIND', '0.0.0.0')
+BIND         = os.environ.get('HARNESS_BIND', '127.0.0.1')  # 외부 노출은 HARNESS_BIND=0.0.0.0 명시 필요
 VALID_TOKENS = set(filter(None, os.environ.get('HARNESS_TOKENS', '').split(',')))
 
-# Ollama는 동시 추론 불가 — 요청 1개씩 처리
+# Ollama는 동시 추론 불가 — 요청 1개씩 처리 + 대기열 가시화
 _ollama_lock = asyncio.Semaphore(1)
+_ollama_queue_count = 0
+
+
+async def _enter_ollama_queue(ws) -> bool:
+    '''큐 진입 시 카운터 증가. 앞에 대기자가 있으면 position을 알림. 대기했는지 반환.'''
+    global _ollama_queue_count
+    _ollama_queue_count += 1
+    pos = _ollama_queue_count
+    if pos > 1:
+        await send(ws, type='queue', position=pos - 1)
+        return True
+    return False
+
+
+def _leave_ollama_queue():
+    global _ollama_queue_count
+    if _ollama_queue_count > 0:
+        _ollama_queue_count -= 1
+
+# 원격 연결 중에는 idle_runner의 자가수정 차단 (파일 기반 신호)
+_REMOTE_ACTIVE_PATH = os.path.expanduser('~/.harness/evolution/.remote_active')
+_remote_count = 0
+_remote_lock = asyncio.Lock()
+
+
+async def _bump_remote_active(delta: int):
+    global _remote_count
+    async with _remote_lock:
+        _remote_count += delta
+        if _remote_count < 0:
+            _remote_count = 0
+        os.makedirs(os.path.dirname(_REMOTE_ACTIVE_PATH), exist_ok=True)
+        if _remote_count > 0:
+            with open(_REMOTE_ACTIVE_PATH, 'w') as f:
+                f.write(str(_remote_count))
+        elif os.path.exists(_REMOTE_ACTIVE_PATH):
+            try:
+                os.unlink(_REMOTE_ACTIVE_PATH)
+            except OSError:
+                pass
 
 
 # ── 메시지 전송 헬퍼 ──────────────────────────────────────────────
@@ -40,6 +80,10 @@ class Session:
     def __init__(self):
         self.working_dir = os.environ.get('HARNESS_CWD') or os.getcwd()
         self.profile = prof.load(self.working_dir)
+        # 원격 사용자는 무조건 fs 샌드박스 + 모든 write/bash 확인 필수
+        self.profile['fs_sandbox'] = True
+        self.profile['confirm_writes'] = True
+        self.profile['confirm_bash'] = True
         self.messages: list = []
         self.undo_count: int = 0
         self._confirm_event: asyncio.Event | None = None
@@ -68,7 +112,7 @@ async def run_agent(ws, state: Session, user_input: str, plan_mode: bool = False
                 send(ws, type='tool_end', name=name, result=result), loop
             )
 
-    def confirm_write(path: str) -> bool:
+    def confirm_write(path: str, content: str | None = None) -> bool:
         event = asyncio.Event()
         state._confirm_event = event
         state._confirm_result = False
@@ -135,8 +179,14 @@ async def run_agent(ws, state: Session, user_input: str, plan_mode: bool = False
                 send(ws, type='error', text=str(e)), loop
             )
 
-    async with _ollama_lock:
-        await asyncio.get_event_loop().run_in_executor(None, _run)
+    was_queued = await _enter_ollama_queue(ws)
+    try:
+        async with _ollama_lock:
+            if was_queued:
+                await send(ws, type='queue_ready')
+            await asyncio.get_event_loop().run_in_executor(None, _run)
+    finally:
+        _leave_ollama_queue()
     await send(ws, type='agent_end')
 
 
@@ -360,13 +410,21 @@ def _build_file_tree(working_dir: str, max_depth: int = 3) -> dict:
 
 # ── 메인 핸들러 ───────────────────────────────────────────────────
 async def handler(ws):
-    # 토큰 인증
+    # 토큰 인증 (websockets 14+: ws.request_headers → ws.request.headers)
     if VALID_TOKENS:
-        token = ws.request_headers.get('x-harness-token', '')
+        token = ws.request.headers.get('x-harness-token', '')
         if token not in VALID_TOKENS:
             await ws.close(4401, 'Unauthorized')
             return
 
+    await _bump_remote_active(1)
+    try:
+        await _run_session(ws)
+    finally:
+        await _bump_remote_active(-1)
+
+
+async def _run_session(ws):
     state = Session()
 
     # 초기 상태 전송
@@ -434,8 +492,22 @@ async def handler(ws):
 async def main():
     import logging
     logging.getLogger('websockets').setLevel(logging.CRITICAL)
-    auth_info = f'  (토큰 인증 {len(VALID_TOKENS)}개)' if VALID_TOKENS else '  (인증 없음 — HARNESS_TOKENS 미설정)'
-    print(f'harness server  ws://{BIND}:{PORT}{auth_info}', flush=True)
+
+    if not VALID_TOKENS:
+        print('ERROR: HARNESS_TOKENS 환경변수가 비어있습니다.', file=sys.stderr)
+        print('  안전한 토큰 생성: export HARNESS_TOKENS=$(openssl rand -hex 32)', file=sys.stderr)
+        print('  여러 토큰은 쉼표로 구분: HARNESS_TOKENS=token1,token2', file=sys.stderr)
+        print('  인증 없는 서버 기동을 거부합니다.', file=sys.stderr)
+        sys.exit(1)
+
+    # 스타트업 시 이전 실행의 잔재 파일 정리
+    if os.path.exists(_REMOTE_ACTIVE_PATH):
+        try:
+            os.unlink(_REMOTE_ACTIVE_PATH)
+        except OSError:
+            pass
+
+    print(f'harness server  ws://{BIND}:{PORT}  (토큰 인증 {len(VALID_TOKENS)}개)', flush=True)
     async with websockets.serve(handler, BIND, PORT):
         await asyncio.Future()  # 영원히 실행
 

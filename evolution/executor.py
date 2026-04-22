@@ -79,7 +79,17 @@ def _execute_one(proposal: dict, console=None) -> dict:
     mark_proposal(key, 'applied')
     _append_changelog(proposal, 'applied', changed_files=changed_files)
     _log(console, f'  [tool.ok]✓ 적용 완료[/tool.ok]')
-    return {'ok': True, 'key': key, 'changed_files': changed_files}
+
+    # 5. 자동 git 커밋 — 롤백 경로 확보 (자가수정 추적성)
+    commit_result = _git_commit_evolution(key, proposal.get('rationale', ''), changed_files)
+    if commit_result['ok']:
+        _log(console, f'  [dim]✓ 커밋: {commit_result["sha"]}[/dim]')
+    elif commit_result.get('reason') == 'dirty':
+        _log(console, '  [dim]작업 트리에 다른 변경이 있어 커밋 스킵 (수동 확인 필요)[/dim]')
+    else:
+        _log(console, f'  [dim]git 커밋 실패: {commit_result.get("error", "unknown")}[/dim]')
+
+    return {'ok': True, 'key': key, 'changed_files': changed_files, 'commit': commit_result}
 
 
 def _run_implementation(proposal: dict) -> tuple[bool, list[str], str]:
@@ -270,3 +280,74 @@ def _increment_daily_count():
 def _log(console, msg: str):
     if console is not None:
         console.print(msg)
+
+
+# ── 자가수정 git 커밋 ─────────────────────────────────────────────
+
+def _git_commit_evolution(key: str, rationale: str, changed_files: list[str]) -> dict:
+    '''evolution 변경을 harness 레포에 원자적으로 커밋.
+
+    - HARNESS_DIR 안의 git 레포 기준
+    - 변경 파일만 선택적으로 add (다른 uncommitted 변경 보존)
+    - 작업 트리에 staged 상태의 다른 변경이 있으면 reason='dirty'로 skip
+    '''
+    if not changed_files:
+        return {'ok': False, 'reason': 'no_files'}
+
+    try:
+        # 1. git 레포인지 확인
+        r = subprocess.run(
+            ['git', '-C', HARNESS_DIR, 'rev-parse', '--is-inside-work-tree'],
+            capture_output=True, text=True, timeout=5,
+        )
+        if r.returncode != 0:
+            return {'ok': False, 'reason': 'not_a_git_repo'}
+
+        # 2. 이미 staged된 다른 변경이 있으면 위험 → skip
+        r = subprocess.run(
+            ['git', '-C', HARNESS_DIR, 'diff', '--cached', '--name-only'],
+            capture_output=True, text=True, timeout=5,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            already_staged = set(r.stdout.strip().split('\n'))
+            unrelated = already_staged - set(changed_files)
+            if unrelated:
+                return {'ok': False, 'reason': 'dirty', 'staged': list(unrelated)}
+
+        # 3. 변경 파일만 stage
+        abs_files = [os.path.join(HARNESS_DIR, f) if not os.path.isabs(f) else f for f in changed_files]
+        r = subprocess.run(
+            ['git', '-C', HARNESS_DIR, 'add', '--'] + abs_files,
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode != 0:
+            return {'ok': False, 'error': r.stderr.strip() or 'git add 실패'}
+
+        # 4. 커밋
+        rationale_clean = rationale.replace('\n', ' ').strip()[:200]
+        msg = f'evolution: {key}\n\n{rationale_clean}' if rationale_clean else f'evolution: {key}'
+        r = subprocess.run(
+            ['git', '-C', HARNESS_DIR, 'commit', '-m', msg],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode != 0:
+            stderr = r.stderr.strip()
+            # 변경 사항 없음(모두 제자리)면 성공으로 간주
+            if 'nothing to commit' in stderr.lower() or 'no changes added' in stderr.lower():
+                return {'ok': False, 'reason': 'no_changes'}
+            return {'ok': False, 'error': stderr or 'git commit 실패'}
+
+        # 5. 새 커밋 SHA 조회
+        r = subprocess.run(
+            ['git', '-C', HARNESS_DIR, 'rev-parse', '--short', 'HEAD'],
+            capture_output=True, text=True, timeout=5,
+        )
+        sha = r.stdout.strip() if r.returncode == 0 else '?'
+        return {'ok': True, 'sha': sha, 'message': msg}
+
+    except subprocess.TimeoutExpired:
+        return {'ok': False, 'error': 'git 명령 타임아웃'}
+    except FileNotFoundError:
+        return {'ok': False, 'error': 'git 명령어를 찾을 수 없음'}
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}

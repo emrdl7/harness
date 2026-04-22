@@ -10,6 +10,7 @@ IDLE_THRESHOLD_SEC = 300       # 5분 이상 유휴면 실행
 CHECK_INTERVAL_SEC = 60        # 1분마다 체크
 LOCK_PATH = os.path.expanduser('~/.harness/evolution/.idle_lock')
 LAST_RUN_PATH = os.path.expanduser('~/.harness/evolution/.last_idle_run')
+REMOTE_ACTIVE_PATH = os.path.expanduser('~/.harness/evolution/.remote_active')
 MIN_INTERVAL_SEC = 3600        # 1시간에 한 번 이상은 실행 안 함
 
 HARNESS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -32,6 +33,9 @@ def get_idle_seconds() -> float:
 
 
 def _should_run() -> bool:
+    # 원격 WS 세션이 활성이면 자가수정 금지 (외부 사용자 작업 중 코드 바뀌면 혼란)
+    if os.path.exists(REMOTE_ACTIVE_PATH):
+        return False
     if os.path.exists(LOCK_PATH):
         return False
     if os.path.exists(LAST_RUN_PATH):

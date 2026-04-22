@@ -263,6 +263,18 @@ ws.on('open', () => {
         spinnerStart()
         break
 
+      case 'queue':
+        spinnerStop()
+        println(`${C.yellow}  ⋯ Ollama 대기 중 (앞 ${msg.position}명)${C.reset}`)
+        spinnerStart()
+        break
+
+      case 'queue_ready':
+        spinnerStop()
+        println(`${C.green}  → 순번 도달, 추론 시작${C.reset}`)
+        spinnerStart()
+        break
+
       case 'agent_end':
         flushStream()
         agentRunning = false

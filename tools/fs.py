@@ -2,11 +2,46 @@ import os
 import re
 import glob as _glob
 
+# ── 경로 샌드박스 (원격 사용자 격리용) ──────────────────────────────
+# None이면 샌드박스 off (CLI 로컬 사용자), 경로 설정 시 그 디렉토리 밖 접근 차단
+_sandbox_root: str | None = None
+
+
+def set_sandbox(root: str | None):
+    '''샌드박스 루트 설정. None이면 off.'''
+    global _sandbox_root
+    if root:
+        _sandbox_root = os.path.realpath(os.path.expanduser(root))
+    else:
+        _sandbox_root = None
+
+
+def _resolve_path(p: str) -> tuple[bool, str]:
+    '''경로를 샌드박스에 맞춰 검증·절대화. (ok, resolved_or_error).
+
+    샌드박스 off면 확장만 반환.
+    On일 때: 상대경로는 샌드박스 루트 기준, symlink escape 방지를 위해 realpath.
+    '''
+    if _sandbox_root is None:
+        return True, os.path.expanduser(p)
+    expanded = os.path.expanduser(p)
+    if not os.path.isabs(expanded):
+        expanded = os.path.join(_sandbox_root, expanded)
+    absolute = os.path.realpath(expanded)
+    root_prefix = _sandbox_root if _sandbox_root.endswith(os.sep) else _sandbox_root + os.sep
+    if absolute == _sandbox_root or absolute.startswith(root_prefix):
+        return True, absolute
+    return False, f'경로가 샌드박스 밖입니다: {p} (sandbox: {_sandbox_root})'
+
+
 def read_file(path: str = None, file_path: str = None, offset: int = 1, limit: int = 0) -> dict:
     path = path or file_path
     '''offset: 시작 줄(1-based), limit: 읽을 줄 수(0=전체)'''
+    ok, resolved = _resolve_path(path)
+    if not ok:
+        return {'ok': False, 'error': resolved}
     try:
-        with open(os.path.expanduser(path), 'r', encoding='utf-8') as f:
+        with open(resolved, 'r', encoding='utf-8') as f:
             lines = f.readlines()
         total = len(lines)
         start = max(1, offset) - 1          # 0-based index
@@ -26,19 +61,23 @@ def read_file(path: str = None, file_path: str = None, offset: int = 1, limit: i
         return {'ok': False, 'error': str(e)}
 
 def write_file(path: str, content: str) -> dict:
+    ok, resolved = _resolve_path(path)
+    if not ok:
+        return {'ok': False, 'error': resolved}
     try:
-        path = os.path.expanduser(path)
-        os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
-        with open(path, 'w', encoding='utf-8') as f:
+        os.makedirs(os.path.dirname(resolved) or '.', exist_ok=True)
+        with open(resolved, 'w', encoding='utf-8') as f:
             f.write(content)
         return {'ok': True}
     except Exception as e:
         return {'ok': False, 'error': str(e)}
 
 def edit_file(path: str, old_string: str, new_string: str, replace_all: bool = False) -> dict:
+    ok, resolved = _resolve_path(path)
+    if not ok:
+        return {'ok': False, 'error': resolved}
     try:
-        path = os.path.expanduser(path)
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(resolved, 'r', encoding='utf-8') as f:
             content = f.read()
         count = content.count(old_string)
         if count == 0:
@@ -46,7 +85,7 @@ def edit_file(path: str, old_string: str, new_string: str, replace_all: bool = F
         if count > 1 and not replace_all:
             return {'ok': False, 'error': f'old_string이 {count}곳에서 발견됨 — replace_all=true로 전체 교체하거나 더 구체적으로 지정하세요'}
         new_content = content.replace(old_string, new_string) if replace_all else content.replace(old_string, new_string, 1)
-        with open(path, 'w', encoding='utf-8') as f:
+        with open(resolved, 'w', encoding='utf-8') as f:
             f.write(new_content)
         return {'ok': True, 'replaced': count if replace_all else 1}
     except Exception as e:
@@ -59,10 +98,13 @@ def grep_search(
     case_insensitive: bool = False,
     context_lines: int = 0,
 ) -> dict:
+    ok, resolved_path = _resolve_path(path)
+    if not ok:
+        return {'ok': False, 'error': resolved_path}
     try:
         flags = re.IGNORECASE if case_insensitive else 0
         regex = re.compile(pattern, flags)
-        search_path = os.path.expanduser(path)
+        search_path = resolved_path
         results = []
 
         def _search_file(fp):
@@ -110,11 +152,22 @@ def grep_search(
 def list_files(pattern: str = None, path: str = None) -> dict:
     # path 인자 호환 — 디렉토리 경로를 받으면 glob으로 변환
     if path and not pattern:
-        pattern = os.path.join(os.path.expanduser(path), '*')
+        ok, resolved_dir = _resolve_path(path)
+        if not ok:
+            return {'ok': False, 'error': resolved_dir}
+        pattern = os.path.join(resolved_dir, '*')
     if not pattern:
         return {'ok': False, 'error': 'pattern 또는 path 인자가 필요합니다'}
     try:
-        matches = _glob.glob(os.path.expanduser(pattern), recursive=True)
+        # 와일드카드 이전 prefix를 경로로 검증 (샌드박스 적용)
+        expanded = os.path.expanduser(pattern)
+        if not os.path.isabs(expanded) and _sandbox_root is not None:
+            expanded = os.path.join(_sandbox_root, expanded)
+        matches = _glob.glob(expanded, recursive=True)
+        # 샌드박스 on이면 밖 경로 필터링 (symlink escape 방지)
+        if _sandbox_root is not None:
+            root_prefix = _sandbox_root if _sandbox_root.endswith(os.sep) else _sandbox_root + os.sep
+            matches = [m for m in matches if os.path.realpath(m) == _sandbox_root or os.path.realpath(m).startswith(root_prefix)]
         return {'ok': True, 'files': sorted(matches)}
     except Exception as e:
         return {'ok': False, 'error': str(e)}

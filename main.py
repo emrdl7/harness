@@ -16,6 +16,7 @@ from rich.tree import Tree
 from rich.theme import Theme
 from rich.markdown import Markdown
 from rich.text import Text
+from rich.syntax import Syntax
 from rich import box
 
 from prompt_toolkit import prompt as pt_prompt
@@ -107,6 +108,8 @@ def _tool_result_hint(name: str, result: dict) -> str:
 SLASH_COMMANDS = {
     '/clear':    '대화 초기화',
     '/undo':     '마지막 질문·응답 취소',
+    '/retry':    '마지막 질문을 같은 조건으로 재실행',
+    '/diff':     '변경사항 확인  ex) /diff / /diff main.py',
     '/plan':     '로컬 모델이 플랜 작성 후 실행  ex) /plan 인증 모듈 리팩터링',
     '/cplan':    'Claude가 플랜 작성 → 로컬 모델이 실행  ex) /cplan 인증 모듈 리팩터링',
     '/cloop':    'Claude ↔ 로컬 모델 협업 루프 (계획→실행→검토 반복)  ex) /cloop 인증 모듈 리팩터링',
@@ -142,11 +145,24 @@ PT_STYLE = PtStyle.from_dict({
 
 
 class SlashCompleter(Completer):
+    def __init__(self):
+        self.working_dir = os.getcwd()
+
     def get_completions(self, document, complete_event):
         text = document.text_before_cursor
         if not text.startswith('/'):
             return
-        word = text.split()[0] if text.split() else '/'
+
+        parts = text.split(maxsplit=1)
+        in_arg_mode = len(parts) >= 2 or (len(parts) == 1 and text.endswith(' '))
+
+        if in_arg_mode:
+            cmd = parts[0]
+            arg = parts[1] if len(parts) >= 2 else ''
+            yield from self._arg_completions(cmd, arg)
+            return
+
+        word = parts[0] if parts else '/'
         for cmd, desc in SLASH_COMMANDS.items():
             if cmd.startswith(word):
                 yield Completion(
@@ -155,6 +171,67 @@ class SlashCompleter(Completer):
                     display=cmd,
                     display_meta=desc.split('  ex)')[0],
                 )
+
+    def _arg_completions(self, cmd, arg):
+        if cmd == '/cd':
+            yield from self._path_completions(arg, dirs_only=True)
+        elif cmd == '/diff':
+            yield from self._git_changed_files(arg)
+        elif cmd == '/restore':
+            try:
+                from tools.improve import list_backups
+                for ts in list_backups()[:10]:
+                    if ts.startswith(arg):
+                        yield Completion(ts[len(arg):], start_position=0, display=ts)
+            except Exception:
+                pass
+        elif cmd == '/mode':
+            for m in ('suggest', 'auto-edit', 'full-auto'):
+                if m.startswith(arg):
+                    yield Completion(m[len(arg):], start_position=0, display=m)
+        elif cmd == '/evolve':
+            for sub in ('proposals', 'run', 'changelog'):
+                if sub.startswith(arg):
+                    yield Completion(sub[len(arg):], start_position=0, display=sub)
+
+    def _path_completions(self, arg, dirs_only=False):
+        try:
+            expanded = os.path.expanduser(arg) if arg.startswith('~') else arg
+            if expanded.startswith('/') or expanded.startswith('~'):
+                parent = os.path.dirname(expanded) or '/'
+                prefix = os.path.basename(expanded)
+            else:
+                parent = os.path.join(self.working_dir, os.path.dirname(arg))
+                prefix = os.path.basename(arg)
+            if not os.path.isdir(parent):
+                return
+            for name in sorted(os.listdir(parent)):
+                if name.startswith('.'):
+                    continue
+                if prefix and not name.startswith(prefix):
+                    continue
+                full = os.path.join(parent, name)
+                if dirs_only and not os.path.isdir(full):
+                    continue
+                suffix = '/' if os.path.isdir(full) else ''
+                yield Completion(name[len(prefix):] + suffix, start_position=0, display=name + suffix)
+        except OSError:
+            pass
+
+    def _git_changed_files(self, arg):
+        import subprocess as _subp
+        try:
+            r = _subp.run(
+                ['git', '-C', self.working_dir, 'diff', '--name-only'],
+                capture_output=True, text=True, timeout=2,
+            )
+            if r.returncode != 0:
+                return
+            for f in r.stdout.strip().split('\n'):
+                if f and f.startswith(arg):
+                    yield Completion(f[len(arg):], start_position=0, display=f)
+        except (OSError, _subp.TimeoutExpired):
+            pass
 
 
 slash_completer = SlashCompleter()
@@ -172,6 +249,7 @@ def _short_dir(path: str) -> str:
 
 def get_input(turns: int, working_dir: str) -> str:
     short = _short_dir(working_dir)
+    slash_completer.working_dir = working_dir  # arg 자동완성이 현재 dir 기준 동작
     return pt_prompt(
         HTML(f'<ansibrightblack>{short}</ansibrightblack> '
              f'<ansicyan><b>❯</b></ansicyan> '
@@ -1056,16 +1134,21 @@ def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, 
                 t.add_column('우선순위', no_wrap=True)
                 t.add_column('타입')
                 t.add_column('근거')
+                t.add_column('증거', justify='right')
                 t.add_column('상태')
                 for p in pending:
                     color = 'red' if p['priority'] == 'high' else 'yellow'
+                    evidence_count = len(p.get('evidence', []))
+                    evidence_str = f'[cyan]{evidence_count}[/cyan]' if evidence_count >= 3 else f'[dim]{evidence_count}[/dim]'
                     t.add_row(
                         f'[{color}]{p["priority"]}[/{color}]',
                         p['type'],
                         p['rationale'][:60],
+                        evidence_str,
                         p.get('status', 'pending'),
                     )
                 console.print(t)
+                console.print('  [dim]증거 수 = 해당 패턴이 관찰된 세션 수 (많을수록 신뢰도 높음)[/dim]')
             return session_msgs, working_dir, undo_count
 
         if sub == 'run':
@@ -1089,12 +1172,14 @@ def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, 
                 t = Table(box=box.SIMPLE, show_header=True, border_style='dim')
                 t.add_column('시간', style='dim', no_wrap=True)
                 t.add_column('키')
-                t.add_column('결과')
+                t.add_column('결과', no_wrap=True)
+                t.add_column('근거')
                 t.add_column('파일')
                 for e in entries:
                     status_str = '[tool.ok]적용[/tool.ok]' if e['status'] == 'applied' else '[tool.fail]실패[/tool.fail]'
                     files_str = ', '.join(e.get('changed_files', [])) or '-'
-                    t.add_row(e['ts'][:16], e['key'][:30], status_str, files_str[:40])
+                    rationale = e.get('rationale', '') or e.get('error', '')
+                    t.add_row(e['ts'][:16], e['key'][:30], status_str, rationale[:45], files_str[:40])
                 console.print(t)
             return session_msgs, working_dir, undo_count
 
@@ -1326,8 +1411,9 @@ def _print_file_tree(working_dir: str, max_depth: int = 3):
 # ── /help ─────────────────────────────────────────────────────────
 def _print_help():
     sections = {
-        '대화': ['/clear', '/undo'],
+        '대화': ['/clear', '/undo', '/retry'],
         '실행': ['/plan', '/cplan'],
+        '검토': ['/diff'],
         '인덱스': ['/index'],
         '진화': ['/improve', '/learn', '/evolve', '/history', '/restore'],
         '파일': ['/commit', '/push', '/pull', '/cd', '/files'],
@@ -1600,6 +1686,57 @@ def main():
                         console.print(f'  [dim]저장됨: {fn}[/dim]')
                     console.print('  [dim]종료[/dim]')
                     break
+
+                # /retry — 마지막 user 메시지까지 롤백 후 재실행
+                if user_input.strip() == '/retry':
+                    last_user_idx = None
+                    for i in range(len(session_msgs) - 1, -1, -1):
+                        if session_msgs[i]['role'] == 'user':
+                            last_user_idx = i
+                            break
+                    if last_user_idx is None:
+                        console.print('  [dim]재실행할 이전 입력이 없습니다[/dim]')
+                        continue
+                    stored = session_msgs[last_user_idx]['content']
+                    # skills.build_context 프리픽스 제거 → 원본 user 입력 복원
+                    original = stored.rsplit('\n\n---\n', 1)[-1] if '\n\n---\n' in stored else stored
+                    session_msgs = session_msgs[:last_user_idx]
+                    preview = original[:80] + ('...' if len(original) > 80 else '')
+                    console.print(f'  [dim]재실행: {preview}[/dim]')
+                    snippets = get_context_snippets(original, working_dir, profile)
+                    _response_header()
+                    _ui.reset()
+                    _run_agent(original, context_snippets=snippets)
+                    _response_footer()
+                    continue
+
+                # /diff [file] — git diff 결과를 syntax highlight로 표시
+                if user_input.strip() == '/diff' or user_input.startswith('/diff '):
+                    parts = user_input.split(maxsplit=1)
+                    file_arg = parts[1].strip() if len(parts) > 1 else ''
+                    import subprocess as _subp
+                    cmd = ['git', '-C', working_dir, 'diff']
+                    if file_arg:
+                        cmd.extend(['--', file_arg])
+                    try:
+                        diff_result = _subp.run(cmd, capture_output=True, text=True, timeout=10)
+                    except FileNotFoundError:
+                        console.print('  [tool.fail]git 명령어를 찾을 수 없습니다[/tool.fail]')
+                        continue
+                    except _subp.TimeoutExpired:
+                        console.print('  [tool.fail]git diff 타임아웃[/tool.fail]')
+                        continue
+                    if diff_result.returncode != 0:
+                        stderr = (diff_result.stderr or '').strip()
+                        console.print(f'  [tool.fail]{stderr or "git diff 실패"}[/tool.fail]')
+                        continue
+                    if not diff_result.stdout.strip():
+                        target = file_arg or 'HEAD'
+                        console.print(f'  [dim]변경사항 없음 ({target})[/dim]')
+                        continue
+                    console.print(Syntax(diff_result.stdout, 'diff', theme='monokai', line_numbers=False, word_wrap=False))
+                    continue
+
                 session_msgs, working_dir, undo_count = handle_slash(
                     user_input, session_msgs, working_dir, profile, undo_count
                 )
