@@ -96,9 +96,15 @@ class Session:
 
 # ── 에이전트 실행 (스레드 → asyncio 브릿지) ──────────────────────
 async def run_agent(ws, state: Session, user_input: str, plan_mode: bool = False,
-                    context_snippets: str = ''):
-    '''context_snippets가 주어지면 외부값 우선 사용, 아니면 내부에서 자체 계산.
-    (harness_core.slash_plan이 미리 snippets를 계산해 전달하는 경로 지원)'''
+                    context_snippets: str = '',
+                    system_override: str | None = None,
+                    working_dir_override: str | None = None,
+                    ephemeral_profile: dict | None = None):
+    '''ephemeral 모드 지원:
+    - system_override: None이 아니면 새 세션([{role:system,content:override}])으로 실행
+    - working_dir_override: HARNESS_DIR 등 다른 디렉토리에서 실행 (/improve용)
+    - ephemeral_profile: 기본은 state.profile 그대로 사용
+    state.messages는 ephemeral일 때 갱신하지 않음.'''
     loop = asyncio.get_event_loop()
 
     def on_token(token: str):
@@ -166,21 +172,41 @@ async def run_agent(ws, state: Session, user_input: str, plan_mode: bool = False
 
     await send(ws, type='agent_start')
 
+    # ephemeral 모드: 별도 임시 세션 + 선택적 working_dir 오버라이드
+    is_ephemeral = system_override is not None
+    if is_ephemeral:
+        ephemeral_session = [{'role': 'system', 'content': system_override}]
+    run_wd = working_dir_override or state.working_dir
+    run_profile = ephemeral_profile or state.profile
+
     def _run():
         try:
-            _, state.messages = agent.run(
-                user_input,
-                session_messages=state.messages,
-                working_dir=state.working_dir,
-                profile=state.profile,
-                context_snippets=snippets if isinstance(snippets, str) else '',
-                plan_mode=plan_mode,
-                on_token=on_token,
-                on_tool=on_tool,
-                confirm_write=confirm_write if state.profile.get('confirm_writes', True) else None,
-                confirm_bash=confirm_bash if state.profile.get('confirm_bash', True) else None,
-                hooks=state.profile.get('hooks', {}),
-            )
+            if is_ephemeral:
+                agent.run(
+                    user_input,
+                    session_messages=ephemeral_session,
+                    working_dir=run_wd,
+                    profile=run_profile,
+                    on_token=on_token,
+                    on_tool=on_tool,
+                    confirm_write=confirm_write if run_profile.get('confirm_writes', True) else None,
+                    confirm_bash=confirm_bash if run_profile.get('confirm_bash', True) else None,
+                    hooks=run_profile.get('hooks', {}),
+                )
+            else:
+                _, state.messages = agent.run(
+                    user_input,
+                    session_messages=state.messages,
+                    working_dir=state.working_dir,
+                    profile=state.profile,
+                    context_snippets=snippets if isinstance(snippets, str) else '',
+                    plan_mode=plan_mode,
+                    on_token=on_token,
+                    on_tool=on_tool,
+                    confirm_write=confirm_write if state.profile.get('confirm_writes', True) else None,
+                    confirm_bash=confirm_bash if state.profile.get('confirm_bash', True) else None,
+                    hooks=state.profile.get('hooks', {}),
+                )
         except Exception as e:
             asyncio.run_coroutine_threadsafe(
                 send(ws, type='error', text=str(e)), loop
@@ -358,47 +384,34 @@ async def handle_slash(ws, state: Session, cmd: str):
             # 이미 존재 시 warn — UI는 error 메시지로 매핑
             await send(ws, type='error', text=result.notice)
 
-    elif name == '/improve':
-        await send(ws, type='info', text='백업 생성 중...')
-        backup_path = backup_sources()
-        await send(ws, type='info', text=f'백업: {backup_path}')
-        logs = read_recent(days=7)
-        sources = read_sources()
-        improve_input = f'실패 로그:\n{logs}\n\n소스:\n{sources[:12000]}\n\n개선하세요.'
-        improve_session = [{'role': 'system', 'content': '하네스 자기 개선 전문가. 수정 후 py_compile 검증.'}]
-
+    elif name in ('/improve', '/learn'):
+        # harness_core 위임: slash_improve / slash_learn이 ephemeral 세션으로 agent 실행.
+        # sync wrapper가 run_agent를 system_override/wd_override 모드로 호출.
         loop = asyncio.get_event_loop()
 
-        def on_tool(name, args, result):
-            pass
-
-        async def _run_improve():
-            await asyncio.get_event_loop().run_in_executor(None, lambda: agent.run(
-                improve_input,
-                session_messages=improve_session,
-                working_dir=HARNESS_DIR,
-                profile=state.profile,
-                on_token=lambda t: None,
-                on_tool=on_tool,
-                confirm_write=None,
-            ))
-
-        await _run_improve()
-        await send(ws, type='slash_result', cmd='improve')
-
-    elif name == '/learn':
-        if state.messages:
-            summary = summarize_session(state.messages)
-            learn_prompt = build_learn_prompt(
-                summary, state.profile.get('global_doc', ''),
-                state.profile.get('project_doc', ''), state.working_dir
+        def _sync_ephemeral(user_input, *, system_prompt, working_dir, profile):
+            fut = asyncio.run_coroutine_threadsafe(
+                run_agent(ws, state, user_input,
+                          system_override=system_prompt,
+                          working_dir_override=working_dir,
+                          ephemeral_profile=profile),
+                loop,
             )
-            learn_session = [{'role': 'system', 'content': '하네스 자기학습. HARNESS.md만 갱신.'}]
-            await asyncio.get_event_loop().run_in_executor(None, lambda: agent.run(
-                learn_prompt, session_messages=learn_session,
-                working_dir=state.working_dir, profile={},
-                on_token=lambda t: None, on_tool=lambda *a: None, confirm_write=None,
-            ))
+            fut.result()
+
+        ctx = harness_core.SlashContext(run_agent_ephemeral=_sync_ephemeral)
+        result = await loop.run_in_executor(
+            None,
+            lambda: harness_core.dispatch(cmd, _to_core_state(state), ctx),
+        )
+        if name == '/improve':
+            await send(ws, type='slash_result', cmd='improve',
+                       backup=result.data.get('backup', ''),
+                       validation=result.data.get('validation', []))
+        else:
+            await send(ws, type='slash_result', cmd='learn')
+        if result.level in ('warn', 'error') and result.notice:
+            await send(ws, type='info', text=result.notice)
         await send(ws, type='slash_result', cmd='learn')
 
     elif name == '/help':
