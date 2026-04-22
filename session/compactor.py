@@ -3,9 +3,10 @@ import requests
 import config
 
 # 비시스템 메시지 누적 문자가 이 값을 넘으면 compaction 트리거
-COMPACT_THRESHOLD = 12000
-# compaction 후 유지할 최근 메시지 수 (최근 N턴)
-KEEP_RECENT = 6
+# qwen3-coder:30b 기준 32K 컨텍스트 → 20K 문자(≈5K 토큰) 수준에서 압축
+COMPACT_THRESHOLD = 20000
+# compaction 후 유지할 최근 메시지 수
+KEEP_RECENT = 10
 
 _SUMMARY_SYSTEM = '대화 요약 전문가. 간결하고 정확하게.'
 _SUMMARY_PROMPT = (

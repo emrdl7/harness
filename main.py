@@ -110,6 +110,7 @@ SLASH_COMMANDS = {
     '/plan':     '로컬 모델이 플랜 작성 후 실행  ex) /plan 인증 모듈 리팩터링',
     '/cplan':    'Claude가 플랜 작성 → 로컬 모델이 실행  ex) /cplan 인증 모듈 리팩터링',
     '/cloop':    'Claude ↔ 로컬 모델 협업 루프 (계획→실행→검토 반복)  ex) /cloop 인증 모듈 리팩터링',
+    '/compact':  '세션 대화를 요약 압축해 컨텍스트 확보',
     '/index':    '코드베이스 인덱싱',
     '/improve':  '하네스 자기 분석 및 개선',
     '/learn':    '세션 분석 후 HARNESS.md 즉시 갱신',
@@ -1007,6 +1008,17 @@ def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, 
             console.print('  [warn]사용법:[/warn] /cplan <작업 내용>')
             return session_msgs, working_dir, undo_count
         session_msgs = do_cplan(query, session_msgs, working_dir, profile)
+        return session_msgs, working_dir, undo_count
+
+    if name == '/compact':
+        non_sys = [m for m in session_msgs if m['role'] != 'system']
+        if len(non_sys) < 4:
+            console.print('  [dim]압축할 대화가 충분하지 않습니다[/dim]')
+        else:
+            console.print('  [dim]세션 압축 중...[/dim]')
+            new_msgs, dropped = compact(session_msgs)
+            session_msgs = new_msgs
+            console.print(f'  [tool.ok]✓[/tool.ok] 압축 완료 — 메시지 {dropped}개 요약됨')
         return session_msgs, working_dir, undo_count
 
     if name == '/cloop':
