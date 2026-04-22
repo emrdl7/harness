@@ -4,6 +4,7 @@ import os
 import time
 import difflib
 import argparse
+import re as _re
 from datetime import datetime
 
 from rich.console import Console
@@ -1492,6 +1493,15 @@ def main():
                 session_msgs, working_dir, undo_count = handle_slash(
                     commit_cmd, session_msgs, working_dir, profile, undo_count
                 )
+                continue
+
+            # cd <경로> → /cd 로 라우팅
+            if _re.match(r'^cd(\s+\S+)?$', user_input.strip()):
+                path = user_input.strip()[2:].strip() or '~'
+                session_msgs, working_dir, undo_count = handle_slash(
+                    f'/cd {path}', session_msgs, working_dir, profile, undo_count
+                )
+                profile = prof.load(working_dir)
                 continue
 
             # 자연어로 /cplan 트리거 감지
