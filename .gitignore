@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+.harness_bak/
+*.egg-info/
+.DS_Store
+context/.index/
+context/__pycache__/
+.env
+*.log

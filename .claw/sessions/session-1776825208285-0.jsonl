@@ -1,0 +1,5 @@
+{"created_at_ms":1776825208285,"session_id":"session-1776825208285-0","type":"session_meta","updated_at_ms":1776825251403,"version":1}
+{"message":{"blocks":[{"text":"하이","type":"text"}],"role":"user"},"type":"message"}
+{"message":{"blocks":[{"text":"안녕하세요! 무엇을 도와드릴까요?","type":"text"}],"role":"assistant","usage":{"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"input_tokens":2831,"output_tokens":13}},"type":"message"}
+{"message":{"blocks":[{"text":"뭐냐","type":"text"}],"role":"user"},"type":"message"}
+{"message":{"blocks":[{"text":"나는 당신의 소프트웨어 엔지니어링 작업에 도움을 드리는 인공 지능입니다. 필요한 기능이나 문제 해결에 대해 알려주시면 최선을 다해 도와드릴 것입니다. 무엇을 도와드릴까요?","type":"text"}],"role":"assistant","usage":{"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"input_tokens":2855,"output_tokens":60}},"type":"message"}
