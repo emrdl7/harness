@@ -289,7 +289,12 @@ def slash_cplan(state: SlashState, ctx: SlashContext, task: str) -> SlashResult:
     state.messages.append({'role': 'user', 'content': f'[Claude 플랜 작성 요청]\n{task}'})
     state.messages.append({'role': 'assistant', 'content': f'[Claude 작성 플랜]\n{plan_text}'})
 
-    if ctx.confirm_execute is not None and not ctx.confirm_execute(plan_text, task):
+    # confirm_execute 미주입 → phase 1까지만 (플랜 작성 + 기록).
+    # 프런트엔드가 별도 단계에서 실행 여부를 결정 (예: server가 `cplan_confirm` 이벤트 송신).
+    if ctx.confirm_execute is None:
+        return SlashResult.ok(state, '', plan_text=plan_text, task=task)
+
+    if not ctx.confirm_execute(plan_text, task):
         return SlashResult.info(state, '실행 취소 — 플랜은 세션에 기록되었습니다')
 
     execute_prompt = (

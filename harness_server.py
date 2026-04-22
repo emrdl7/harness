@@ -317,17 +317,39 @@ async def handle_slash(ws, state: Session, cmd: str):
             await send(ws, type='error', text=result.notice)
 
     elif name == '/cplan':
-        query = parts[1] if len(parts) > 1 else ''
-        if not query:
-            await send(ws, type='error', text='사용법: /cplan <작업>')
-            return
-        if not claude_available():
-            await send(ws, type='error', text='claude CLI를 찾을 수 없습니다')
-            return
-        from main import CPLAN_PROMPT_TMPL
-        prompt = CPLAN_PROMPT_TMPL.format(task=query, working_dir=state.working_dir)
-        await run_claude(ws, state, prompt)
-        await send(ws, type='cplan_confirm', task=query)  # UI에서 실행 여부 물어봄
+        # Phase 1만 harness_core에 위임 — slash_cplan이 confirm_execute=None이면
+        # 플랜 작성 + state.messages 기록까지만 수행. 실행 여부는 UI가 cplan_confirm
+        # 응답 후 별도 /plan 라운드로 처리 (기존 UX 유지).
+        loop = asyncio.get_event_loop()
+
+        def _sync_ask_claude(prompt: str) -> str:
+            collected: list[str] = []
+
+            def _on_tok(line: str):
+                collected.append(line)
+                asyncio.run_coroutine_threadsafe(
+                    send(ws, type='claude_token', text=line), loop,
+                )
+
+            try:
+                claude_ask(prompt, on_token=_on_tok)
+            except Exception as e:
+                asyncio.run_coroutine_threadsafe(
+                    send(ws, type='error', text=str(e)), loop,
+                )
+                return ''
+            return ''.join(collected).strip()
+
+        ctx = harness_core.SlashContext(ask_claude=_sync_ask_claude)
+        result = await loop.run_in_executor(
+            None,
+            lambda: harness_core.dispatch(cmd, _to_core_state(state), ctx),
+        )
+        _apply_core_result(state, result)
+        if result.level == 'ok' and 'plan_text' in result.data:
+            await send(ws, type='cplan_confirm', task=result.data.get('task', ''))
+        elif result.level in ('warn', 'error'):
+            await send(ws, type='error', text=result.notice)
 
     elif name == '/index':
         await send(ws, type='info', text='인덱싱 중...')
