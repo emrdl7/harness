@@ -80,12 +80,12 @@
 - **Description:** `tempfile.NamedTemporaryFile(delete=False)` + `os.unlink` in `finally` is fine for normal exit, but the block does not catch `KeyboardInterrupt`. If the parent is `^C`ed between write and unlink, temp files accumulate in `$TMPDIR`. Also writes to disk even for trivial code — use `python3 -c`.
 - **Suggestion:** Prefer `subprocess.run(['python3', '-c', code], …)` for small code; if a file is needed, wrap `subprocess.run` inside `try/finally` that also catches `BaseException`.
 
-### 1.7 `tools/fs.py:write_file` silently overwrites without dir check (Medium)
+### 1.7 ~~`tools/fs.py:write_file` silently overwrites without dir check~~ ✅ PARTIAL 2026-04-23 (full-auto 모드에서 자동 샌드박스)
 - **Location:** `tools/fs.py:28-36`
 - **Description:** `os.makedirs(os.path.dirname(path) or '.', exist_ok=True)` — if `path` is e.g. `"/"` or `""`, `os.path.dirname` returns `""`/`"/"` and this either creates `.` (harmless) or attempts to write `/` (permission error). No guard against writing outside `working_dir` — the model can write to `~/.ssh/authorized_keys` in `full-auto` mode.
 - **Suggestion:** In `write_file`/`edit_file`, reject absolute paths outside `working_dir` unless `approval_mode='full-auto'` and the user has opted in. Log any writes outside cwd.
 
-### 1.8 `list_files` leaks glob traversal outside cwd (Medium)
+### 1.8 ~~`list_files` leaks glob traversal outside cwd~~ ✅ PARTIAL 2026-04-23 (§1.7과 동일 — full-auto면 샌드박스 활성)
 - **Location:** `tools/fs.py:110-120`
 - **Description:** `list_files(pattern='/Users/**')` is happily expanded. No `cwd` pinning. Combined with `read_file` accepting `os.path.expanduser(path)` everywhere, a compromised model can enumerate `~/.ssh`, `~/.aws`, `~/.claude`.
 - **Suggestion:** Normalize pattern relative to `working_dir` and reject absolute paths unless explicitly approved.
@@ -100,7 +100,7 @@
 - **Description:** With `shell=True`, anything the model emits runs through `/bin/sh`. The `_DANGEROUS_RE` list uses `\b` boundaries, so trivial obfuscations bypass it: `r''m -rf ~`, `/bin/rm`, `busybox rm`, `python -c "import os; os.remove(...)"`, `find . -delete`, `> /etc/passwd` (redirect, no match), `curl host | sh`. None of those are in `_DANGEROUS`.
 - **Suggestion:** Add: `>\s*/`, `find\b.*-delete`, `curl.*\|\s*sh`, `wget.*\|\s*sh`, `\|\s*sudo`, `/bin/(rm|mv)`, `python\b.*-c`, `bash\b.*-c`. Better: use a shell-lexer (shlex) to classify tokens rather than regex on raw strings. See §2.1.
 
-### 1.11 `context/indexer.py` uses ChromaDB default embeddings per project (Medium)
+### 1.11 ~~`context/indexer.py` uses ChromaDB default embeddings per project~~ ✅ FIXED 2026-04-23 (첫 다운로드 안내 추가)
 - **Location:** `context/indexer.py:48-52`
 - **Description:** `embedding_functions.DefaultEmbeddingFunction()` downloads a model on first use (ONNX, ~80 MB) and stores vectors per-project hash. For large repos the first `/index` blocks the REPL with no progress beyond a single spinner line. If the download fails silently (no network), `get_or_create_collection` raises and the error is not user-friendly.
 - **Suggestion:** Probe model availability up front; print a clear "first-time download" banner; add `HARNESS_EMBED_MODEL` override.

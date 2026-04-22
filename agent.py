@@ -190,9 +190,12 @@ def run(
         profile = {}
 
     # 파일 시스템 샌드박스 설정 (원격 사용자 working_dir 격리)
-    # profile.fs_sandbox 가 True면 fs 툴이 working_dir 밖 접근 거부
+    # profile.fs_sandbox 가 True면 fs 툴이 working_dir 밖 접근 거부.
+    # CONCERNS.md §1.7/§1.8 대응: full-auto 모드에선 confirm_write를 건너뛰므로
+    # 명시적 opt-in이 없더라도 자동 샌드박스 걸어 작업 디렉토리 밖 쓰기를 차단.
     from tools import fs as _fs
-    _fs.set_sandbox(working_dir if profile.get('fs_sandbox') else None)
+    sandbox_on = profile.get('fs_sandbox') or config.APPROVAL_MODE == 'full-auto'
+    _fs.set_sandbox(working_dir if sandbox_on else None)
 
     if not session_messages:
         system_content = _build_system(working_dir, profile, context_snippets)

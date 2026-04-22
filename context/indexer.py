@@ -45,8 +45,27 @@ def _save_mtimes(project_id: str, mtimes: dict):
         json.dump(mtimes, f)
 
 
+_EMBED_MODEL_DIR = os.path.expanduser('~/.cache/chroma/onnx_models')
+
+
+def _embed_model_already_cached() -> bool:
+    '''ChromaDB DefaultEmbeddingFunction의 ONNX 모델 캐시 존재 여부.'''
+    return os.path.isdir(_EMBED_MODEL_DIR) and any(os.scandir(_EMBED_MODEL_DIR))
+
+
 def _get_collection(project_id: str):
+    '''CONCERNS.md §1.11 대응: 첫 실행 시 ONNX 임베딩 모델(~80MB) 다운로드가
+    있어 사용자에겐 멈춘 것처럼 보였음. 캐시 부재 시 stderr에 명시 안내.
+    HARNESS_EMBED_MODEL env로 override 가능 (향후 확장용 훅).'''
     os.makedirs(INDEX_DIR, exist_ok=True)
+    if not _embed_model_already_cached():
+        import sys
+        print(
+            '[indexer] 첫 인덱싱 — 임베딩 모델(ONNX, ~80MB) 다운로드 중...\n'
+            '           캐시 위치: ~/.cache/chroma/onnx_models\n'
+            '           네트워크 없이 시작하면 실패할 수 있음.',
+            file=sys.stderr,
+        )
     client = chromadb.PersistentClient(path=os.path.join(INDEX_DIR, project_id))
     ef = embedding_functions.DefaultEmbeddingFunction()
     return client.get_or_create_collection('code', embedding_function=ef)
