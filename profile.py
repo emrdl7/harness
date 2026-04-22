@@ -36,6 +36,8 @@ DEFAULTS = {
     'mcp_servers':    [],
     # 자율 기능 진화 — 세션 종료 시 패턴 분석 + 유휴 시 코드 개선 실행
     'auto_evolve':    False,
+    # 승인 모드: suggest | auto-edit | full-auto
+    'approval_mode':  '',
 }
 
 # 환경변수 → 설정 키 매핑 (값 타입 포함)

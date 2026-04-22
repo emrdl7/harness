@@ -2,6 +2,8 @@
 import sys
 import os
 import time
+import difflib
+import argparse
 from datetime import datetime
 
 from rich.console import Console
@@ -119,6 +121,7 @@ SLASH_COMMANDS = {
     '/sessions': '저장된 세션 목록',
     '/init':     '.harness.toml 생성',
     '/claude':   'Claude CLI에 질문 (세션에 기록됨)  ex) /claude 이 함수 설명해줘',
+    '/mode':     '승인 모드 전환  ex) /mode suggest | auto-edit | full-auto',
     '/help':     '도움말',
     '/quit':     '종료',
 }
@@ -271,8 +274,38 @@ def on_tool(name: str, args: dict, result):
         _spinner.start()
 
 
-def confirm_write(path: str) -> bool:
+def confirm_write(path: str, content: str = None) -> bool:
     _flush_tokens()
+    if content is not None:
+        # diff 미리보기
+        try:
+            if os.path.exists(path):
+                with open(path, encoding='utf-8', errors='replace') as f:
+                    old_lines = f.readlines()
+                label = path
+            else:
+                old_lines = []
+                label = f'{path} (새 파일)'
+            new_lines = [l if l.endswith('\n') else l + '\n' for l in content.splitlines()]
+            diff = list(difflib.unified_diff(old_lines, new_lines, fromfile=label, tofile=label, lineterm=''))
+            if diff:
+                for line in diff[:60]:
+                    if line.startswith('+++') or line.startswith('---'):
+                        console.print(f'  [dim]{line}[/dim]')
+                    elif line.startswith('+'):
+                        console.print(f'  [green]{line}[/green]')
+                    elif line.startswith('-'):
+                        console.print(f'  [red]{line}[/red]')
+                    elif line.startswith('@@'):
+                        console.print(f'  [cyan]{line}[/cyan]')
+                    else:
+                        console.print(f'  [dim]{line}[/dim]')
+                if len(diff) > 60:
+                    console.print(f'  [dim]... (이하 {len(diff)-60}줄 생략)[/dim]')
+            else:
+                console.print(f'  [dim]변경 없음[/dim]')
+        except Exception:
+            pass
     return Confirm.ask(f'  [warn]Write[/warn] [bold]{path}[/bold]')
 
 
@@ -314,8 +347,13 @@ def _suggest_unknown_tools(names: list[str]):
 
 
 # ── 응답 구분선 ────────────────────────────────────────────────────
+_ctx_display: list = ['']  # main()이 _run_agent 전에 갱신
+
+
 def _response_header(model_label: str = 'qwen2.5-coder'):
-    console.print(f'\n[dim]{model_label}[/dim]')
+    ctx = _ctx_display[0]
+    suffix = f'  {ctx}' if ctx else ''
+    console.print(f'\n[dim]{model_label}[/dim]{suffix}')
 
 
 def _response_footer():
@@ -923,6 +961,17 @@ def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, 
         _run_claude_cli(query, session_msgs=session_msgs)
         return session_msgs, working_dir, undo_count
 
+    if name == '/mode':
+        mode = parts[1].strip() if len(parts) > 1 else ''
+        valid = ('suggest', 'auto-edit', 'full-auto')
+        if mode not in valid:
+            console.print(f'  [warn]사용법:[/warn] /mode suggest | auto-edit | full-auto')
+            console.print(f'  현재: [bold]{config.APPROVAL_MODE}[/bold]')
+        else:
+            config.APPROVAL_MODE = mode
+            console.print(f'  [tool.ok]✓[/tool.ok] approval_mode → [bold]{mode}[/bold]')
+        return session_msgs, working_dir, undo_count
+
     if name == '/help':
         _print_help()
         return session_msgs, working_dir, undo_count
@@ -978,6 +1027,7 @@ def _print_help():
         '파일': ['/cd', '/files'],
         '세션': ['/save', '/resume', '/sessions', '/init'],
         'Claude': ['/claude'],
+        '설정': ['/mode'],
         '기타': ['/help', '/quit'],
     }
     t = Table(box=box.SIMPLE, show_header=False, padding=(0, 2), border_style='dim')
@@ -1026,15 +1076,67 @@ def _start_mcp_servers(profile: dict) -> dict:
     return clients
 
 
+def _make_write_callback(mode: str):
+    '''approval_mode에 따라 confirm_write 콜백 반환.'''
+    if mode == 'suggest':
+        return lambda path, content=None: False
+    if mode == 'full-auto':
+        return lambda path, content=None: True
+    return confirm_write  # auto-edit: 항상 confirm
+
+
+def _make_bash_callback(mode: str):
+    '''approval_mode에 따라 confirm_bash 콜백 반환.'''
+    if mode in ('suggest', ):
+        return lambda cmd: False
+    if mode == 'full-auto':
+        return lambda cmd: True
+    return confirm_bash  # auto-edit: 위험 명령만 확인
+
+
+def _ctx_status(session_msgs: list) -> str:
+    '''ctx 토큰 상태 문자열 반환. 예: "ctx: 8k/32k (25%)"'''
+    used = sum(len(m.get('content') or '') for m in session_msgs) // 4
+    total = config.CONTEXT_WINDOW
+    pct = int(used / total * 100) if total else 0
+    used_k = f'{used // 1000}k' if used >= 1000 else str(used)
+    total_k = f'{total // 1000}k' if total >= 1000 else str(total)
+    if pct >= 95:
+        color = 'red'
+    elif pct >= 80:
+        color = 'yellow'
+    else:
+        color = 'dim'
+    return f'[{color}]ctx: {used_k}/{total_k} ({pct}%)[/{color}]'
+
+
 def main():
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('-p', '--print', dest='one_shot', metavar='QUERY', default=None)
+    parser.add_argument('--continue', dest='resume', action='store_true')
+    parser.add_argument('extra', nargs='?', default=None)
+    args, _ = parser.parse_known_args()
+
     working_dir = os.path.abspath(os.environ.get('HARNESS_CWD') or os.getcwd())
     profile = prof.load(working_dir)
     config.runtime_override(profile)
     session_msgs: list = []
     undo_count: int = 0
 
+    # --continue: 이전 세션 복원
+    _resumed_turns = 0
+    if args.resume:
+        data = sess.load_latest(working_dir)
+        if data:
+            session_msgs = data['messages']
+            _resumed_turns = len([m for m in session_msgs if m['role'] == 'user'])
+            working_dir = data.get('working_dir', working_dir)
+
     print_banner()
     print_welcome(working_dir)
+
+    if args.resume and _resumed_turns:
+        console.print(f'  [dim]이전 세션 재개 ({_resumed_turns}턴)[/dim]\n')
 
     # MCP 서버 초기화
     _mcp_clients: dict[str, StdioMCPClient] = {}
@@ -1060,6 +1162,23 @@ def main():
     else:
         _effective_on_tool = on_tool
 
+    # approval_mode 기반 콜백 — config.APPROVAL_MODE를 직접 참조해 /mode 즉시 반영
+    def _cw(path, content=None):
+        mode = config.APPROVAL_MODE
+        if mode == 'suggest':
+            console.print(f'  [dim][suggest] 파일 수정 차단: {path}[/dim]')
+            return False
+        if mode == 'full-auto':
+            return True
+        return confirm_write(path, content)
+
+    def _cb(cmd):
+        mode = config.APPROVAL_MODE
+        if mode == 'suggest':
+            return False
+        if mode == 'full-auto':
+            return True
+        return confirm_bash(cmd)
 
     # 파이프 입력
     if not sys.stdin.isatty():
@@ -1071,6 +1190,7 @@ def main():
         if pipe_input:
             console.print(f'  [dim]파이프 입력 ({len(pipe_input)}자)[/dim]\n')
             snippets = get_context_snippets(pipe_input, working_dir, profile)
+            _ctx_display[0] = _ctx_status(session_msgs)
             _response_header()
             _ui.reset()
             _, session_msgs = agent.run(
@@ -1081,8 +1201,8 @@ def main():
                 context_snippets=snippets,
                 on_token=on_token,
                 on_tool=_effective_on_tool,
-                confirm_write=confirm_write if profile.get('confirm_writes', True) else None,
-                confirm_bash=confirm_bash if profile.get('confirm_bash', True) else None,
+                confirm_write=_cw if profile.get('confirm_writes', True) else None,
+                confirm_bash=_cb if profile.get('confirm_bash', True) else None,
                 hooks=profile.get('hooks', {}),
             )
             _response_footer()
@@ -1102,6 +1222,7 @@ def main():
         nonlocal session_msgs
         _unknown_tools.clear()
         _token_buf.clear()
+        _ctx_display[0] = _ctx_status(session_msgs)
         _spinner.start()
 
         if needs_compaction(session_msgs):
@@ -1119,13 +1240,26 @@ def main():
             plan_mode=plan_mode,
             on_token=on_token,
             on_tool=_effective_on_tool,
-            confirm_write=confirm_write if profile.get('confirm_writes', True) else None,
-            confirm_bash=confirm_bash if profile.get('confirm_bash', True) else None,
+            confirm_write=_cw if profile.get('confirm_writes', True) else None,
+            confirm_bash=_cb if profile.get('confirm_bash', True) else None,
             hooks=profile.get('hooks', {}),
             on_unknown_tool=_on_unknown_tool,
         )
         _flush_tokens()
         _suggest_unknown_tools(_unknown_tools)
+
+    # -p / --print one-shot 모드
+    if args.one_shot:
+        query = args.one_shot
+        # --continue + -p 조합: 이전 세션에서 추가 질문
+        snippets = get_context_snippets(query, working_dir, profile)
+        _response_header()
+        _ui.reset()
+        _run_agent(query, context_snippets=snippets)
+        _response_footer()
+        for client in _mcp_clients.values():
+            client.stop()
+        return
 
     while True:
         try:

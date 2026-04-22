@@ -164,7 +164,8 @@ def run(
 
             # 파일 쓰기/수정 확인
             if fn_name in ('write_file', 'edit_file') and confirm_write:
-                if not confirm_write(args.get('path', '?')):
+                _cw_content = args.get('content') if fn_name == 'write_file' else None
+                if not confirm_write(args.get('path', '?'), _cw_content):
                     result = {'ok': False, 'error': '사용자가 취소했습니다'}
                     if on_tool:
                         on_tool(fn_name, args, result)

@@ -3,6 +3,9 @@ import os
 OLLAMA_BASE_URL = os.environ.get('HARNESS_OLLAMA_URL', 'http://localhost:11434')
 MODEL           = os.environ.get('HARNESS_MODEL',      'qwen2.5-coder:32b')
 MAX_RETRIES     = 3
+
+# 승인 모드: suggest(제안만) | auto-edit(파일자동+쉘확인) | full-auto(모두자동)
+APPROVAL_MODE   = os.environ.get('HARNESS_APPROVAL', 'auto-edit')
 CONTEXT_WINDOW  = int(os.environ.get('HARNESS_CTX',  '32768'))
 
 # Ollama 생성 파라미터 — 환경변수로 오버라이드 가능
@@ -27,8 +30,8 @@ AGENT_TIMEOUT  = int(os.environ.get('HARNESS_AGENT_TIMEOUT', '600'))  # 전체 �
 def runtime_override(profile: dict) -> None:
     '''profile.load() 결과로 모델 설정을 런타임에 오버라이드.
     main() 시작 시 profile 로드 직후 호출해야 함.
-    .harness.toml의 model/ollama_url/temperature/num_ctx/num_predict 키를 읽음.'''
-    global MODEL, OLLAMA_BASE_URL, CONTEXT_WINDOW, OLLAMA_OPTIONS
+    .harness.toml의 model/ollama_url/temperature/num_ctx/num_predict/approval_mode 키를 읽음.'''
+    global MODEL, OLLAMA_BASE_URL, CONTEXT_WINDOW, OLLAMA_OPTIONS, APPROVAL_MODE
     if profile.get('model'):
         MODEL = profile['model']
     if profile.get('ollama_url'):
@@ -45,3 +48,5 @@ def runtime_override(profile: dict) -> None:
     if pred and pred > 0:
         opts['num_predict'] = pred
     OLLAMA_OPTIONS = opts
+    if profile.get('approval_mode'):
+        APPROVAL_MODE = profile['approval_mode']
