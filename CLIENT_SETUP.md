@@ -47,10 +47,35 @@ node index.js
 
 ### 5. (선택) 편의를 위한 alias 등록
 
-`~/.zshrc` 또는 `~/.bashrc`에 추가:
+⚠️ **토큰을 `~/.zshrc`에 직접 적지 마세요.** 셸 RC 파일은 기본적으로
+타인에게 읽힐 수 있고, 클라우드 백업·도트파일 동기화로 노출됩니다.
+토큰은 원격 셸 권한에 해당하므로 누설 시 임의 명령 실행이 가능합니다.
+
+**권장 방식 — 0600 권한의 별도 비밀 파일을 source 합니다:**
 
 ```bash
-alias harness='HARNESS_HOST=서버IP HARNESS_PORT=7891 HARNESS_TOKEN=토큰문자열 node ~/harness/ui/index.js'
+# 1) 비밀 파일 생성 (한 번만)
+cat > ~/.harness.env <<'ENV'
+export HARNESS_HOST=서버IP
+export HARNESS_PORT=7891
+export HARNESS_TOKEN=토큰문자열
+ENV
+chmod 600 ~/.harness.env
+
+# 2) ~/.zshrc 또는 ~/.bashrc 에 alias만 추가 (토큰 미포함)
+alias harness='. ~/.harness.env && node ~/harness/ui/index.js'
+```
+
+**macOS 사용자**라면 keychain을 쓰는 것이 더 안전합니다:
+
+```bash
+# 토큰 저장
+security add-generic-password -a "$USER" -s harness-token -w "토큰문자열"
+
+# alias
+alias harness='HARNESS_HOST=서버IP HARNESS_PORT=7891 \
+  HARNESS_TOKEN="$(security find-generic-password -a "$USER" -s harness-token -w)" \
+  node ~/harness/ui/index.js'
 ```
 
 적용:

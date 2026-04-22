@@ -1,6 +1,10 @@
 import subprocess
 import shutil
 import os
+import json
+from datetime import datetime
+
+_CLAUDE_LOG_PATH = os.path.expanduser('~/.harness/logs/claude.jsonl')
 
 
 def _find_claude() -> str | None:
@@ -53,9 +57,39 @@ def ask(query: str, on_token=None, cwd: str | None = None, model: str | None = N
 
     if proc.returncode != 0:
         err = proc.stderr.read() if proc.stderr else ''
+        _log_call(query, '', err=err, cwd=cwd, model=model, returncode=proc.returncode)
         raise RuntimeError(f'claude CLI 오류 (코드 {proc.returncode}): {err.strip()}')
 
-    return ''.join(output_parts)
+    response = ''.join(output_parts)
+    _log_call(query, response, cwd=cwd, model=model)
+    return response
+
+
+def _log_call(query: str, response: str, *, err: str = '', cwd: str | None = None,
+              model: str | None = None, returncode: int = 0) -> None:
+    '''CONCERNS.md §2.6 대응: Claude 위임 호출은 harness의 confirm/hook 게이트
+    밖에서 실행되므로 감사 추적용으로 prompt/response를 영구 기록.
+    ~/.harness/logs/claude.jsonl 에 JSONL append.'''
+    try:
+        os.makedirs(os.path.dirname(_CLAUDE_LOG_PATH), exist_ok=True)
+        entry = {
+            'ts': datetime.now().isoformat(timespec='seconds'),
+            'cwd': cwd or os.getcwd(),
+            'model': model or '',
+            'returncode': returncode,
+            'query': query,
+            'response': response,
+            'error': err,
+        }
+        with open(_CLAUDE_LOG_PATH, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + '\n')
+        try:
+            os.chmod(_CLAUDE_LOG_PATH, 0o600)
+        except OSError:
+            pass
+    except OSError:
+        # 로깅 실패해도 agent 작업은 계속
+        pass
 
 
 def is_available() -> bool:

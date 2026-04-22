@@ -185,17 +185,17 @@
 - **Description:** Python `set` lookup reveals length/prefix collisions via timing; for `openssl rand -hex 32` tokens this is low-risk, but the guidance is still to use `hmac.compare_digest`.
 - **Suggestion:** Iterate with `hmac.compare_digest(token, v) for v in VALID_TOKENS`.
 
-### 2.4 `CLIENT_SETUP.md` instructs users to embed the token in shell alias (High)
+### 2.4 ~~`CLIENT_SETUP.md` instructs users to embed the token in shell alias~~ ✅ FIXED 2026-04-23 (0600 비밀 파일 + macOS keychain 권장)
 - **Location:** `CLIENT_SETUP.md:52-54`
 - **Description:** The guide literally tells users to put `HARNESS_TOKEN=토큰문자열` into `~/.zshrc`. That file is world-readable by default on shared machines and syncs to cloud backups. Tokens grant remote-shell access per §2.2.
 - **Suggestion:** Recommend a secrets file sourced with `chmod 600` (e.g. `~/.harness.env`), or `security` keychain on macOS, or a short-lived prompt.
 
-### 2.5 `run_hook` passes tool args via `HARNESS_ARGS` env var as JSON (Medium)
+### 2.5 ~~`run_hook` passes tool args via `HARNESS_ARGS` env var as JSON~~ ✅ FIXED 2026-04-23 (stdin JSON, env는 HARNESS_ARGS_STDIN 마커만)
 - **Location:** `tools/hooks.py:22-38`
 - **Description:** Environment variables are inherited by any child process the hook spawns, leaking tool arguments (including file paths, commit messages, API keys if a tool ever receives them) into an arbitrarily complex process tree. Env also has shell size limits.
 - **Suggestion:** Pass args via stdin JSON; or via a tmpfile path in an env var that the hook reads.
 
-### 2.6 No sandbox on `ask_claude` — full Claude Code runs with host privileges (Medium)
+### 2.6 ~~No sandbox on `ask_claude` — full Claude Code runs with host privileges~~ ✅ PARTIAL 2026-04-23 (~/.harness/logs/claude.jsonl에 감사 추적 기록, 0600 권한. --model/permission 강제는 Claude CLI 플래그 확인 후 향후 추가)
 - **Location:** `tools/claude_cli.py:19-58`
 - **Description:** Delegating to the `claude` binary means Claude Code's own tool set runs without any of harness's approval gates. If the parent harness is in `full-auto`, Claude Code inherits whatever its own config says. Result: audit trail splits across two tools.
 - **Suggestion:** When invoking Claude, force `--model` + restricted permission flags (if supported); log the delegated prompt + full response to `~/.harness/logs/claude.jsonl` for traceability.
@@ -205,7 +205,10 @@
 - **Description:** `urllib.request.urlopen(url)` follows redirects and resolves any scheme. Model can hit `http://169.254.169.254/latest/meta-data/` (cloud metadata), `http://localhost:11434/...` (internal Ollama admin endpoints), `file:///etc/passwd` (urllib historically allows file:// unless stripped).
 - **Suggestion:** Enforce `url.scheme in ('http','https')`, resolve hostname, reject RFC1918/link-local/loopback, disable redirects or re-validate each hop.
 
-### 2.8 `skills/__init__.py` parses YAML-like frontmatter by hand with `line.partition(':')` (Low)
+### 2.8 `skills/__init__.py` parses YAML-like frontmatter by hand with `line.partition(':')` (Low — 관찰 노트)
+**재평가 2026-04-23:** `partition(':')`은 첫 `:`만 split하므로 `ratio: 4.5:1` 같은 값도 올바르게 파싱됨.
+리스트/중첩/멀티라인 값을 쓰려면 pyyaml 의존 추가가 필요하나 현재 프로젝트에서 그런 스킬 파일은 없어
+실질 위험 0. 스킬 자체가 더 복잡해질 때 yaml.safe_load로 교체 권장.
 - **Location:** `skills/__init__.py:20-26`
 - **Description:** Keys/values containing `:` are corrupted (e.g. `description: ratio: 4.5:1`). Won't cause a crash but silently misreads keywords → skill never matches.
 - **Suggestion:** Use `yaml.safe_load` on the frontmatter block.
@@ -215,7 +218,11 @@
 - **Description:** Sessions contain user prompts and tool outputs, potentially including API keys echoed into `run_command`, read file contents, etc. Default umask is 0022 → world-readable on multi-user systems.
 - **Suggestion:** `os.chmod(path, 0o600)` after write; `os.makedirs(SESSION_DIR, mode=0o700, exist_ok=True)` (note: `mode` only applies to newly created dirs).
 
-### 2.10 `harness_server.py` loads per-connection `HARNESS_CWD` from server-side env (Medium)
+### 2.10 `harness_server.py` loads per-connection `HARNESS_CWD` from server-side env (Medium — 관찰 노트)
+**재평가 2026-04-23:** 각 Session 객체는 개별 cwd를 유지하고 `/cd`로 분기하므로 _실제_ 격리는 유지됨.
+문제는 "서버 재시작 후 첫 연결들이 같은 기본 cwd에서 출발"이라는 UX 혼선 뿐. 집 머신 + 외부 2인
+시나리오에서는 각자 `/cd`로 자기 프로젝트로 이동하므로 실질 위험 없음. BB-2 공유 세션 착수 시 함께
+재설계 예정(`set_cwd` 초기 메시지 도입).
 - **Location:** `harness_server.py:41`
 - **Description:** `self.working_dir = os.environ.get('HARNESS_CWD') or os.getcwd()`. Every WS client lands in the same server-side directory. Multi-client usage is not isolated; one client's `/cd` can leak into another's view (it's per-`Session` object, so `/cd` itself is scoped — but all clients start at the same cwd the server was launched from). Confusing for shared deployments.
 - **Suggestion:** Require the client to send an initial `set_cwd` message; reject if it resolves outside an allowed root.
