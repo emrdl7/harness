@@ -616,6 +616,22 @@ def _extract_cplan_task(text: str) -> str:
 
 
 # ── Claude CLI 호출 ───────────────────────────────────────────────
+def _build_claude_context(session_msgs: list, max_turns: int = 6) -> str:
+    '''session_msgs에서 최근 대화를 컨텍스트 블록으로 변환.'''
+    non_system = [m for m in session_msgs if m['role'] in ('user', 'assistant')]
+    recent = non_system[-(max_turns * 2):]
+    if not recent:
+        return ''
+    lines = ['아래는 현재 세션의 최근 대화 기록이다:\n']
+    for m in recent:
+        role = '사용자' if m['role'] == 'user' else '에이전트'
+        content = (m.get('content') or '').strip()
+        if content:
+            lines.append(f'[{role}]: {content[:800]}')
+    lines.append('')
+    return '\n'.join(lines)
+
+
 def _run_claude_cli(query: str, session_msgs: list | None = None) -> str:
     if not claude_available():
         console.print(
@@ -626,12 +642,19 @@ def _run_claude_cli(query: str, session_msgs: list | None = None) -> str:
 
     console.print('\n[bold blue]● Claude[/bold blue]')
 
+    # 세션 컨텍스트를 query 앞에 붙여 Claude가 대화 흐름을 알 수 있게 함
+    if session_msgs:
+        ctx = _build_claude_context(session_msgs)
+        full_query = f'{ctx}위 대화를 참고해서 다음 질문에 답해줘: {query}' if ctx else query
+    else:
+        full_query = query
+
     collected = []
     try:
         def _tok(line):
             collected.append(line)
             console.print(line, end='', highlight=False, markup=False)
-        claude_ask(query, on_token=_tok)
+        claude_ask(full_query, on_token=_tok)
     except RuntimeError as e:
         console.print(f'\n  [tool.fail]✗[/tool.fail] {e}\n')
         return ''
