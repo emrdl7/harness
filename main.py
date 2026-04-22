@@ -1049,7 +1049,10 @@ def do_claude_loop(task: str, session_msgs: list, working_dir: str, profile: dic
 
 
 # ── 슬래시 핸들러 ─────────────────────────────────────────────────
-def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, undo_count: int = 0) -> tuple[list, str, int]:
+def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, undo_count: int = 0, run_agent=None) -> tuple[list, str, int]:
+    '''run_agent: main()의 nested _run_agent 함수를 DI로 받음.
+    /plan 같은 슬래시는 agent 실행이 필요하므로 호출자가 주입해야 한다.
+    None인 경우 해당 슬래시는 내부 오류로 처리된다.'''
     parts = cmd.strip().split(maxsplit=1)
     name = parts[0]
 
@@ -1073,10 +1076,13 @@ def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, 
         if not query:
             console.print('  [warn]사용법:[/warn] /plan <작업 내용>')
             return session_msgs, working_dir, undo_count
+        if run_agent is None:
+            console.print('  [tool.fail]✗[/tool.fail] 내부 오류: run_agent 콜백이 주입되지 않았습니다')
+            return session_msgs, working_dir, undo_count
         snippets = get_context_snippets(query, working_dir, profile)
         _response_header()
         _ui.reset()
-        _run_agent(query, plan_mode=True, context_snippets=snippets)
+        run_agent(query, plan_mode=True, context_snippets=snippets)
         _response_footer()
         return session_msgs, working_dir, undo_count
 
@@ -1738,7 +1744,8 @@ def main():
                     continue
 
                 session_msgs, working_dir, undo_count = handle_slash(
-                    user_input, session_msgs, working_dir, profile, undo_count
+                    user_input, session_msgs, working_dir, profile, undo_count,
+                    run_agent=_run_agent,
                 )
                 if user_input.startswith('/cd'):
                     profile = prof.load(working_dir)
