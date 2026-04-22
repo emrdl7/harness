@@ -109,7 +109,7 @@ SLASH_COMMANDS = {
     '/index':    '코드베이스 인덱싱',
     '/improve':  '하네스 자기 분석 및 개선',
     '/learn':    '세션 분석 후 HARNESS.md 즉시 갱신',
-    '/evolve':   '진화 엔진 즉시 실행 (점수 + 학습 + 패턴 개선)',
+    '/evolve':          '진화 엔진 즉시 실행  ex) /evolve proposals / /evolve run / /evolve changelog',
     '/history':  '진화 이력 및 품질 트렌드 확인',
     '/restore':  '이전 백업으로 롤백',
     '/cd':       '작업 디렉토리 변경  ex) /cd ~/myproject',
@@ -747,6 +747,62 @@ def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, 
         return session_msgs, working_dir, undo_count
 
     if name == '/evolve':
+        sub = parts[1] if len(parts) > 1 else ''
+
+        if sub == 'proposals':
+            # 제안서 목록 표시
+            from evolution.proposer import load_pending, load_all
+            pending = load_pending('pending')
+            if not pending:
+                console.print('  [dim]대기 중인 제안서가 없습니다[/dim]')
+            else:
+                t = Table(box=box.SIMPLE, show_header=True, border_style='dim')
+                t.add_column('우선순위', no_wrap=True)
+                t.add_column('타입')
+                t.add_column('근거')
+                t.add_column('상태')
+                for p in pending:
+                    color = 'red' if p['priority'] == 'high' else 'yellow'
+                    t.add_row(
+                        f'[{color}]{p["priority"]}[/{color}]',
+                        p['type'],
+                        p['rationale'][:60],
+                        p.get('status', 'pending'),
+                    )
+                console.print(t)
+            return session_msgs, working_dir, undo_count
+
+        if sub == 'run':
+            # 제안서 즉시 실행
+            from evolution.executor import execute_pending
+            console.print('  [dim]자율 개선 실행 중...[/dim]')
+            results = execute_pending(force=True, console=console)
+            if not results:
+                console.print('  [dim]실행할 제안서 없음[/dim]')
+            for r in results:
+                icon = '[tool.ok]✓[/tool.ok]' if r['ok'] else '[tool.fail]✗[/tool.fail]'
+                console.print(f'  {icon} {r["key"]}')
+            return session_msgs, working_dir, undo_count
+
+        if sub == 'changelog':
+            from evolution.executor import load_changelog
+            entries = load_changelog(15)
+            if not entries:
+                console.print('  [dim]변경 이력이 없습니다[/dim]')
+            else:
+                t = Table(box=box.SIMPLE, show_header=True, border_style='dim')
+                t.add_column('시간', style='dim', no_wrap=True)
+                t.add_column('키')
+                t.add_column('결과')
+                t.add_column('파일')
+                for e in entries:
+                    status_str = '[tool.ok]적용[/tool.ok]' if e['status'] == 'applied' else '[tool.fail]실패[/tool.fail]'
+                    files_str = ', '.join(e.get('changed_files', [])) or '-'
+                    t.add_row(e['ts'][:16], e['key'][:30], status_str, files_str[:40])
+                console.print(t)
+            return session_msgs, working_dir, undo_count
+
+        # 기본: 진화 엔진 실행
         evolution.run(
             session_msgs=session_msgs,
             working_dir=working_dir,
@@ -992,6 +1048,19 @@ def main():
     if profile.get('auto_index'):
         _auto_sync(working_dir)
 
+    # proposer용 툴 통계 수집 래퍼
+    _auto_evolve_enabled = profile.get('auto_evolve', False)
+    if _auto_evolve_enabled:
+        from evolution.proposer import record_tool_call as _record_tool_call
+        _orig_on_tool = on_tool
+
+        def on_tool(name: str, args: dict, result):  # noqa: F811
+            _orig_on_tool(name, args, result)
+            if result is not None:
+                _tool_call_sequence.append(name)
+                _record_tool_call(name, bool(result.get('ok')))
+
+
     # 파이프 입력
     if not sys.stdin.isatty():
         pipe_input = sys.stdin.read().strip()
@@ -1018,12 +1087,16 @@ def main():
             )
             _response_footer()
 
-    # 미등록 툴 수집 — agent.run() 후 제안 표시용
+    # 미등록 툴 + 툴 시퀀스 수집 — proposer용
     _unknown_tools: list[str] = []
+    _all_unknown_tools: list[str] = []  # 세션 전체 누적
+    _tool_call_sequence: list[str] = []  # 세션 전체 툴 호출 순서
 
     def _on_unknown_tool(name: str):
         if name not in _unknown_tools:
             _unknown_tools.append(name)
+        if name not in _all_unknown_tools:
+            _all_unknown_tools.append(name)
 
     def _run_agent(user_input, *, plan_mode=False, context_snippets=''):
         nonlocal session_msgs
@@ -1079,6 +1152,8 @@ def main():
                         on_tool=on_tool,
                         confirm_write=lambda p: True,
                         undo_count=undo_count,
+                        unknown_tools=_all_unknown_tools,
+                        tool_call_sequence=_tool_call_sequence,
                     )
                     if session_msgs and Confirm.ask('  세션을 저장할까요?', default=False):
                         fn = sess.save(session_msgs, working_dir)

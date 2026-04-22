@@ -117,6 +117,16 @@ def _run_idle_evolution():
         )
         log_lines.append(f'소스 개선 {"완료" if all_ok else "실패 (검증 오류)"}')
 
+    # 2. 기능 개선 제안서 실행 (pending 항목)
+    try:
+        from evolution.executor import execute_pending
+        exec_results = execute_pending(force=False)
+        for r in exec_results:
+            status = '완료' if r['ok'] else f'실패({r.get("error","")[:40]})'
+            log_lines.append(f'자율 개선 [{r["key"]}]: {status}')
+    except Exception as e:
+        log_lines.append(f'executor 오류: {e}')
+
     # 결과 로그
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
     log_entry = {'ts': timestamp, 'event': 'idle_evolution', 'results': log_lines}

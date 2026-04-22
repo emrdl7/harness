@@ -6,6 +6,7 @@ from datetime import datetime
 from evolution.scorer import score, grade
 from evolution.tracker import record, get_recurring, dismiss_all
 from evolution.history import snapshot, avg_score, recent
+from evolution.proposer import analyze as analyze_proposals, record_tool_sequence
 from session.analyzer import summarize_session, build_learn_prompt
 from tools.improve import (
     backup_sources, validate_python, read_sources,
@@ -32,6 +33,8 @@ def run(
     on_tool,
     confirm_write,
     undo_count: int = 0,
+    unknown_tools: list = None,
+    tool_call_sequence: list = None,
 ):
     '''세션 종료 후 자동 진화 사이클 실행'''
 
@@ -39,10 +42,16 @@ def run(
     summary['undo_count'] = undo_count
     summary['total_tool_calls'] = _count_tool_calls(session_msgs)
 
+    # 툴 시퀀스 기록 (proposer용)
+    if tool_call_sequence:
+        record_tool_sequence(tool_call_sequence, session_id='')
+
     if summary['turn_count'] < 1:
         return
 
     session_id = datetime.now().strftime('%Y%m%d_%H%M%S') + '_' + uuid.uuid4().hex[:4]
+    if tool_call_sequence:
+        record_tool_sequence(tool_call_sequence, session_id)
     quality = score(summary)
     letter, color = grade(quality)
 
@@ -81,11 +90,22 @@ def run(
         dismiss_all()
         _print('  [green]✓ 완료[/green]')
 
-    # ── 4. 이력 기록
+    # ── 4. 기능 개선 제안서 생성 (auto_evolve 활성 시)
+    if profile.get('auto_evolve', False):
+        proposals = analyze_proposals(
+            unknown_tools=unknown_tools or [],
+            session_id=session_id,
+        )
+        if proposals:
+            _print(f'  [dim]개선 제안 {len(proposals)}개 생성됨[/dim]')
+            for p in proposals[:3]:
+                _print(f'  [dim]  • [{p["priority"]}] {p["rationale"][:60]}[/dim]')
+
+    # ── 5. 이력 기록
     docs_to_track = [GLOBAL_DOC, project_doc_path]
     snapshot(docs_to_track, 'session_end', quality, session_id)
 
-    # ── 5. 트렌드 출력
+    # ── 6. 트렌드 출력
     trend = avg_score(10)
     trend_icon = '↑' if trend > quality else ('→' if abs(trend - quality) < 0.05 else '↓')
     _print(f'  최근 10세션 평균  [dim]{trend:.2f} {trend_icon}[/dim]')

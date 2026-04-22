@@ -34,6 +34,8 @@ DEFAULTS = {
     'num_predict':    0,
     # MCP 서버 목록 — [[mcp_servers]] 배열
     'mcp_servers':    [],
+    # 자율 기능 진화 — 세션 종료 시 패턴 분석 + 유휴 시 코드 개선 실행
+    'auto_evolve':    False,
 }
 
 # 환경변수 → 설정 키 매핑 (값 타입 포함)
@@ -201,6 +203,15 @@ num_predict = 0            # 0 = 기본값(4096) 유지
 # command = ["npx", "-y", "@modelcontextprotocol/server-memory"]
 # [mcp_servers.env]
 # SOME_VAR = "value"
+
+# ── 자율 진화 설정 ───────────────────────────────────────────────
+# auto_evolve = true 이면:
+#   - 세션 종료 시 사용 패턴 분석 → 개선 제안서 생성
+#   - 유휴 시간에 제안서를 실제 코드로 구현 (하루 최대 3회)
+# /evolve proposals  → 대기 중인 제안서 확인
+# /evolve run        → 즉시 실행
+# /evolve changelog  → 변경 이력 확인
+auto_evolve = false
 
 # ── 훅 설정 ──────────────────────────────────────────────────────
 # 사용 가능한 환경변수: HARNESS_TOOL, HARNESS_ARGS, HARNESS_RESULT_OK, HARNESS_WORKING_DIR
