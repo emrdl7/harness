@@ -54,7 +54,7 @@
 - **Suggestion:** Replace with `ws.request.headers.get('x-harness-token', '')` (and handle case-insensitive header access). Add a minimal smoke test that opens a ws connection with a token.
 - **Fix applied:** `ws.request_headers` → `ws.request.headers` (line 365). Smoke test confirmed: wrong token → 4401 rejected, valid token → state+ready received.
 
-### 1.2 `websockets.serve(handler, ...)` signature mismatch (High)
+### 1.2 ~~`websockets.serve(handler, ...)` signature mismatch~~ ✅ FIXED 2026-04-23 (코드는 이미 신규 API, pyproject.toml에 `websockets>=16.0,<18` 상한 고정)
 - **Location:** `harness_server.py:362,439` (`async def handler(ws)`)
 - **Description:** Legacy `websockets` passed `(websocket, path)`; 13+ pass only `websocket`. Code here already uses the new single-arg form, which is fine — but combined with 1.1, it confirms the code was written against mid-transition docs. Audit any other docs/snippets that still show the 2-arg form.
 - **Suggestion:** Pin `websockets>=13,<17` in a requirements file and add a startup self-check.

@@ -6,7 +6,9 @@ requires-python = ">=3.11"
 dependencies = [
   "rich>=15.0",
   "prompt_toolkit>=3.0",
-  "websockets>=16.0",
+  # CONCERNS.md §1.2: handler(ws) 단일 인자 API는 websockets 13+ (신규 async API).
+  # 상한 <18로 고정해 향후 breaking 변경(path 인자 재도입 등) 즉시 감지.
+  "websockets>=16.0,<18",
   "textual>=8.0",
 ]
 
