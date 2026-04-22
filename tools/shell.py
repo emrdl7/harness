@@ -117,25 +117,58 @@ def run_command(command: str, cwd: str = None) -> dict:
         return {'ok': False, 'error': str(e)}
 
 
+_RUN_PYTHON_INLINE_LIMIT = 8_000  # 이보다 작으면 임시파일 없이 `python3 -c` 사용
+
+
 def run_python(code: str, cwd: str = None) -> dict:
-    with tempfile.NamedTemporaryFile(suffix='.py', mode='w', delete=False) as f:
-        f.write(code)
-        tmp_path = f.name
+    '''CONCERNS.md §1.6 대응:
+    - 작은 코드(<8KB)는 `python3 -c`로 바로 실행 → 임시파일 자체가 없음
+    - 큰 코드는 tempfile 경로 유지하되 BaseException까지 finally로 정리해
+      Ctrl+C 인터럽트 시 누수 방지
+    '''
+    if len(code) <= _RUN_PYTHON_INLINE_LIMIT:
+        try:
+            result = subprocess.run(
+                ['python3', '-c', code],
+                capture_output=True,
+                text=True,
+                timeout=TIMEOUT,
+                cwd=cwd,
+            )
+            return {
+                'ok': result.returncode == 0,
+                'stdout': _truncate(result.stdout),
+                'stderr': _truncate(result.stderr),
+                'returncode': result.returncode,
+            }
+        except subprocess.TimeoutExpired:
+            return {'ok': False, 'error': f'{TIMEOUT}초 초과'}
+
+    tmp_path = None
     try:
-        result = subprocess.run(
-            ['python3', tmp_path],
-            capture_output=True,
-            text=True,
-            timeout=TIMEOUT,
-            cwd=cwd,
-        )
-        return {
-            'ok': result.returncode == 0,
-            'stdout': _truncate(result.stdout),
-            'stderr': _truncate(result.stderr),
-            'returncode': result.returncode,
-        }
-    except subprocess.TimeoutExpired:
-        return {'ok': False, 'error': f'{TIMEOUT}초 초과'}
+        with tempfile.NamedTemporaryFile(suffix='.py', mode='w', delete=False) as f:
+            f.write(code)
+            tmp_path = f.name
+        try:
+            result = subprocess.run(
+                ['python3', tmp_path],
+                capture_output=True,
+                text=True,
+                timeout=TIMEOUT,
+                cwd=cwd,
+            )
+            return {
+                'ok': result.returncode == 0,
+                'stdout': _truncate(result.stdout),
+                'stderr': _truncate(result.stderr),
+                'returncode': result.returncode,
+            }
+        except subprocess.TimeoutExpired:
+            return {'ok': False, 'error': f'{TIMEOUT}초 초과'}
     finally:
-        os.unlink(tmp_path)
+        # KeyboardInterrupt/SystemExit 포함 모든 종료 경로에서 정리
+        if tmp_path is not None:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass

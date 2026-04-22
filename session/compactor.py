@@ -53,13 +53,18 @@ def _summarize(messages_to_summarize: list) -> str:
             timeout=60,
         )
         resp.raise_for_status()
-        return resp.json().get('message', {}).get('content', '').strip()
+        text = resp.json().get('message', {}).get('content', '').strip()
+        return text or ''  # 빈 응답도 '실패'로 취급 → 호출자가 원본 보존
     except Exception:
-        return f'(이전 {len(messages_to_summarize)}개 메시지 압축됨)'
+        return ''  # 빈 문자열 = 요약 실패 신호
 
 
 def compact(messages: list) -> tuple[list, int]:
-    '''compaction 실행. (새 메시지 목록, 압축된 메시지 수) 반환'''
+    '''compaction 실행. (새 메시지 목록, 압축된 메시지 수) 반환.
+
+    CONCERNS.md §1.14 대응: Ollama 실패 시 placeholder 삼키지 않고 원본 유지.
+    요약이 비어 있으면 (messages, 0)을 돌려줘 호출자가 압축 건너뜀을 인지.
+    '''
     sys_msgs = [m for m in messages if m['role'] == 'system']
     non_sys  = [m for m in messages if m['role'] != 'system']
 
@@ -70,6 +75,11 @@ def compact(messages: list) -> tuple[list, int]:
     to_keep      = non_sys[-KEEP_RECENT:]
 
     summary = _summarize(to_summarize)
+    if not summary:
+        # 요약 실패 — 원본을 그대로 유지해 컨텍스트 손실 방지
+        import sys as _sys
+        print('[compactor] 요약 생성 실패 — 세션 원본 유지', file=_sys.stderr)
+        return messages, 0
 
     # 기존 system 메시지에 요약을 덧붙임
     if sys_msgs:

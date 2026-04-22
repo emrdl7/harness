@@ -61,3 +61,31 @@ class TestRunCommand:
         assert result['ok'] is True
         # macOS는 /private prefix 붙을 수 있음
         assert str(tmp_path) in result['stdout'] or result['stdout'].strip().endswith(tmp_path.name)
+
+
+class TestRunPython:
+    '''§1.6 회귀 방지: 작은 코드는 인라인(python3 -c), 큰 코드는 tempfile.
+    둘 다 누수 없이 정리되고 결과가 올바르게 반환되어야 한다.'''
+    def test_small_inline(self):
+        result = shell.run_python('print("hi")')
+        assert result['ok']
+        assert 'hi' in result['stdout']
+
+    def test_error_path(self):
+        result = shell.run_python('raise ValueError("boom")')
+        assert not result['ok']
+        assert 'ValueError' in result['stderr']
+        assert 'boom' in result['stderr']
+
+    def test_large_code_uses_tempfile(self, tmp_path, monkeypatch):
+        # 파일 누수 체크: TMPDIR 격리
+        monkeypatch.setenv('TMPDIR', str(tmp_path))
+        # inline limit 초과 크기 (약 8KB+)
+        big_code = 'x = 1\n' * 2000 + 'print(x)'
+        before = list(tmp_path.iterdir())
+        result = shell.run_python(big_code)
+        assert result['ok']
+        assert result['stdout'].strip() == '1'
+        # 실행 후 TMPDIR에 tmp*.py 잔재 없음
+        after = list(tmp_path.iterdir())
+        assert len(after) == len(before), f'임시파일 누수: {after}'

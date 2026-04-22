@@ -70,12 +70,12 @@
 - **Description:** `_is_push_intent("커밋하고 푸시")` is True AND `_is_commit_intent(...)` is True. The push-branch already runs `/commit` then `/push` (line 1615-1621) and `continue`s. But the trigger word `"커밋하고 푸시"` is in both `_PUSH_TRIGGERS` and implicitly hit by `_is_commit_intent` via `'커밋해'` substring matching → double-commit attempt risk if user phrases hit both. The early `continue` saves it for most cases, but the order matters: push is evaluated before commit, so it currently works. Fragile — any reorder breaks it.
 - **Suggestion:** Make intent detection mutually exclusive with a single classifier returning `'commit_push' | 'push' | 'pull' | 'commit' | None`.
 
-### 1.5 `_parse_text_tool_calls` JSON regex cannot handle nested braces (Medium)
+### 1.5 ~~`_parse_text_tool_calls` JSON regex cannot handle nested braces~~ ✅ FIXED 2026-04-23
 - **Location:** `agent.py:99` (`json_pattern = r'\{[^{}]*"name"...'`)
 - **Description:** The character class `[^{}]` forbids any brace inside arguments, so tool calls whose `arguments` contain nested JSON objects (e.g. `{"filter": {"type": "eq"}}`) never match, and the model's text-form tool call is silently dropped. That's a real hole for MCP tools with structured inputs.
 - **Suggestion:** Parse with `json.JSONDecoder.raw_decode` scanning for `{` and try to decode; fall back to the regex only as a last resort.
 
-### 1.6 `run_python` leaks temp files when interpreter is killed (Medium)
+### 1.6 ~~`run_python` leaks temp files when interpreter is killed~~ ✅ FIXED 2026-04-23
 - **Location:** `tools/shell.py:77-98`
 - **Description:** `tempfile.NamedTemporaryFile(delete=False)` + `os.unlink` in `finally` is fine for normal exit, but the block does not catch `KeyboardInterrupt`. If the parent is `^C`ed between write and unlink, temp files accumulate in `$TMPDIR`. Also writes to disk even for trivial code — use `python3 -c`.
 - **Suggestion:** Prefer `subprocess.run(['python3', '-c', code], …)` for small code; if a file is needed, wrap `subprocess.run` inside `try/finally` that also catches `BaseException`.
@@ -115,7 +115,7 @@
 - **Description:** `needs_compaction` returns True when non-system chars > 20 000. If `KEEP_RECENT=10` recent messages alone exceed 20 000 chars (single large tool output can do that — `MAX_TOOL_RESULT_CHARS=20_000` by itself), `compact` keeps returning the same list with `dropped=0` and the condition stays true → possible spin in long loops. Currently only called once per user turn, so it does not loop, but the invariant is fragile.
 - **Suggestion:** Compact based on token-weighted budget and truncate the largest individual message if trimming recents is insufficient.
 
-### 1.14 `_summarize` falls back to placeholder text, silently losing history (Medium)
+### 1.14 ~~`_summarize` falls back to placeholder text, silently losing history~~ ✅ FIXED 2026-04-23
 - **Location:** `session/compactor.py:57-58`
 - **Description:** If Ollama is unreachable during compaction, the summary becomes `"(이전 N개 메시지 압축됨)"` — the original messages are still discarded. Agent continues with a system prompt that only says "N messages were compressed", losing all prior state.
 - **Suggestion:** On summarization failure, keep the original messages and skip compaction; surface the error.
@@ -130,7 +130,7 @@
 - **Description:** `do_improve` passes `working_dir=HARNESS_DIR` but `profile=profile` (user's project profile). Hooks are loaded from the user project profile yet triggered for commands executed inside harness itself — wrong scope. Also no `confirm_bash` is wired, so `run_command` is uncontrolled.
 - **Suggestion:** When running self-improvement, load a `HARNESS_DIR`-scoped profile or use `profile={}` and wire both confirm callbacks.
 
-### 1.17 `ioreg` idle detection is macOS-only and silently returns 0 elsewhere (Low)
+### 1.17 ~~`ioreg` idle detection is macOS-only and silently returns 0 elsewhere~~ ✅ FIXED 2026-04-23
 - **Location:** `evolution/idle_runner.py:18-31`
 - **Description:** On Linux `get_idle_seconds` always returns 0.0, so `idle >= IDLE_THRESHOLD_SEC` is False forever and the daemon never triggers. No warning that non-macOS is unsupported.
 - **Suggestion:** At import time `sys.platform != 'darwin'` → log a warning and exit; or add xprintidle/gdbus fallbacks.

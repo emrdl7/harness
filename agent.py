@@ -113,16 +113,28 @@ def _stream_response(messages: list, on_token=None) -> dict:
 
 
 def _parse_text_tool_calls(text: str) -> list:
-    '''모델이 텍스트로 툴콜을 출력한 경우 파싱. JSON/XML 두 형식 모두 지원.'''
-    calls = []
+    '''모델이 텍스트로 툴콜을 출력한 경우 파싱. JSON/XML 두 형식 모두 지원.
 
-    # JSON 형식: {"name": "...", "arguments": {...}}
-    json_pattern = r'\{[^{}]*"name"\s*:\s*"([^"]+)"[^{}]*"arguments"\s*:\s*(\{[^{}]*\})[^{}]*\}'
-    for m in re.finditer(json_pattern, text, re.DOTALL):
+    CONCERNS.md §1.5 대응: 기존 regex는 `[^{}]`로 중첩 중괄호를 막아
+    `arguments: {"filter": {"type": "eq"}}` 같은 구조화 입력을 놓쳤음.
+    이제 `json.JSONDecoder.raw_decode`로 스캔해 중첩 객체도 파싱.
+    '''
+    calls = []
+    decoder = json.JSONDecoder()
+    i = 0
+    n = len(text)
+    while i < n:
+        idx = text.find('{', i)
+        if idx < 0:
+            break
         try:
-            calls.append({'function': {'name': m.group(1), 'arguments': json.loads(m.group(2))}})
+            obj, end = decoder.raw_decode(text[idx:])
         except json.JSONDecodeError:
-            pass
+            i = idx + 1
+            continue
+        i = idx + end
+        if isinstance(obj, dict) and 'name' in obj and 'arguments' in obj:
+            calls.append({'function': {'name': obj['name'], 'arguments': obj['arguments']}})
 
     # XML 형식: <function=name><parameter=key>value</parameter></function>
     xml_pattern = r'<function=(\w+)>(.*?)</function>'

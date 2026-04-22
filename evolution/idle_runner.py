@@ -16,8 +16,26 @@ MIN_INTERVAL_SEC = 3600        # 1시간에 한 번 이상은 실행 안 함
 HARNESS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+_PLATFORM_WARNED = False
+
+
 def get_idle_seconds() -> float:
-    '''macOS IOHIDSystem으로 사용자 입력 없는 시간(초) 반환'''
+    '''사용자 입력 없는 시간(초) 반환. 현재 macOS만 지원.
+
+    CONCERNS.md §1.17 대응: 비-macOS에서는 0.0 반환으로 데몬이 영원히
+    안 도는 문제가 있었음. 이제 최초 호출 시 stderr에 경고를 출력해
+    동작 안 한다는 사실을 사용자가 인지할 수 있게 한다.
+    '''
+    global _PLATFORM_WARNED
+    if sys.platform != 'darwin':
+        if not _PLATFORM_WARNED:
+            print(
+                '[idle_runner] 경고: macOS가 아닌 환경에서는 유휴 감지가 동작하지 않습니다. '
+                '자가수정 데몬은 비활성 상태가 됩니다.',
+                file=sys.stderr,
+            )
+            _PLATFORM_WARNED = True
+        return 0.0
     try:
         out = subprocess.check_output(
             ['ioreg', '-c', 'IOHIDSystem'],
