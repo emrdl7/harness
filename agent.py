@@ -5,7 +5,7 @@ import time
 import requests
 import config
 from tools import TOOL_DEFINITIONS, TOOL_MAP
-from tools.shell import classify_command
+from tools.shell import classify_command, should_confirm
 from tools.hooks import run_hook
 from session.logger import log_tool_failure, log_reflection
 import skills
@@ -216,6 +216,10 @@ def run(
     consecutive_failures = 0
     _start = time.time()
     _tool_call_history: list[tuple[str, str]] = []  # (tool_name, args_hash)
+    # 사용자가 이번 turn 안에서 confirm을 한 번이라도 거부했으면 True.
+    # 이후 모든 run_command/run_python은 safe 분류여도 confirm을 강제 (모델이
+    # 우회 명령으로 같은 의도를 달성하는 것을 차단).
+    denied_in_turn = False
 
     for iteration in range(config.MAX_ITERATIONS):
         if time.time() - _start > config.AGENT_TIMEOUT:
@@ -249,6 +253,7 @@ def run(
             if fn_name in ('write_file', 'edit_file') and confirm_write:
                 _cw_content = args.get('content') if fn_name == 'write_file' else None
                 if not confirm_write(args.get('path', '?'), _cw_content):
+                    denied_in_turn = True  # 거부 후 모델 우회 차단
                     result = {'ok': False, 'error': '사용자가 취소했습니다'}
                     if on_tool:
                         on_tool(fn_name, args, result)
@@ -258,11 +263,12 @@ def run(
                     })
                     continue
 
-            # 위험 Bash 명령 확인
+            # Bash 명령 확인 — sticky deny 시 safe 명령도 confirm 강제
             if fn_name == 'run_command' and confirm_bash:
                 cmd = args.get('command', '')
-                if classify_command(cmd) == 'dangerous':
+                if should_confirm(cmd, sticky_deny=denied_in_turn):
                     if not confirm_bash(cmd):
+                        denied_in_turn = True
                         result = {'ok': False, 'error': '사용자가 취소했습니다'}
                         if on_tool:
                             on_tool(fn_name, args, result)
@@ -277,6 +283,7 @@ def run(
                 code = args.get('code', '')
                 preview = 'python: ' + code[:200].replace('\n', ' ⏎ ')
                 if not confirm_bash(preview):
+                    denied_in_turn = True
                     result = {'ok': False, 'error': '사용자가 취소했습니다'}
                     if on_tool:
                         on_tool(fn_name, args, result)

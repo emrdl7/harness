@@ -47,6 +47,28 @@ class TestClassifyCommand:
         assert shell.classify_command('bash -c "cat /etc/passwd"') == 'dangerous'
 
 
+class TestShouldConfirm:
+    '''Sticky-deny 정책 — 사용자가 confirm을 거부하면 같은 turn 내
+    후속 safe 명령도 confirm 강제 (모델 우회 차단).'''
+
+    def test_safe_without_sticky_passes(self):
+        assert shell.should_confirm('ls -la', sticky_deny=False) is False
+        assert shell.should_confirm('pwd', sticky_deny=False) is False
+
+    def test_dangerous_without_sticky_requires_confirm(self):
+        assert shell.should_confirm('rm -rf /tmp/x', sticky_deny=False) is True
+        assert shell.should_confirm('echo a | grep b', sticky_deny=False) is True
+
+    def test_safe_with_sticky_requires_confirm(self):
+        '''sticky_deny=True면 safe 명령도 confirm — 우회 차단 핵심.'''
+        assert shell.should_confirm('ls -la', sticky_deny=True) is True
+        assert shell.should_confirm('pwd', sticky_deny=True) is True
+        assert shell.should_confirm('cat file', sticky_deny=True) is True
+
+    def test_dangerous_with_sticky_still_requires_confirm(self):
+        assert shell.should_confirm('rm x', sticky_deny=True) is True
+
+
 class TestRunCommand:
     def test_safe_command_argv(self):
         '''메타문자 없으면 shell=False + shlex 경로.'''

@@ -82,6 +82,18 @@ def classify_command(command: str) -> str:
     return 'safe'
 
 
+def should_confirm(command: str, sticky_deny: bool = False) -> bool:
+    '''명령어 실행 전 사용자 confirm이 필요한지 결정.
+
+    sticky_deny: 같은 turn 내에 사용자가 한 번이라도 confirm을 거부했으면 True.
+    이 경우 모델이 safe 명령으로 우회하려는 것을 막기 위해 모든 후속
+    run_command/run_python에 confirm을 강제한다.
+    '''
+    if sticky_deny:
+        return True
+    return classify_command(command) == 'dangerous'
+
+
 def run_command(command: str, cwd: str = None) -> dict:
     '''명령어를 가능하면 shell=False + shlex로 실행, 메타문자 있으면 shell=True.'''
     has_shell_meta = bool(_SHELL_META_RE.search(command))
