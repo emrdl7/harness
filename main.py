@@ -640,8 +640,6 @@ def _run_claude_cli(query: str, session_msgs: list | None = None, working_dir: s
         )
         return ''
 
-    console.print('\n[bold blue]● Claude[/bold blue]')
-
     # 세션 컨텍스트를 query 앞에 붙여 Claude가 대화 흐름을 알 수 있게 함
     if session_msgs:
         ctx = _build_claude_context(session_msgs)
@@ -649,18 +647,32 @@ def _run_claude_cli(query: str, session_msgs: list | None = None, working_dir: s
     else:
         full_query = query
 
+    _token_buf.clear()
+    _spinner.start()
+
     collected = []
+    _first_token = [True]
+
     try:
         def _tok(line):
+            if _first_token[0]:
+                _first_token[0] = False
+                _flush_tokens()  # 스피너 정지
+                console.print('\n[bold blue]● Claude[/bold blue]')
             collected.append(line)
             console.print(line, end='', highlight=False, markup=False)
         claude_ask(full_query, on_token=_tok, cwd=working_dir, model=model)
     except RuntimeError as e:
+        _spinner.stop()
         console.print(f'\n  [tool.fail]✗[/tool.fail] {e}\n')
         return ''
     except KeyboardInterrupt:
+        _spinner.stop()
         console.print('\n  [dim]중단됨[/dim]\n')
         return ''
+
+    if _first_token[0]:
+        _flush_tokens()  # 토큰이 없었던 경우에도 스피너 정지
 
     console.print('\n')
 
