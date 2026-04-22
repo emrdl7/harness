@@ -125,14 +125,12 @@ class Room:
     state: Session
     subscribers: set = field(default_factory=set)        # 현재 연결된 ws
     # busy: 단일 스레드 asyncio라 await 없는 체크-set은 race-free.
-    # _handle_input 진입 시 set, finally에서 clear.
+    # _dispatch_loop 진입 시 set, _handle_input의 finally에서 clear.
     busy: bool = False
-    active_input_from: object = None                      # 현재 입력 중인 ws (DQ2 confirm 격리에 사용)
+    active_input_from: object = None                      # 현재 입력 중인 ws (DQ2 confirm 격리)
     # 진행 중인 _handle_input task의 강한 참조 유지 (asyncio.create_task GC 회피).
     # done 콜백으로 자동 discard.
     input_tasks: set = field(default_factory=set)
-    # input_lock은 향후 Phase에서 더 정교한 큐잉이 필요할 때를 위해 유지 (현재 미사용).
-    input_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 ROOMS: dict[str, Room] = {}
@@ -691,11 +689,17 @@ async def _dispatch_loop(ws, room: 'Room', queue: asyncio.Queue):
             _spawn_input_task(room, _handle_cplan_execute(ws, room, task_text))
 
         elif t == 'confirm_write_response':
+            # DQ2: 입력 주체(active_input_from) ws만 confirm 가능.
+            # 다른 ws의 응답은 무시 — 같은 룸의 관전자가 위조해도 차단.
+            if ws is not room.active_input_from:
+                continue
             state._confirm_result = msg.get('result', False)
             if state._confirm_event:
                 state._confirm_event.set()
 
         elif t == 'confirm_bash_response':
+            if ws is not room.active_input_from:
+                continue
             state._confirm_bash_result = msg.get('result', False)
             if state._confirm_bash_event:
                 state._confirm_bash_event.set()

@@ -87,8 +87,9 @@ class TestRoom:
         assert room.name == 'r1'
         assert isinstance(room.state, srv.Session)
         assert room.subscribers == set()
-        assert isinstance(room.input_lock, asyncio.Lock)
         assert room.active_input_from is None
+        assert room.busy is False
+        assert room.input_tasks == set()
 
     def test_get_or_create_returns_same_instance_for_same_name(self, isolated_rooms):
         a = srv._get_or_create_room('team')
@@ -274,6 +275,8 @@ class TestDispatchLoop:
         room = srv._get_or_create_room('r')
         ws = _FakeWS()
         room.subscribers.add(ws)
+        # Phase 4: confirm 가드 — active_input_from이 ws여야 처리됨
+        room.active_input_from = ws
 
         async def _go():
             ev = asyncio.Event()
@@ -479,3 +482,100 @@ class TestRoomJoinedShape:
         decoded = json.loads(json.dumps(payload))
         assert decoded['turns'] == 1
         assert len(decoded['messages']) == 3
+
+
+# ── BB-2 Phase 4: confirm 가드 + 라이프사이클 ────────────────────
+class TestConfirmGuard:
+    @staticmethod
+    def _queue_with(items):
+        q: asyncio.Queue = asyncio.Queue()
+        for x in items:
+            q.put_nowait(x)
+        q.put_nowait(None)
+        return q
+
+    def test_other_ws_confirm_ignored(self, isolated_rooms):
+        '''룸 멤버 중 active_input_from이 아닌 ws의 confirm 응답은 무시.'''
+        room = srv._get_or_create_room('team')
+        a, b = _FakeWS(), _FakeWS()
+        room.subscribers.update({a, b})
+        room.active_input_from = a  # 입력 주체는 a
+
+        async def _go():
+            ev = asyncio.Event()
+            room.state._confirm_event = ev
+            room.state._confirm_result = False
+            # b의 dispatch_loop가 confirm_write_response를 수신 — 가드에서 차단되어야
+            q = self._queue_with([{'type': 'confirm_write_response', 'result': True}])
+            await srv._dispatch_loop(b, room, q)
+            return ev.is_set(), room.state._confirm_result
+
+        was_set, result = asyncio.run(_go())
+        assert was_set is False
+        assert result is False
+
+    def test_active_ws_bash_confirm_passes(self, isolated_rooms):
+        '''active_input_from ws의 confirm_bash_response는 정상 처리.'''
+        room = srv._get_or_create_room('team')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        room.active_input_from = ws
+
+        async def _go():
+            ev = asyncio.Event()
+            room.state._confirm_bash_event = ev
+            room.state._confirm_bash_result = False
+            q = self._queue_with([{'type': 'confirm_bash_response', 'result': True}])
+            await srv._dispatch_loop(ws, room, q)
+            return ev.is_set(), room.state._confirm_bash_result
+
+        was_set, result = asyncio.run(_go())
+        assert was_set is True
+        assert result is True
+
+
+class TestRoomLifecycle:
+    def test_state_survives_partial_leave(self, isolated_rooms):
+        '''2명 중 1명이 떠나도 Room.state는 그대로 유지된다.'''
+        room = srv._get_or_create_room('team')
+        a, b = object(), object()
+        room.subscribers.update({a, b})
+        room.state.messages = [{'role': 'user', 'content': 'q'}]
+        # a 이탈
+        room.subscribers.discard(a)
+        srv._maybe_drop_room(room)
+        assert 'team' in srv.ROOMS  # b가 남아있어 보존
+        assert srv.ROOMS['team'].state.messages == [{'role': 'user', 'content': 'q'}]
+
+    def test_room_dropped_when_last_leaves(self, isolated_rooms):
+        '''마지막 멤버 이탈 시 Room이 ROOMS에서 제거된다.'''
+        room = srv._get_or_create_room('team')
+        x = object()
+        room.subscribers.add(x)
+        room.subscribers.discard(x)
+        srv._maybe_drop_room(room)
+        assert 'team' not in srv.ROOMS
+
+    def test_rejoin_after_full_leave_creates_new_room(self, isolated_rooms):
+        '''전원 이탈 후 같은 이름으로 재join하면 새 Room — 이전 messages 유실.'''
+        room1 = srv._get_or_create_room('team')
+        room1.state.messages = [{'role': 'user', 'content': 'old'}]
+        # 전원 이탈
+        srv._maybe_drop_room(room1)  # 빈 룸 → 정리
+        # 같은 이름으로 재생성
+        room2 = srv._get_or_create_room('team')
+        assert room2 is not room1
+        assert room2.state.messages == []  # 새 Session
+
+    def test_rejoin_after_partial_leave_shares_state(self, isolated_rooms):
+        '''한 명이 남아있는 룸에 재합류 — 같은 인스턴스, state 공유.'''
+        room1 = srv._get_or_create_room('team')
+        survivor = object()
+        room1.subscribers.add(survivor)
+        room1.state.messages = [{'role': 'user', 'content': 'shared'}]
+        # 다른 한 명이 떠나도 룸 유지
+        srv._maybe_drop_room(room1)
+        # 재합류
+        room2 = srv._get_or_create_room('team')
+        assert room2 is room1
+        assert room2.state.messages == [{'role': 'user', 'content': 'shared'}]
