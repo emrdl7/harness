@@ -5,6 +5,8 @@ import json
 import os
 import sys
 import threading
+import uuid
+from dataclasses import dataclass, field
 
 import websockets
 
@@ -76,7 +78,7 @@ async def send(ws, **kwargs):
         pass
 
 
-# ── 세션 상태 (연결 단위) ─────────────────────────────────────────
+# ── 세션 상태 (룸 단위) ──────────────────────────────────────────
 class Session:
     def __init__(self):
         self.working_dir = os.environ.get('HARNESS_CWD') or os.getcwd()
@@ -92,6 +94,36 @@ class Session:
         self._confirm_bash_event: asyncio.Event | None = None
         self._confirm_bash_result: bool = False
         self.compact_count: int = 0
+
+
+# ── 공유 룸 (BB-2 Phase 1) ───────────────────────────────────────
+# 같은 room_name으로 접속한 WS들이 하나의 Session을 공유한다.
+# 헤더가 없는 솔로 모드는 매 연결마다 고유 UUID 룸을 받아 격리된다.
+@dataclass
+class Room:
+    name: str
+    state: Session
+    subscribers: set = field(default_factory=set)        # 현재 연결된 ws
+    input_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    active_input_from: object = None                      # 현재 입력 중인 ws (Phase 2~4에서 사용)
+
+
+ROOMS: dict[str, Room] = {}
+
+
+def _get_or_create_room(name: str) -> Room:
+    '''같은 name이면 같은 Room 반환 (Session 공유). 없으면 새로 생성.'''
+    room = ROOMS.get(name)
+    if room is None:
+        room = Room(name=name, state=Session())
+        ROOMS[name] = room
+    return room
+
+
+def _maybe_drop_room(room: Room) -> None:
+    '''subscribers가 비면 ROOMS에서 제거 (메모리 누수 방지).'''
+    if not room.subscribers and ROOMS.get(room.name) is room:
+        del ROOMS[room.name]
 
 
 # ── 에이전트 실행 (스레드 → asyncio 브릿지) ──────────────────────
@@ -485,67 +517,77 @@ async def handler(ws):
 
 
 async def _run_session(ws):
-    state = Session()
-
-    # 초기 상태 전송
-    await send_state(ws, state)
-    await send(ws, type='ready')
-
-    # 자동 인덱싱
-    if state.profile.get('auto_index') and not context.is_indexed(state.working_dir):
-        py_count = sum(1 for _, _, fs in os.walk(state.working_dir) for f in fs if f.endswith('.py'))
-        if py_count > 3:
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(None, lambda: context.index_directory(state.working_dir))
-            await send(ws, type='info', text=f'인덱싱 완료 {result["indexed"]}개 청크')
-            await send_state(ws, state)
+    # 룸 식별: 헤더 있으면 공유 룸, 없으면 연결 단위 솔로 룸 (UUID).
+    # 솔로 모드는 매 연결마다 고유 이름이라 회귀 없음.
+    room_header = (ws.request.headers.get('x-harness-room', '') or '').strip()
+    room_name = room_header if room_header else f'_solo_{uuid.uuid4().hex}'
+    room = _get_or_create_room(room_name)
+    room.subscribers.add(ws)
+    state = room.state  # 같은 룸의 모든 ws가 같은 Session 공유
 
     try:
-        async for raw in ws:
-            try:
-                msg = json.loads(raw)
-            except json.JSONDecodeError:
-                continue
+        # 초기 상태 전송 (room은 신규 필드 — 모르는 UI는 무시함)
+        await send_state(ws, state)
+        await send(ws, type='ready', room=room_name)
 
-            t = msg.get('type')
+        # 자동 인덱싱 — 룸의 working_dir 기준. 두 번째 join은 is_indexed=True로 자연 스킵.
+        if state.profile.get('auto_index') and not context.is_indexed(state.working_dir):
+            py_count = sum(1 for _, _, fs in os.walk(state.working_dir) for f in fs if f.endswith('.py'))
+            if py_count > 3:
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(None, lambda: context.index_directory(state.working_dir))
+                await send(ws, type='info', text=f'인덱싱 완료 {result["indexed"]}개 청크')
+                await send_state(ws, state)
 
-            if t == 'input':
-                text = msg.get('text', '').strip()
-                if not text:
+        try:
+            async for raw in ws:
+                try:
+                    msg = json.loads(raw)
+                except json.JSONDecodeError:
                     continue
-                if text.startswith('/'):
-                    await handle_slash(ws, state, text)
-                elif text.startswith('@claude '):
-                    await run_claude(ws, state, text[8:].strip(), add_to_session=True)
-                else:
-                    await run_agent(ws, state, text)
-                    await send_state(ws, state)
 
-            elif t == 'confirm_write_response':
-                state._confirm_result = msg.get('result', False)
-                if state._confirm_event:
-                    state._confirm_event.set()
+                t = msg.get('type')
 
-            elif t == 'confirm_bash_response':
-                state._confirm_bash_result = msg.get('result', False)
-                if state._confirm_bash_event:
-                    state._confirm_bash_event.set()
+                if t == 'input':
+                    text = msg.get('text', '').strip()
+                    if not text:
+                        continue
+                    if text.startswith('/'):
+                        await handle_slash(ws, state, text)
+                    elif text.startswith('@claude '):
+                        await run_claude(ws, state, text[8:].strip(), add_to_session=True)
+                    else:
+                        await run_agent(ws, state, text)
+                        await send_state(ws, state)
 
-            elif t == 'cplan_execute':
-                task = msg.get('task', '')
-                if task:
-                    execute_prompt = (
-                        f'위에서 Claude가 작성한 플랜을 그대로 실행해줘.\n'
-                        f'각 단계를 순서대로 처리하고 도구를 사용해.\n\n작업: {task}'
-                    )
-                    await run_agent(ws, state, execute_prompt)
-                    await send_state(ws, state)
+                elif t == 'confirm_write_response':
+                    state._confirm_result = msg.get('result', False)
+                    if state._confirm_event:
+                        state._confirm_event.set()
 
-            elif t == 'ping':
-                await send(ws, type='pong')
+                elif t == 'confirm_bash_response':
+                    state._confirm_bash_result = msg.get('result', False)
+                    if state._confirm_bash_event:
+                        state._confirm_bash_event.set()
 
-    except websockets.exceptions.ConnectionClosed:
-        pass
+                elif t == 'cplan_execute':
+                    task = msg.get('task', '')
+                    if task:
+                        execute_prompt = (
+                            f'위에서 Claude가 작성한 플랜을 그대로 실행해줘.\n'
+                            f'각 단계를 순서대로 처리하고 도구를 사용해.\n\n작업: {task}'
+                        )
+                        await run_agent(ws, state, execute_prompt)
+                        await send_state(ws, state)
+
+                elif t == 'ping':
+                    await send(ws, type='pong')
+
+        except websockets.exceptions.ConnectionClosed:
+            pass
+    finally:
+        room.subscribers.discard(ws)
+        _maybe_drop_room(room)
 
 
 # ── 진입점 ────────────────────────────────────────────────────────
