@@ -224,7 +224,7 @@ def run(
                 }
                 unknown_tool_count += 1
                 if on_unknown_tool:
-                    on_unknown_tool(fn_name)
+                    on_unknown_tool(fn_name, args)
 
             if on_tool:
                 on_tool(fn_name, args, result)

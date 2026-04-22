@@ -321,44 +321,65 @@ _INSTALLABLE_TOOLS = {
     'search_code': ('search.py', None),
 }
 
-# 모델이 대화용으로 만들어내는 가짜 툴 패턴 — 제안 불필요
-_SOCIAL_TOOL_PATTERNS = (
-    'acknowledge', 'confirm', 'respond', 'reply', 'answer', 'clarif',
-    'greet', 'apologize', 'thank', 'sorry',
-    'get_status', 'get_project', 'check_status', 'project_status',
-    'no_op', 'noop', 'done', 'finish', 'complete',
-)
-
-
-def _is_social_tool(name: str) -> bool:
+def _infer_tool_purpose(name: str, args: dict) -> str:
+    '''툴 이름과 호출 인자로 추정 기능 설명 생성.'''
     n = name.lower()
-    return any(p in n for p in _SOCIAL_TOOL_PATTERNS)
+    # 인자 요약
+    arg_parts = []
+    for k, v in (args or {}).items():
+        v_str = str(v)[:40] + ('...' if len(str(v)) > 40 else '')
+        arg_parts.append(f'{k}={v_str}')
+    args_str = f'  [dim]인자: {", ".join(arg_parts)}[/dim]' if arg_parts else ''
+
+    if 'status' in n or 'info' in n:
+        purpose = '프로젝트/상태 정보를 조회하는 툴'
+    elif 'search' in n or 'find' in n or 'query' in n:
+        purpose = '검색/탐색을 수행하는 툴'
+    elif 'read' in n or 'get' in n or 'fetch' in n or 'load' in n:
+        purpose = '데이터를 읽어오는 툴'
+    elif 'write' in n or 'save' in n or 'store' in n or 'create' in n:
+        purpose = '데이터를 저장/생성하는 툴'
+    elif 'run' in n or 'exec' in n or 'execute' in n:
+        purpose = '명령/코드를 실행하는 툴'
+    elif 'test' in n or 'check' in n or 'lint' in n or 'valid' in n:
+        purpose = '검증/테스트를 수행하는 툴'
+    elif 'acknowledge' in n or 'confirm' in n or 'respond' in n or 'reply' in n:
+        purpose = '대화 응답용 (실제 기능 없음 — 모델이 잘못 호출한 것일 수 있음)'
+    else:
+        purpose = '기능 미상 — 이름으로 유추 불가'
+
+    return purpose, args_str
 
 
-def _suggest_unknown_tools(names: list[str]):
-    if not names:
+def _suggest_unknown_tools(items: list[tuple[str, dict]]):
+    if not items:
         return
-    for name in names:
-        if _is_social_tool(name):
+    seen = set()
+    for name, args in items:
+        if name in seen:
             continue
+        seen.add(name)
+
         info = _INSTALLABLE_TOOLS.get(name)
         if info:
             module_file, pkg = info
             pkg_note = f'  [dim](pip install {pkg})[/dim]' if pkg else ''
             console.print(
-                f'\n  [warn]⚠[/warn]  모델이 [bold]{name}[/bold] 툴을 호출했지만 '
-                f'등록되지 않았습니다{pkg_note}\n'
+                f'\n  [warn]⚠[/warn]  미등록 툴: [bold]{name}[/bold]{pkg_note}\n'
                 f'  [dim]tools/{module_file} 에 구현 후 tools/__init__.py에 등록하세요[/dim]'
             )
         else:
-            if Confirm.ask(
-                f'\n  [warn]⚠[/warn]  모델이 [bold]{name}[/bold] 툴을 호출했습니다 '
-                f'(미등록). 하네스에 추가할까요?',
-                default=False,
-            ):
+            purpose, args_str = _infer_tool_purpose(name, args)
+            console.print(
+                f'\n  [warn]⚠[/warn]  미등록 툴 감지: [bold]{name}[/bold]\n'
+                f'  추정 기능: {purpose}\n'
+                f'  추가 방법: tools/{name}.py 구현 → tools/__init__.py 에 등록\n'
+                + (f'  {args_str}\n' if args_str else '')
+            )
+            if Confirm.ask('  하네스에 추가할까요?', default=False):
                 console.print(
-                    f'  [dim]tools/{name}.py 파일을 만들고 tools/__init__.py에 등록하세요\n'
-                    f'  /improve 를 실행하면 자동으로 구현을 시도합니다[/dim]'
+                    f'  [tool.ok]✓[/tool.ok]  /improve 를 실행하면 자동 구현을 시도합니다\n'
+                    f'  [dim]또는 tools/{name}.py 를 직접 작성하세요[/dim]'
                 )
 
 
@@ -1259,13 +1280,13 @@ def main():
             _response_footer()
 
     # 미등록 툴 + 툴 시퀀스 수집 — proposer용
-    _unknown_tools: list[str] = []
-    _all_unknown_tools: list[str] = []  # 세션 전체 누적
-    _tool_call_sequence: list[str] = []  # 세션 전체 툴 호출 순서
+    _unknown_tools: list[tuple[str, dict]] = []   # [(name, args), ...]
+    _all_unknown_tools: list[str] = []             # 세션 전체 누적 (이름만)
+    _tool_call_sequence: list[str] = []            # 세션 전체 툴 호출 순서
 
-    def _on_unknown_tool(name: str):
-        if name not in _unknown_tools:
-            _unknown_tools.append(name)
+    def _on_unknown_tool(name: str, args: dict = None):
+        if not any(n == name for n, _ in _unknown_tools):
+            _unknown_tools.append((name, args or {}))
         if name not in _all_unknown_tools:
             _all_unknown_tools.append(name)
 
