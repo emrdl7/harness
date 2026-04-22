@@ -63,6 +63,21 @@ class TestProjectToml:
         assert 'p1' in names
 
 
+class TestMalformedToml:
+    '''CONCERNS.md §1.19 회귀 방지: 잘못된 TOML은 silently 삼키지 말고
+    stderr로 경고 + defaults 유지.'''
+    def test_malformed_toml_warns_stderr(self, isolated_env, tmp_path, capsys):
+        toml_path = tmp_path / '.harness.toml'
+        toml_path.write_text('this is not [valid] = toml = syntax')
+        config = prof.load(str(tmp_path))
+        # defaults 유지
+        assert config['language'] == 'korean'
+        # stderr에 경고 출력
+        captured = capsys.readouterr()
+        assert 'TOML 파싱 실패' in captured.err
+        assert str(toml_path) in captured.err
+
+
 class TestEnvOverride:
     def test_env_overrides_toml(self, isolated_env, tmp_path, monkeypatch):
         toml_path = tmp_path / '.harness.toml'

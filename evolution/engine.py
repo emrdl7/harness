@@ -42,14 +42,13 @@ def run(
     summary['undo_count'] = undo_count
     summary['total_tool_calls'] = _count_tool_calls(session_msgs)
 
-    # 툴 시퀀스 기록 (proposer용)
-    if tool_call_sequence:
-        record_tool_sequence(tool_call_sequence, session_id='')
-
     if summary['turn_count'] < 1:
         return
 
     session_id = datetime.now().strftime('%Y%m%d_%H%M%S') + '_' + uuid.uuid4().hex[:4]
+    # 툴 시퀀스 기록 (proposer용) — CONCERNS.md §1.20 대응:
+    # 기존엔 session_id='' 빈 버킷에 먼저 기록한 뒤 실제 id로 다시 기록해
+    # sequence store에 쓰레기 데이터가 누적됐음. 한 번만 기록.
     if tool_call_sequence:
         record_tool_sequence(tool_call_sequence, session_id)
     quality = score(summary)

@@ -74,6 +74,41 @@ class TestUndo:
         assert result.state.undo_count == 0
         assert '취소할 내용이 없습니다' in result.notice
 
+    def test_removes_tool_messages_in_turn(self):
+        '''CONCERNS.md §1.18 회귀 방지: user 이후 assistant + tool 여러 개가
+        섞인 경우에도 orphan 없이 모두 제거되어야 한다.'''
+        state = SlashState(messages=[
+            {'role': 'system', 'content': 's'},
+            {'role': 'user', 'content': 'q1'},
+            {'role': 'assistant', 'content': 'a1'},
+            {'role': 'user', 'content': 'q2'},
+            {'role': 'assistant', 'content': 'calling tool'},
+            {'role': 'tool', 'content': '{"ok": true}'},
+            {'role': 'tool', 'content': '{"ok": true}'},
+            {'role': 'assistant', 'content': 'a2'},
+        ])
+        result = h.slash_undo(state, _CTX)
+        # q2부터 끝까지 전부 제거 → system, q1, a1만 남음
+        assert len(result.state.messages) == 3
+        roles = [m['role'] for m in result.state.messages]
+        assert roles == ['system', 'user', 'assistant']
+        assert result.state.messages[-1]['content'] == 'a1'
+        assert result.state.undo_count == 1
+
+    def test_undo_twice_clears_to_system(self):
+        '''/undo 두 번이면 system만 남아야 함.'''
+        state = SlashState(messages=[
+            {'role': 'system', 'content': 's'},
+            {'role': 'user', 'content': 'q1'},
+            {'role': 'assistant', 'content': 'a1'},
+        ])
+        r1 = h.slash_undo(state, _CTX)
+        r2 = h.slash_undo(r1.state, _CTX)
+        assert len(r2.state.messages) == 1
+        assert r2.state.messages[0]['role'] == 'system'
+        # 두 번째는 noop (undo_count는 r1과 동일)
+        assert r2.state.undo_count == r1.state.undo_count
+
 
 # ── slash_cd ─────────────────────────────────────────────────────────
 class TestCd:

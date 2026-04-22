@@ -85,19 +85,28 @@ _LIST_MERGE_KEYS = {'mcp_servers'}
 
 
 def _merge_toml(config: dict, path: str) -> None:
+    '''CONCERNS.md §1.19 대응: TOML 파싱 실패를 stderr에 보고해
+    사용자가 `.harness.toml` 편집 오류를 인지할 수 있게 한다.'''
     if not os.path.exists(path):
         return
     try:
         with open(path, 'rb') as f:
             data = tomllib.load(f)
-        for k, v in data.items():
-            if k in _LIST_MERGE_KEYS and isinstance(v, list):
-                # 배열 키는 덮어쓰지 않고 합산
-                config[k] = list(config.get(k) or []) + v
-            else:
-                config[k] = v
-    except Exception:
-        pass
+    except tomllib.TOMLDecodeError as e:
+        import sys
+        print(f'[profile] TOML 파싱 실패: {path} — {e}', file=sys.stderr)
+        return
+    except OSError as e:
+        import sys
+        print(f'[profile] 파일 읽기 실패: {path} — {e}', file=sys.stderr)
+        return
+
+    for k, v in data.items():
+        if k in _LIST_MERGE_KEYS and isinstance(v, list):
+            # 배열 키는 덮어쓰지 않고 합산
+            config[k] = list(config.get(k) or []) + v
+        else:
+            config[k] = v
 
 
 def _merge_env(config: dict) -> None:

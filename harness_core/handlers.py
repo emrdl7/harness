@@ -18,14 +18,23 @@ def slash_clear(state: SlashState, ctx: SlashContext) -> SlashResult:
 
 
 def slash_undo(state: SlashState, ctx: SlashContext) -> SlashResult:
-    '''/undo — 마지막 user/assistant 한 쌍 제거. system은 보존.'''
-    non_system = [m for m in state.messages if m.get('role') != 'system']
-    if len(non_system) < 2:
+    '''/undo — 마지막 user 이후 모든 메시지(assistant, tool 포함) 제거. system은 보존.
+
+    CONCERNS.md §1.18 대응: 기존 `non_system[:-2]`는 assistant/tool 여러 개가
+    섞인 경우 orphan 메시지를 남겨 대화 로그가 비일관해졌음. user 경계를
+    기준으로 잘라서 항상 일관된 상태로 복귀.
+    '''
+    msgs = state.messages
+    last_user_idx = None
+    for i in range(len(msgs) - 1, -1, -1):
+        if msgs[i].get('role') == 'user':
+            last_user_idx = i
+            break
+    if last_user_idx is None:
         return SlashResult.info(state, '취소할 내용이 없습니다')
-    system = [m for m in state.messages if m.get('role') == 'system']
     new_state = evolve(
         state,
-        messages=system + non_system[:-2],
+        messages=msgs[:last_user_idx],
         undo_count=state.undo_count + 1,
     )
     return SlashResult.info(new_state, '마지막 교환 취소됨')
