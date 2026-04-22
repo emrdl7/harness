@@ -16,9 +16,10 @@ def _find_claude() -> str | None:
     return shutil.which('claude')
 
 
-def ask(query: str, on_token=None, cwd: str | None = None) -> str:
+def ask(query: str, on_token=None, cwd: str | None = None, model: str | None = None) -> str:
     '''claude CLI를 --print 모드로 호출. 스트리밍 출력 지원.
-    cwd를 지정하면 해당 디렉토리 컨텍스트로 실행됨 (기본: 현재 프로세스 cwd).'''
+    cwd를 지정하면 해당 디렉토리 컨텍스트로 실행됨 (기본: 현재 프로세스 cwd).
+    model을 지정하면 --model 플래그로 전달됨 (예: "sonnet", "opus").'''
     claude_bin = _find_claude()
     if not claude_bin:
         raise FileNotFoundError(
@@ -27,6 +28,8 @@ def ask(query: str, on_token=None, cwd: str | None = None) -> str:
         )
 
     cmd = [claude_bin, '--print', query]
+    if model:
+        cmd += ['--model', model]
 
     proc = subprocess.Popen(
         cmd,

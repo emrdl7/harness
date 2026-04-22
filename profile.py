@@ -38,6 +38,8 @@ DEFAULTS = {
     'auto_evolve':    False,
     # 승인 모드: suggest | auto-edit | full-auto
     'approval_mode':  '',
+    # @claude / /claude 명령에 사용할 모델 (비워두면 Claude Code 기본값)
+    'claude_model':   '',
 }
 
 # 환경변수 → 설정 키 매핑 (값 타입 포함)
@@ -214,6 +216,11 @@ num_predict = 0            # 0 = 기본값(4096) 유지
 # /evolve run        → 즉시 실행
 # /evolve changelog  → 변경 이력 확인
 auto_evolve = false
+
+# ── @claude / /claude 모델 설정 ──────────────────────────────────
+# 비워두면 Claude Code 기본 모델 사용.
+# 예: "sonnet", "opus", "claude-sonnet-4-6"
+claude_model = ""
 
 # ── 훅 설정 ──────────────────────────────────────────────────────
 # 사용 가능한 환경변수: HARNESS_TOOL, HARNESS_ARGS, HARNESS_RESULT_OK, HARNESS_WORKING_DIR
