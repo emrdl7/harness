@@ -8,6 +8,7 @@ from tools import TOOL_DEFINITIONS, TOOL_MAP
 from tools.shell import classify_command
 from tools.hooks import run_hook
 from session.logger import log_tool_failure, log_reflection
+import skills
 
 MAX_TOOL_RESULT_CHARS = 20_000
 
@@ -159,11 +160,17 @@ def run(
         system_content = _build_system(working_dir, profile, context_snippets)
         session_messages.append({'role': 'system', 'content': system_content})
 
+    # 관련 스킬 감지 → user 메시지 앞에 주입
+    skill_context = skills.build_context(user_input)
+    content = user_input
+    if skill_context:
+        content = f'{skill_context}\n\n---\n{user_input}'
+
     # 계획 모드: 실행 전 계획 먼저
     if plan_mode:
-        session_messages.append({'role': 'user', 'content': PLAN_PROMPT + f'\n\n작업: {user_input}'})
+        session_messages.append({'role': 'user', 'content': PLAN_PROMPT + f'\n\n작업: {content}'})
     else:
-        session_messages.append({'role': 'user', 'content': user_input})
+        session_messages.append({'role': 'user', 'content': content})
 
     consecutive_failures = 0
     _start = time.time()
