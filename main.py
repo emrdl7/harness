@@ -735,87 +735,6 @@ def _run_claude_cli(query: str, session_msgs: list | None = None, working_dir: s
     return response
 
 
-# ── /cplan: Claude 플랜 → 로컬 실행 ──────────────────────────────
-CPLAN_PROMPT_TMPL = '''\
-다음 작업에 대한 실행 계획을 작성해줘.
-작업 디렉토리: {working_dir}
-
-작업: {task}
-
-아래 형식으로 단계별 플랜을 작성해:
-1. 각 단계를 번호 목록으로
-2. 어떤 파일을 읽고/쓸지 명시
-3. 코드 변경이 필요하면 핵심 로직도 포함
-4. 주의사항/엣지케이스 언급
-
-실행 가능한 구체적인 플랜이어야 해. 로컬 코딩 모델이 이 플랜만 보고 바로 실행할 수 있도록.
-'''
-
-
-def do_cplan(task: str, session_msgs: list, working_dir: str, profile: dict) -> list:
-    if not claude_available():
-        console.print(
-            '  [tool.fail]✗[/tool.fail] claude CLI를 찾을 수 없습니다\n'
-            '  [dim]설치: https://claude.ai/code[/dim]'
-        )
-        return session_msgs
-
-    prompt = CPLAN_PROMPT_TMPL.format(task=task, working_dir=working_dir)
-
-    console.print('\n[bold blue]● Claude[/bold blue] [dim]플랜 작성 중...[/dim]')
-
-    collected = []
-    try:
-        def _tok(line):
-            collected.append(line)
-            console.print(line, end='', highlight=False, markup=False)
-        claude_ask(prompt, on_token=_tok)
-    except (RuntimeError, KeyboardInterrupt) as e:
-        console.print(f'\n  [tool.fail]✗[/tool.fail] {e}')
-        return session_msgs
-
-    plan_text = ''.join(collected).strip()
-    console.print('\n')
-
-    if not plan_text:
-        console.print('  [tool.fail]✗[/tool.fail] 플랜을 받지 못했습니다')
-        return session_msgs
-
-    session_msgs.append({'role': 'user', 'content': f'[Claude 플랜 작성 요청]\n{task}'})
-    session_msgs.append({'role': 'assistant', 'content': f'[Claude 작성 플랜]\n{plan_text}'})
-
-    console.print()
-    if not Confirm.ask('  위 플랜으로 [bold]로컬 모델이 실행[/bold]할까요?', default=True):
-        console.print('  [dim]실행 취소 — 플랜은 세션에 기록되었습니다[/dim]')
-        return session_msgs
-
-    execute_prompt = (
-        f'위에서 Claude가 작성한 플랜을 그대로 실행해줘.\n'
-        f'각 단계를 순서대로 처리하고, 파일 읽기/쓰기가 필요하면 도구를 사용해.\n\n'
-        f'작업: {task}'
-    )
-
-    snippets = get_context_snippets(task, working_dir, profile)
-    _response_header()
-    _ui.reset()
-
-    _, session_msgs = agent.run(
-        execute_prompt,
-        session_messages=session_msgs,
-        working_dir=working_dir,
-        profile=profile,
-        context_snippets=snippets,
-        on_token=on_token,
-        on_tool=on_tool,
-        confirm_write=confirm_write if profile.get('confirm_writes', True) else None,
-        confirm_bash=confirm_bash if profile.get('confirm_bash', True) else None,
-        hooks=profile.get('hooks', {}),
-    )
-
-    _response_footer()
-    return session_msgs
-
-
 # ── /cloop: Claude ↔ harness 협업 루프 ───────────────────────────
 _CLOOP_PLAN_TMPL = '''\
 다음 작업을 분석하고 실행 계획을 작성해줘.
@@ -1699,10 +1618,16 @@ def main():
                 console.clear()
                 continue
 
-            # 자연어로 /cplan 트리거 감지
+            # 자연어로 /cplan 트리거 감지 — handle_slash를 통해 harness_core로 라우팅
             if _is_cplan_intent(user_input):
                 task = _extract_cplan_task(user_input)
-                session_msgs = do_cplan(task, session_msgs, working_dir, profile)
+                session_msgs, working_dir, undo_count = handle_slash(
+                    f'/cplan {task}', session_msgs, working_dir, profile, undo_count,
+                    run_agent=_run_agent_for_core,
+                    run_agent_ephemeral=_run_agent_ephemeral,
+                    ask_claude=_ask_claude_for_core,
+                    confirm_execute=_confirm_execute_for_core,
+                )
                 continue
 
             snippets = get_context_snippets(user_input, working_dir, profile)
