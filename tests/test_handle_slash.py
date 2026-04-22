@@ -78,3 +78,42 @@ def test_plan_without_run_agent_shows_internal_error():
     )
     # 크래시하지 않고 그대로 반환되어야 함
     assert new_msgs == msgs
+
+
+# ── harness_core 위임 회귀 테스트 ─────────────────────────────────────
+class TestCoreDelegation:
+    '''/clear /undo /cd /init이 harness_core.dispatch로 위임되는지 검증.
+
+    main.py의 _CORE_DELEGATED_SLASHES 화이트리스트 회귀 방지.
+    위임이 깨지면 deleted된 dead block이 없으니 명령이 silently 사라진다.
+    '''
+    def test_cd_via_core(self, tmp_path, monkeypatch):
+        # HOME 격리 (~/.harness.toml 간섭 차단)
+        monkeypatch.setenv('HOME', str(tmp_path / 'home'))
+        (tmp_path / 'home').mkdir()
+        msgs = [{'role': 'system', 'content': 's'}, {'role': 'user', 'content': 'x'}]
+        new_msgs, wd, undo = main.handle_slash(
+            f'/cd {tmp_path}', msgs, '/tmp', {}, 0,
+        )
+        # 코어 핸들러: working_dir 변경 + 메시지 비움
+        assert wd == str(tmp_path)
+        assert new_msgs == []
+
+    def test_init_via_core(self, tmp_path):
+        msgs = [{'role': 'system', 'content': 's'}]
+        new_msgs, wd, undo = main.handle_slash(
+            '/init', msgs, str(tmp_path), {}, 0,
+        )
+        assert (tmp_path / '.harness.toml').exists()
+        # 메시지/wd 변경 없음
+        assert new_msgs == msgs
+        assert wd == str(tmp_path)
+
+    def test_init_does_not_overwrite_via_core(self, tmp_path):
+        (tmp_path / '.harness.toml').write_text('# 기존')
+        msgs = [{'role': 'system', 'content': 's'}]
+        new_msgs, wd, undo = main.handle_slash(
+            '/init', msgs, str(tmp_path), {}, 0,
+        )
+        # 보존
+        assert (tmp_path / '.harness.toml').read_text() == '# 기존'

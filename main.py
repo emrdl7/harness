@@ -28,6 +28,7 @@ import agent
 import config
 import profile as prof
 import context
+import harness_core
 import session as sess
 from session.logger import read_recent
 from session.analyzer import summarize_session, build_learn_prompt
@@ -1049,6 +1050,23 @@ def do_claude_loop(task: str, session_msgs: list, working_dir: str, profile: dic
 
 
 # ── 슬래시 핸들러 ─────────────────────────────────────────────────
+# harness_core로 위임할 슬래시. /help는 _print_help의 풍성한 표를 유지하기 위해 제외.
+_CORE_DELEGATED_SLASHES = {'/clear', '/undo', '/cd', '/init'}
+
+
+def _render_core_notice(notice: str, level: str) -> None:
+    if not notice:
+        return
+    if level == 'ok':
+        console.print(f'  [tool.ok]✓[/tool.ok] {notice}')
+    elif level == 'warn':
+        console.print(f'  [warn]{notice}[/warn]')
+    elif level == 'error':
+        console.print(f'  [tool.fail]✗[/tool.fail] {notice}')
+    else:
+        console.print(f'  [dim]{notice}[/dim]')
+
+
 def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, undo_count: int = 0, run_agent=None) -> tuple[list, str, int]:
     '''run_agent: main()의 nested _run_agent 함수를 DI로 받음.
     /plan 같은 슬래시는 agent 실행이 필요하므로 호출자가 주입해야 한다.
@@ -1056,20 +1074,18 @@ def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, 
     parts = cmd.strip().split(maxsplit=1)
     name = parts[0]
 
-    if name == '/clear':
-        console.print('  [dim]대화 초기화[/dim]')
-        return [], working_dir, undo_count
-
-    if name == '/undo':
-        non_system = [m for m in session_msgs if m['role'] != 'system']
-        if len(non_system) >= 2:
-            system = [m for m in session_msgs if m['role'] == 'system']
-            session_msgs = system + non_system[:-2]
-            undo_count += 1
-            console.print('  [dim]마지막 교환 취소됨[/dim]')
-        else:
-            console.print('  [dim]취소할 내용이 없습니다[/dim]')
-        return session_msgs, working_dir, undo_count
+    # 공통 핸들러는 harness_core에 위임 (점진 마이그레이션 화이트리스트)
+    if name in _CORE_DELEGATED_SLASHES:
+        core_state = harness_core.SlashState(
+            messages=session_msgs,
+            working_dir=working_dir,
+            profile=profile,
+            undo_count=undo_count,
+        )
+        result = harness_core.dispatch(cmd, core_state)
+        if result.handled:
+            _render_core_notice(result.notice, result.level)
+            return (result.state.messages, result.state.working_dir, result.state.undo_count)
 
     if name == '/plan':
         query = parts[1] if len(parts) > 1 else ''
@@ -1249,19 +1265,6 @@ def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, 
                 console.print(f'  [tool.fail]✗[/tool.fail] {r["error"]}')
         return session_msgs, working_dir, undo_count
 
-    if name == '/cd':
-        if len(parts) < 2:
-            console.print('  [warn]사용법:[/warn] /cd <경로>')
-            return session_msgs, working_dir, undo_count
-        new_dir = os.path.expanduser(parts[1])
-        if os.path.isdir(new_dir):
-            working_dir = os.path.abspath(new_dir)
-            console.print(f'  [dim]→[/dim] {_short_dir(working_dir)}')
-            return [], working_dir, undo_count
-        else:
-            console.print(f'  [tool.fail]✗[/tool.fail] 존재하지 않는 경로: {new_dir}')
-        return session_msgs, working_dir, undo_count
-
     if name == '/commit':
         import subprocess as _sp
         msg = parts[1].strip() if len(parts) > 1 else ''
@@ -1343,11 +1346,6 @@ def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, 
         for s in sessions[:10]:
             t.add_row(s['filename'], s['working_dir'], str(s['turns']), s['preview'])
         console.print(t)
-        return session_msgs, working_dir, undo_count
-
-    if name == '/init':
-        path = prof.create_template(working_dir)
-        console.print(f'  [tool.ok]✓[/tool.ok] [dim]{path}[/dim]')
         return session_msgs, working_dir, undo_count
 
     if name == '/claude':
