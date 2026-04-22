@@ -1048,17 +1048,17 @@ def main():
     if profile.get('auto_index'):
         _auto_sync(working_dir)
 
-    # proposer용 툴 통계 수집 래퍼
-    _auto_evolve_enabled = profile.get('auto_evolve', False)
-    if _auto_evolve_enabled:
+    # proposer용 툴 통계 수집 래퍼 (_effective_on_tool로 분리해 스코프 충돌 방지)
+    if profile.get('auto_evolve', False):
         from evolution.proposer import record_tool_call as _record_tool_call
-        _orig_on_tool = on_tool
 
-        def on_tool(name: str, args: dict, result):  # noqa: F811
-            _orig_on_tool(name, args, result)
+        def _effective_on_tool(name: str, args: dict, result):
+            on_tool(name, args, result)
             if result is not None:
                 _tool_call_sequence.append(name)
                 _record_tool_call(name, bool(result.get('ok')))
+    else:
+        _effective_on_tool = on_tool
 
 
     # 파이프 입력
@@ -1080,7 +1080,7 @@ def main():
                 profile=profile,
                 context_snippets=snippets,
                 on_token=on_token,
-                on_tool=on_tool,
+                on_tool=_effective_on_tool,
                 confirm_write=confirm_write if profile.get('confirm_writes', True) else None,
                 confirm_bash=confirm_bash if profile.get('confirm_bash', True) else None,
                 hooks=profile.get('hooks', {}),
@@ -1118,7 +1118,7 @@ def main():
             context_snippets=context_snippets,
             plan_mode=plan_mode,
             on_token=on_token,
-            on_tool=on_tool,
+            on_tool=_effective_on_tool,
             confirm_write=confirm_write if profile.get('confirm_writes', True) else None,
             confirm_bash=confirm_bash if profile.get('confirm_bash', True) else None,
             hooks=profile.get('hooks', {}),
@@ -1149,7 +1149,7 @@ def main():
                         console=console,
                         agent_run=agent.run,
                         on_token=on_token,
-                        on_tool=on_tool,
+                        on_tool=_effective_on_tool,
                         confirm_write=lambda p: True,
                         undo_count=undo_count,
                         unknown_tools=_all_unknown_tools,
