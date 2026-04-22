@@ -121,6 +121,22 @@ def _build_tree(working_dir: str, max_depth: int = 3) -> dict:
     return _walk(working_dir, 1) or {'name': os.path.basename(working_dir), 'children': []}
 
 
+def slash_plan(state: SlashState, ctx: SlashContext, query: str) -> SlashResult:
+    '''/plan <작업> — agent를 plan_mode=True로 실행.
+
+    ctx.run_agent 시그니처: (user_input, *, plan_mode, context_snippets) -> None.
+    agent는 session_messages를 in-place 갱신하므로 핸들러는 state 변경 없이 반환.
+    '''
+    if not query:
+        return SlashResult.warn(state, '사용법: /plan <작업 내용>')
+    if ctx.run_agent is None:
+        return SlashResult.error(state, '내부 오류: run_agent 콜백이 없습니다')
+    snippets = context.search(query, state.working_dir) \
+        if context.is_indexed(state.working_dir) else ''
+    ctx.run_agent(query, plan_mode=True, context_snippets=snippets)
+    return SlashResult.ok(state, '')
+
+
 def slash_index(state: SlashState, ctx: SlashContext) -> SlashResult:
     '''/index — working_dir 인덱싱. data={'indexed': N, 'skipped': M}.
 

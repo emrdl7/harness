@@ -16,6 +16,7 @@ KNOWN_COMMANDS = {
     '/sessions': (h.slash_sessions, False),
     '/files':    (h.slash_files,    False),
     '/index':    (h.slash_index,    False),
+    '/plan':     (h.slash_plan,     True),
 }
 
 

@@ -1051,7 +1051,7 @@ def do_claude_loop(task: str, session_msgs: list, working_dir: str, profile: dic
 
 # ── 슬래시 핸들러 ─────────────────────────────────────────────────
 # harness_core로 위임할 슬래시. /help는 _print_help의 풍성한 표를 유지하기 위해 제외.
-_CORE_DELEGATED_SLASHES = {'/clear', '/undo', '/cd', '/init', '/save', '/resume', '/sessions', '/files', '/index'}
+_CORE_DELEGATED_SLASHES = {'/clear', '/undo', '/cd', '/init', '/save', '/resume', '/sessions', '/files', '/index', '/plan'}
 
 
 def _render_core_notice(notice: str, level: str) -> None:
@@ -1135,21 +1135,6 @@ def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, 
             elif result.notice:
                 _render_core_notice(result.notice, result.level)
             return (result.state.messages, result.state.working_dir, result.state.undo_count)
-
-    if name == '/plan':
-        query = parts[1] if len(parts) > 1 else ''
-        if not query:
-            console.print('  [warn]사용법:[/warn] /plan <작업 내용>')
-            return session_msgs, working_dir, undo_count
-        if run_agent is None:
-            console.print('  [tool.fail]✗[/tool.fail] 내부 오류: run_agent 콜백이 주입되지 않았습니다')
-            return session_msgs, working_dir, undo_count
-        snippets = get_context_snippets(query, working_dir, profile)
-        _response_header()
-        _ui.reset()
-        run_agent(query, plan_mode=True, context_snippets=snippets)
-        _response_footer()
-        return session_msgs, working_dir, undo_count
 
     if name == '/cplan':
         query = parts[1] if len(parts) > 1 else ''
@@ -1627,6 +1612,13 @@ def main():
         _flush_tokens()
         _suggest_unknown_tools(_unknown_tools)
 
+    def _run_agent_for_core(user_input, *, plan_mode=False, context_snippets=''):
+        '''harness_core.dispatch가 호출하는 wrapping — header/footer 포함.'''
+        _response_header()
+        _ui.reset()
+        _run_agent(user_input, plan_mode=plan_mode, context_snippets=context_snippets)
+        _response_footer()
+
     # -p / --print one-shot 모드
     if args.one_shot:
         query = args.one_shot
@@ -1726,7 +1718,7 @@ def main():
 
                 session_msgs, working_dir, undo_count = handle_slash(
                     user_input, session_msgs, working_dir, profile, undo_count,
-                    run_agent=_run_agent,
+                    run_agent=_run_agent_for_core,
                 )
                 if user_input.startswith('/cd'):
                     profile = prof.load(working_dir)
