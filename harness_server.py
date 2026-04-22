@@ -95,7 +95,10 @@ class Session:
 
 
 # ── 에이전트 실행 (스레드 → asyncio 브릿지) ──────────────────────
-async def run_agent(ws, state: Session, user_input: str, plan_mode: bool = False):
+async def run_agent(ws, state: Session, user_input: str, plan_mode: bool = False,
+                    context_snippets: str = ''):
+    '''context_snippets가 주어지면 외부값 우선 사용, 아니면 내부에서 자체 계산.
+    (harness_core.slash_plan이 미리 snippets를 계산해 전달하는 경로 지원)'''
     loop = asyncio.get_event_loop()
 
     def on_token(token: str):
@@ -146,7 +149,10 @@ async def run_agent(ws, state: Session, user_input: str, plan_mode: bool = False
             pass
         return state._confirm_bash_result
 
-    snippets = context.search(user_input, state.working_dir) if context.is_indexed(state.working_dir) else ''
+    # 외부 주입값 우선, 없으면 자체 계산
+    snippets = context_snippets or (
+        context.search(user_input, state.working_dir) if context.is_indexed(state.working_dir) else ''
+    )
 
     # 세션이 너무 길면 요약 압축
     if needs_compaction(state.messages):
@@ -261,11 +267,28 @@ async def handle_slash(ws, state: Session, cmd: str):
         await send(ws, type='slash_result', cmd='undo', ok=len(state.messages) < before)
 
     elif name == '/plan':
-        query = parts[1] if len(parts) > 1 else ''
-        if query:
-            await run_agent(ws, state, query, plan_mode=True)
-        else:
-            await send(ws, type='error', text='사용법: /plan <작업>')
+        # harness_core.slash_plan에 위임. async run_agent를 sync wrapper로 감싸
+        # executor 스레드에서 dispatch 실행 (이벤트 루프 deadlock 회피).
+        loop = asyncio.get_event_loop()
+
+        def _sync_run_agent(user_input, *, plan_mode=False, context_snippets=''):
+            fut = asyncio.run_coroutine_threadsafe(
+                run_agent(ws, state, user_input, plan_mode=plan_mode,
+                          context_snippets=context_snippets),
+                loop,
+            )
+            fut.result()  # 완료까지 블로킹 (이 콜백은 이미 executor 스레드)
+
+        ctx = harness_core.SlashContext(run_agent=_sync_run_agent)
+        result = await loop.run_in_executor(
+            None,
+            lambda: harness_core.dispatch(cmd, _to_core_state(state), ctx),
+        )
+        if result.level == 'warn':
+            # "사용법: /plan <작업 내용>" 같은 안내
+            await send(ws, type='error', text=result.notice)
+        elif result.level == 'error':
+            await send(ws, type='error', text=result.notice)
 
     elif name == '/cplan':
         query = parts[1] if len(parts) > 1 else ''
