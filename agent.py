@@ -152,6 +152,7 @@ def run(
 
         had_failure = False
         iteration_errors = []
+        unknown_tool_count = 0
 
         for tc in tool_calls:
             fn_name = tc['function']['name']
@@ -216,7 +217,12 @@ def run(
                 except TypeError as e:
                     result = {'ok': False, 'error': f'인자 오류: {e}'}
             else:
-                result = {'ok': False, 'error': f'알 수 없는 툴: {fn_name}', '_unknown_tool': fn_name}
+                result = {
+                    'ok': False,
+                    'error': f'툴 "{fn_name}"은 존재하지 않습니다. 툴을 호출하지 말고 자연어로 직접 답변해 주세요.',
+                    '_unknown_tool': fn_name,
+                }
+                unknown_tool_count += 1
                 if on_unknown_tool:
                     on_unknown_tool(fn_name)
 
@@ -237,6 +243,15 @@ def run(
                 'role': 'tool',
                 'content': json.dumps(result, ensure_ascii=False),
             })
+
+        # 미등록 툴만 호출한 경우: 즉시 자연어 답변 유도
+        if unknown_tool_count == len(tool_calls):
+            session_messages.append({
+                'role': 'user',
+                'content': '존재하지 않는 툴을 호출했습니다. 툴 없이 자연어로 바로 답변해 주세요.',
+            })
+            consecutive_failures = 0
+            continue
 
         # 반성 루프: 연속 실패 시 분석 유도
         if had_failure:
