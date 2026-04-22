@@ -114,6 +114,7 @@ SLASH_COMMANDS = {
     '/evolve':          '진화 엔진 즉시 실행  ex) /evolve proposals / /evolve run / /evolve changelog',
     '/history':  '진화 이력 및 품질 트렌드 확인',
     '/restore':  '이전 백업으로 롤백',
+    '/commit':   'git add -A + commit  ex) /commit 버튼 스타일 수정',
     '/cd':       '작업 디렉토리 변경  ex) /cd ~/myproject',
     '/files':    '현재 디렉토리 파일 트리',
     '/save':     '현재 세션 저장',
@@ -986,6 +987,32 @@ def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, 
             console.print(f'  [tool.fail]✗[/tool.fail] 존재하지 않는 경로: {new_dir}')
         return session_msgs, working_dir, undo_count
 
+    if name == '/commit':
+        import subprocess as _sp
+        msg = parts[1].strip() if len(parts) > 1 else ''
+        if not msg:
+            console.print('  [warn]사용법:[/warn] /commit <메시지>')
+            return session_msgs, working_dir, undo_count
+        # 변경 파일 확인
+        status = _sp.run(['git', 'status', '--short'], cwd=working_dir, capture_output=True, text=True)
+        if not status.stdout.strip():
+            console.print('  [dim]커밋할 변경 사항이 없습니다[/dim]')
+            return session_msgs, working_dir, undo_count
+        # 변경 목록 표시
+        for line in status.stdout.strip().splitlines():
+            console.print(f'  [dim]{line}[/dim]')
+        if not Confirm.ask('  위 파일을 커밋할까요?', default=True):
+            return session_msgs, working_dir, undo_count
+        add = _sp.run(['git', 'add', '-A'], cwd=working_dir, capture_output=True, text=True)
+        commit = _sp.run(['git', 'commit', '-m', msg], cwd=working_dir, capture_output=True, text=True)
+        if commit.returncode == 0:
+            # 커밋 해시 추출
+            first_line = commit.stdout.strip().splitlines()[0] if commit.stdout.strip() else ''
+            console.print(f'  [tool.ok]✓[/tool.ok] {first_line}')
+        else:
+            console.print(f'  [tool.fail]✗[/tool.fail] {commit.stderr.strip()}')
+        return session_msgs, working_dir, undo_count
+
     if name == '/files':
         _print_file_tree(working_dir)
         return session_msgs, working_dir, undo_count
@@ -1097,7 +1124,7 @@ def _print_help():
         '실행': ['/plan', '/cplan'],
         '인덱스': ['/index'],
         '진화': ['/improve', '/learn', '/evolve', '/history', '/restore'],
-        '파일': ['/cd', '/files'],
+        '파일': ['/commit', '/cd', '/files'],
         '세션': ['/save', '/resume', '/sessions', '/init'],
         'Claude': ['/claude'],
         '설정': ['/mode'],
