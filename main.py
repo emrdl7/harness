@@ -632,7 +632,7 @@ def _build_claude_context(session_msgs: list, max_turns: int = 6) -> str:
     return '\n'.join(lines)
 
 
-def _run_claude_cli(query: str, session_msgs: list | None = None) -> str:
+def _run_claude_cli(query: str, session_msgs: list | None = None, working_dir: str | None = None) -> str:
     if not claude_available():
         console.print(
             '  [tool.fail]✗[/tool.fail] claude CLI를 찾을 수 없습니다\n'
@@ -654,7 +654,7 @@ def _run_claude_cli(query: str, session_msgs: list | None = None) -> str:
         def _tok(line):
             collected.append(line)
             console.print(line, end='', highlight=False, markup=False)
-        claude_ask(full_query, on_token=_tok)
+        claude_ask(full_query, on_token=_tok, cwd=working_dir)
     except RuntimeError as e:
         console.print(f'\n  [tool.fail]✗[/tool.fail] {e}\n')
         return ''
@@ -981,7 +981,7 @@ def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, 
         if not query:
             console.print('  [warn]사용법:[/warn] /claude <질문>')
             return session_msgs, working_dir, undo_count
-        _run_claude_cli(query, session_msgs=session_msgs)
+        _run_claude_cli(query, session_msgs=session_msgs, working_dir=working_dir)
         return session_msgs, working_dir, undo_count
 
     if name == '/mode':
@@ -1294,7 +1294,7 @@ def main():
 
             # @claude 프리픽스 — Claude CLI 질문 (세션에 기록)
             if user_input.startswith('@claude '):
-                _run_claude_cli(user_input[8:].strip(), session_msgs=session_msgs)
+                _run_claude_cli(user_input[8:].strip(), session_msgs=session_msgs, working_dir=working_dir)
                 continue
 
             if user_input.startswith('/'):
