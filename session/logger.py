@@ -35,6 +35,19 @@ def log_reflection(reason: str):
 
 
 def read_recent(days: int = 7) -> str:
+    return failure_stats(days)['text']
+
+
+def failure_stats(days: int = 7) -> dict:
+    '''최근 N개 일자 파일의 tool_failure 통계.
+
+    반환:
+      - count: 실패 건수
+      - latest_ts: 가장 최근 실패의 ISO timestamp (없으면 None)
+      - text: read_recent와 동일한 사람용 요약 ("실패 로그 없음" 또는 "- [ts] tool: err"...)
+
+    /improve가 입력 데이터의 신선도/건수를 가드할 때 사용.
+    '''
     _ensure()
     lines = []
     for fname in sorted(os.listdir(LOG_DIR), reverse=True)[:days]:
@@ -47,14 +60,19 @@ def read_recent(days: int = 7) -> str:
         except Exception:
             pass
     if not lines:
-        return '최근 로그 없음'
-    # 실패 항목만 요약
-    failures = []
+        return {'count': 0, 'latest_ts': None, 'text': '최근 로그 없음'}
+    failures: list[str] = []
+    latest_ts: str | None = None
     for line in lines:
         try:
             e = json.loads(line)
-            if e.get('type') == 'tool_failure':
-                failures.append(f"- [{e['ts'][:16]}] {e['tool']}: {e['error']}")
+            if e.get('type') != 'tool_failure':
+                continue
+            ts = e.get('ts', '')
+            failures.append(f"- [{ts[:16]}] {e['tool']}: {e['error']}")
+            if ts and (latest_ts is None or ts > latest_ts):
+                latest_ts = ts
         except Exception:
             pass
-    return '\n'.join(failures[-50:]) if failures else '실패 로그 없음'
+    text = '\n'.join(failures[-50:]) if failures else '실패 로그 없음'
+    return {'count': len(failures), 'latest_ts': latest_ts, 'text': text}

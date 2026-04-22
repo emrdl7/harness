@@ -358,3 +358,122 @@ class TestDispatch:
         for name, (fn, needs_arg) in KNOWN_COMMANDS.items():
             assert callable(fn), f'{name} 핸들러가 콜러블이 아님'
             assert isinstance(needs_arg, bool)
+
+
+# ── /improve 입력 가드 ───────────────────────────────────────────
+class TestSlashImproveGuard:
+    '''빈약/오래된 로그면 /improve가 시작 전에 거부 (환각 권고 차단).'''
+
+    @staticmethod
+    def _ctx_with_spy():
+        '''run_agent_ephemeral 호출 여부를 추적하는 ctx.'''
+        calls = []
+
+        def _spy(prompt, *, system_prompt, working_dir, profile):
+            calls.append({'prompt': prompt[:60], 'wd': working_dir})
+
+        return SlashContext(run_agent_ephemeral=_spy), calls
+
+    def test_rejects_when_log_count_below_min(self, tmp_path, monkeypatch):
+        # 빈 LOG_DIR — count=0
+        from session import logger
+        monkeypatch.setattr(logger, 'LOG_DIR', str(tmp_path / 'logs'))
+        ctx, calls = self._ctx_with_spy()
+        result = h.slash_improve(SlashState(), ctx)
+        assert result.level == 'warn'
+        assert '입력 부족' in result.notice
+        assert calls == []  # ephemeral agent는 호출되지 않아야
+
+    def test_rejects_when_logs_too_old(self, tmp_path, monkeypatch):
+        '''최신 실패 ts가 MAX_AGE_DAYS보다 옛날이면 stale 거부.'''
+        import json
+        from datetime import datetime, timedelta
+        from session import logger
+        log_dir = tmp_path / 'logs'
+        log_dir.mkdir()
+        monkeypatch.setattr(logger, 'LOG_DIR', str(log_dir))
+
+        # 30일 전의 실패 5건 (count는 충분, 신선도는 부족)
+        old_ts = (datetime.now() - timedelta(days=30)).isoformat()
+        log_path = log_dir / '20240101.jsonl'
+        with open(log_path, 'w') as f:
+            for i in range(5):
+                f.write(json.dumps({
+                    'ts': old_ts,
+                    'type': 'tool_failure',
+                    'tool': 'foo',
+                    'error': f'err {i}',
+                }) + '\n')
+
+        ctx, calls = self._ctx_with_spy()
+        result = h.slash_improve(SlashState(), ctx)
+        assert result.level == 'warn'
+        assert '오래됨' in result.notice
+        assert calls == []
+
+    def test_passes_with_recent_sufficient_logs(self, tmp_path, monkeypatch):
+        '''건수 + 신선도 모두 충족하면 ephemeral agent 호출까지 도달.'''
+        import json
+        from datetime import datetime
+        from session import logger
+        log_dir = tmp_path / 'logs'
+        log_dir.mkdir()
+        monkeypatch.setattr(logger, 'LOG_DIR', str(log_dir))
+
+        # 오늘 날짜 실패 5건
+        ts = datetime.now().isoformat()
+        log_path = log_dir / (datetime.now().strftime('%Y%m%d') + '.jsonl')
+        with open(log_path, 'w') as f:
+            for i in range(5):
+                f.write(json.dumps({
+                    'ts': ts,
+                    'type': 'tool_failure',
+                    'tool': 'bar',
+                    'error': f'err {i}',
+                }) + '\n')
+
+        ctx, calls = self._ctx_with_spy()
+        # 가드만 통과하면 됨 — 이후는 read_sources/backup_sources/agent까지 가지만
+        # spy ephemeral은 단순 기록만 하니 안전하게 검증
+        result = h.slash_improve(SlashState(profile={}), ctx)
+        # 가드 통과 → ephemeral agent 호출되었어야
+        assert len(calls) == 1
+
+
+class TestFailureStats:
+    def test_empty_dir_returns_zero(self, tmp_path, monkeypatch):
+        from session import logger
+        monkeypatch.setattr(logger, 'LOG_DIR', str(tmp_path / 'logs'))
+        s = logger.failure_stats(days=7)
+        assert s == {'count': 0, 'latest_ts': None, 'text': '최근 로그 없음'}
+
+    def test_counts_failures_and_finds_latest(self, tmp_path, monkeypatch):
+        import json
+        from session import logger
+        log_dir = tmp_path / 'logs'
+        log_dir.mkdir()
+        monkeypatch.setattr(logger, 'LOG_DIR', str(log_dir))
+
+        with open(log_dir / '20260101.jsonl', 'w') as f:
+            f.write(json.dumps({
+                'ts': '2026-01-01T10:00:00', 'type': 'tool_failure',
+                'tool': 'a', 'error': 'e1'}) + '\n')
+            f.write(json.dumps({
+                'ts': '2026-01-01T11:00:00', 'type': 'tool_failure',
+                'tool': 'b', 'error': 'e2'}) + '\n')
+            # 비실패는 제외
+            f.write(json.dumps({
+                'ts': '2026-01-01T12:00:00', 'type': 'reflection',
+                'reason': 'idle'}) + '\n')
+
+        s = logger.failure_stats(days=7)
+        assert s['count'] == 2
+        assert s['latest_ts'] == '2026-01-01T11:00:00'
+        assert 'e1' in s['text']
+        assert 'e2' in s['text']
+
+    def test_read_recent_still_returns_text(self, tmp_path, monkeypatch):
+        '''기존 read_recent 호출자 호환 — 문자열만 반환.'''
+        from session import logger
+        monkeypatch.setattr(logger, 'LOG_DIR', str(tmp_path / 'logs'))
+        assert logger.read_recent(days=7) == '최근 로그 없음'

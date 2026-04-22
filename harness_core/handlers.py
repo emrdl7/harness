@@ -165,25 +165,53 @@ def _profile_without_user_hooks(profile: dict) -> dict:
     return out
 
 
+_IMPROVE_MIN_FAILURES = 3      # 이보다 적으면 환각 권고 위험 — 거부
+_IMPROVE_MAX_AGE_DAYS = 14     # 가장 최근 실패가 이보다 옛날이면 stale 거부
+
+
 def slash_improve(state: SlashState, ctx: SlashContext) -> SlashResult:
     '''/improve — 하네스 자기 개선.
 
-    1. 최근 실패 로그 수집 + 현재 소스 읽기
-    2. backup_sources()로 스냅샷
+    1. 최근 실패 로그 통계로 입력 가드 (건수 / 신선도)
+    2. 통과하면 현재 소스 읽기 + backup_sources() 스냅샷
     3. ctx.run_agent_ephemeral로 별도 세션에서 agent 실행
     4. py_compile 검증 결과 data['validation']에 담아 반환
 
-    drift 정리: server와 main이 이제 동일한 검증/피드백 경로를 사용.
+    가드 동기: 빈약한 로그(예: 4일 전 1개)로 진단을 시키면 모델이
+    환각으로 존재하지 않는 툴 추가/이미 옳은 시그니처 수정 같은
+    잘못된 권고를 만들고 실행까지 시도. 입력 데이터 임계치 미달이면
+    아예 시작 전에 거부.
     '''
     if ctx.run_agent_ephemeral is None:
         return SlashResult.error(state, '내부 오류: run_agent_ephemeral 콜백이 없습니다')
 
-    from session.logger import read_recent
+    from session.logger import failure_stats
     from tools.improve import (
         backup_sources, read_sources, validate_python, HARNESS_DIR,
     )
 
-    logs = read_recent(days=7)
+    stats = failure_stats(days=7)
+    if stats['count'] < _IMPROVE_MIN_FAILURES:
+        return SlashResult.warn(
+            state,
+            f'/improve 입력 부족 — 최근 7일간 실패 로그 {stats["count"]}건 '
+            f'(최소 {_IMPROVE_MIN_FAILURES}건 필요). 환각 권고 위험.',
+        )
+    if stats['latest_ts']:
+        try:
+            from datetime import datetime, timedelta
+            latest_dt = datetime.fromisoformat(stats['latest_ts'])
+            age_days = (datetime.now() - latest_dt).days
+            if age_days > _IMPROVE_MAX_AGE_DAYS:
+                return SlashResult.warn(
+                    state,
+                    f'/improve 로그가 오래됨 — 최신 실패가 {age_days}일 전 '
+                    f'(최대 {_IMPROVE_MAX_AGE_DAYS}일 권장). 코드와 로그가 불일치할 수 있음.',
+                )
+        except (ValueError, TypeError):
+            pass  # 파싱 실패는 가드 통과 처리 (보수적이지만 잘못된 차단보다 나음)
+
+    logs = stats['text']
     sources = read_sources()
     backup_path = backup_sources()
 
