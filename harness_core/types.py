@@ -1,5 +1,22 @@
 '''슬래시 핸들러 입출력 타입.'''
 from dataclasses import dataclass, field, replace
+from typing import Callable, Optional
+
+
+@dataclass
+class SlashContext:
+    '''핸들러가 사용할 콜백 / 외부 함수.
+
+    프런트엔드(main / server)가 자기 환경에 맞게 콜백을 채워서 dispatch에 전달.
+    기존 순수 핸들러(/clear, /undo 등)는 ctx를 받지만 무시한다.
+
+    Fields:
+      run_agent: agent 실행 콜백.
+        시그니처: (user_input: str, *, plan_mode: bool = False, context_snippets: str = '') -> None
+        main의 _run_agent / server의 run_agent를 어댑트해서 주입.
+        None이면 agent 의존 핸들러는 error notice 반환.
+    '''
+    run_agent: Optional[Callable] = None
 
 
 @dataclass

@@ -3,9 +3,12 @@ import os
 
 import pytest
 
-from harness_core import SlashState, SlashResult, dispatch
+from harness_core import SlashState, SlashResult, SlashContext, dispatch
 from harness_core.router import parse, KNOWN_COMMANDS
 from harness_core import handlers as h
+
+# 테스트용 빈 컨텍스트 — 핸들러 시그니처 호환
+_CTX = SlashContext()
 
 
 # ── parse ────────────────────────────────────────────────────────────
@@ -34,7 +37,7 @@ class TestClear:
             {'role': 'system', 'content': 's'},
             {'role': 'user', 'content': 'u'},
         ])
-        result = h.slash_clear(state)
+        result = h.slash_clear(state, _CTX)
         assert result.handled
         assert result.state.messages == []
         assert result.level == 'info'
@@ -42,7 +45,7 @@ class TestClear:
     def test_does_not_mutate_input(self):
         state = SlashState(messages=[{'role': 'user', 'content': 'u'}])
         before = list(state.messages)
-        _ = h.slash_clear(state)
+        _ = h.slash_clear(state, _CTX)
         assert state.messages == before
 
 
@@ -56,7 +59,7 @@ class TestUndo:
             {'role': 'user', 'content': 'q2'},
             {'role': 'assistant', 'content': 'a2'},
         ])
-        result = h.slash_undo(state)
+        result = h.slash_undo(state, _CTX)
         assert result.handled
         assert len(result.state.messages) == 3
         assert result.state.messages[0]['role'] == 'system'
@@ -65,7 +68,7 @@ class TestUndo:
 
     def test_noop_when_nothing_to_undo(self):
         state = SlashState(messages=[{'role': 'system', 'content': 's'}])
-        result = h.slash_undo(state)
+        result = h.slash_undo(state, _CTX)
         assert result.handled
         assert len(result.state.messages) == 1
         assert result.state.undo_count == 0
@@ -81,7 +84,7 @@ class TestCd:
         (tmp_path / 'home').mkdir()
 
         state = SlashState(working_dir='/tmp', messages=[{'role': 'user', 'content': 'x'}])
-        result = h.slash_cd(state, str(tmp_path))
+        result = h.slash_cd(state, _CTX, str(tmp_path))
         assert result.handled
         assert result.level == 'ok'
         assert result.state.working_dir == str(tmp_path)
@@ -92,7 +95,7 @@ class TestCd:
 
     def test_missing_arg(self, tmp_path):
         state = SlashState(working_dir=str(tmp_path))
-        result = h.slash_cd(state, '')
+        result = h.slash_cd(state, _CTX,'')
         assert result.level == 'warn'
         assert '사용법' in result.notice
         # 상태는 그대로
@@ -100,7 +103,7 @@ class TestCd:
 
     def test_nonexistent_path(self, tmp_path):
         state = SlashState(working_dir=str(tmp_path))
-        result = h.slash_cd(state, str(tmp_path / 'no_such'))
+        result = h.slash_cd(state, _CTX, str(tmp_path / 'no_such'))
         assert result.level == 'error'
         assert result.state is state
 
@@ -110,7 +113,7 @@ class TestCd:
         home.mkdir()
         monkeypatch.setenv('HOME', str(home))
         state = SlashState(working_dir='/tmp')
-        result = h.slash_cd(state, '~')
+        result = h.slash_cd(state, _CTX,'~')
         assert result.handled
         # /tmp가 아닌 home으로 바뀜
         assert os.path.realpath(result.state.working_dir) == os.path.realpath(str(home))
@@ -120,7 +123,7 @@ class TestCd:
 class TestInit:
     def test_creates_template(self, tmp_path):
         state = SlashState(working_dir=str(tmp_path))
-        result = h.slash_init(state)
+        result = h.slash_init(state, _CTX)
         assert result.handled
         assert result.level == 'ok'
         assert (tmp_path / '.harness.toml').exists()
@@ -128,7 +131,7 @@ class TestInit:
     def test_does_not_overwrite(self, tmp_path):
         (tmp_path / '.harness.toml').write_text('# 기존 내용')
         state = SlashState(working_dir=str(tmp_path))
-        result = h.slash_init(state)
+        result = h.slash_init(state, _CTX)
         assert result.level == 'warn'
         assert '이미 존재' in result.notice
         # 원본 보존
@@ -154,7 +157,7 @@ class TestSave:
             ],
             working_dir='/tmp',
         )
-        result = h.slash_save(state)
+        result = h.slash_save(state, _CTX)
         assert result.handled
         assert result.level == 'ok'
         assert 'filename' in result.data
@@ -165,7 +168,7 @@ class TestSave:
 class TestResume:
     def test_no_sessions_returns_info(self, isolated_session_dir):
         state = SlashState(working_dir='/tmp')
-        result = h.slash_resume(state)
+        result = h.slash_resume(state, _CTX)
         assert result.handled
         assert result.level == 'info'
         assert '불러올 세션이 없습니다' in result.notice
@@ -183,10 +186,10 @@ class TestResume:
             ],
             working_dir='/tmp/foo',
         )
-        save_result = hh.slash_save(save_state)
+        save_result = hh.slash_save(save_state, _CTX)
         # 비어있는 세션에서 resume
         empty_state = SlashState(working_dir='/tmp/foo')
-        result = hh.slash_resume(empty_state)
+        result = hh.slash_resume(empty_state, _CTX)
         assert result.handled
         assert result.level == 'ok'
         assert result.data['turns'] == 1
@@ -199,11 +202,11 @@ class TestResume:
             messages=[{'role': 'user', 'content': 'q'}],
             working_dir='/tmp/bar',
         )
-        save_result = hh.slash_save(save_state)
+        save_result = hh.slash_save(save_state, _CTX)
         fn = save_result.data['filename']
         # 다른 working_dir에서 명시적으로 파일명 지정해 복원
         empty_state = SlashState(working_dir='/tmp/elsewhere')
-        result = hh.slash_resume(empty_state, fn)
+        result = hh.slash_resume(empty_state, _CTX, fn)
         assert result.handled
         # working_dir도 저장된 값으로 복원
         assert result.state.working_dir == '/tmp/bar'
@@ -212,7 +215,7 @@ class TestResume:
 class TestSessions:
     def test_empty_returns_info(self, isolated_session_dir):
         state = SlashState()
-        result = h.slash_sessions(state)
+        result = h.slash_sessions(state, _CTX)
         assert result.handled
         assert result.level == 'info'
         assert result.data['sessions'] == []
@@ -221,9 +224,9 @@ class TestSessions:
         from harness_core import handlers as hh
         s1 = SlashState(messages=[{'role': 'user', 'content': 'first'}], working_dir='/tmp/a')
         s2 = SlashState(messages=[{'role': 'user', 'content': 'second'}], working_dir='/tmp/b')
-        hh.slash_save(s1)
-        hh.slash_save(s2)
-        result = h.slash_sessions(SlashState())
+        hh.slash_save(s1, _CTX)
+        hh.slash_save(s2, _CTX)
+        result = h.slash_sessions(SlashState(), _CTX)
         assert result.level == 'ok'
         assert len(result.data['sessions']) == 2
         # 각 세션은 dict (filename, working_dir, turns, preview)
@@ -240,7 +243,7 @@ class TestFiles:
         (tmp_path / 'sub').mkdir()
         (tmp_path / 'sub' / 'b.txt').write_text('y')
         state = SlashState(working_dir=str(tmp_path))
-        result = h.slash_files(state)
+        result = h.slash_files(state, _CTX)
         assert result.handled
         assert result.level == 'ok'
         tree = result.data['tree']
@@ -260,7 +263,7 @@ class TestFiles:
         (tmp_path / '__pycache__').mkdir()
         (tmp_path / 'node_modules').mkdir()
         state = SlashState(working_dir=str(tmp_path))
-        result = h.slash_files(state)
+        result = h.slash_files(state, _CTX)
         names = {c['name'] for c in result.data['tree']['children']}
         assert '.git' not in names
         assert '__pycache__' not in names
@@ -272,7 +275,7 @@ class TestFiles:
         deep = tmp_path / 'l1' / 'l2' / 'l3' / 'l4' / 'l5'
         deep.mkdir(parents=True)
         (deep / 'leaf.txt').write_text('x')
-        result = h.slash_files(SlashState(working_dir=str(tmp_path)))
+        result = h.slash_files(SlashState(working_dir=str(tmp_path)), _CTX)
         l1 = result.data['tree']['children'][0]
         assert l1['name'] == 'l1'
         l2 = l1['children'][0]
@@ -284,7 +287,7 @@ class TestFiles:
 # ── slash_help ───────────────────────────────────────────────────────
 class TestHelp:
     def test_returns_text(self):
-        result = h.slash_help(SlashState())
+        result = h.slash_help(SlashState(), _CTX)
         assert result.handled
         assert '/clear' in result.notice
         assert '/cd' in result.notice

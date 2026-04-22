@@ -8,15 +8,15 @@ import os
 import profile as prof
 import session as sess
 
-from .types import SlashState, SlashResult, evolve
+from .types import SlashState, SlashResult, SlashContext, evolve
 
 
-def slash_clear(state: SlashState) -> SlashResult:
+def slash_clear(state: SlashState, ctx: SlashContext) -> SlashResult:
     '''/clear — 세션 메시지 비우기 (system 메시지도 비움; agent.run이 다시 채운다).'''
     return SlashResult.info(evolve(state, messages=[]), '대화 초기화')
 
 
-def slash_undo(state: SlashState) -> SlashResult:
+def slash_undo(state: SlashState, ctx: SlashContext) -> SlashResult:
     '''/undo — 마지막 user/assistant 한 쌍 제거. system은 보존.'''
     non_system = [m for m in state.messages if m.get('role') != 'system']
     if len(non_system) < 2:
@@ -30,7 +30,7 @@ def slash_undo(state: SlashState) -> SlashResult:
     return SlashResult.info(new_state, '마지막 교환 취소됨')
 
 
-def slash_cd(state: SlashState, path: str) -> SlashResult:
+def slash_cd(state: SlashState, ctx: SlashContext, path: str) -> SlashResult:
     '''/cd <path> — working_dir 변경. 새 디렉토리의 profile 다시 로드, 세션 초기화.'''
     if not path:
         return SlashResult.warn(state, '사용법: /cd <경로>')
@@ -47,7 +47,7 @@ def slash_cd(state: SlashState, path: str) -> SlashResult:
     return SlashResult.ok(new_state, f'작업 디렉토리: {new_dir}')
 
 
-def slash_init(state: SlashState) -> SlashResult:
+def slash_init(state: SlashState, ctx: SlashContext) -> SlashResult:
     '''/init — working_dir에 .harness.toml 템플릿 생성.'''
     target = os.path.join(state.working_dir, '.harness.toml')
     if os.path.exists(target):
@@ -56,13 +56,13 @@ def slash_init(state: SlashState) -> SlashResult:
     return SlashResult.ok(state, f'생성됨: {created}')
 
 
-def slash_save(state: SlashState) -> SlashResult:
+def slash_save(state: SlashState, ctx: SlashContext) -> SlashResult:
     '''/save — 현재 세션을 디스크에 저장. data={'filename': ...}.'''
     filename = sess.save(state.messages, state.working_dir)
     return SlashResult.ok(state, f'저장됨: {filename}', filename=filename)
 
 
-def slash_resume(state: SlashState, filename: str = '') -> SlashResult:
+def slash_resume(state: SlashState, ctx: SlashContext, filename: str = '') -> SlashResult:
     '''/resume [filename] — 세션 복원. filename 없으면 working_dir 최신 세션.
 
     성공 시: 메시지/working_dir 갱신 + data={'turns': N, 'filename': ...}.
@@ -82,7 +82,7 @@ def slash_resume(state: SlashState, filename: str = '') -> SlashResult:
     return SlashResult.ok(new_state, f'세션 복원 ({turns}턴)', turns=turns)
 
 
-def slash_sessions(state: SlashState) -> SlashResult:
+def slash_sessions(state: SlashState, ctx: SlashContext) -> SlashResult:
     '''/sessions — 저장된 세션 목록. data={'sessions': [...]} (전체, 호출자가 슬라이스).'''
     sessions = sess.list_sessions()
     if not sessions:
@@ -120,13 +120,13 @@ def _build_tree(working_dir: str, max_depth: int = 3) -> dict:
     return _walk(working_dir, 1) or {'name': os.path.basename(working_dir), 'children': []}
 
 
-def slash_files(state: SlashState) -> SlashResult:
+def slash_files(state: SlashState, ctx: SlashContext) -> SlashResult:
     '''/files — working_dir의 파일 트리. data={'tree': {...}}.'''
     tree = _build_tree(state.working_dir)
     return SlashResult.ok(state, '', tree=tree)
 
 
-def slash_help(state: SlashState) -> SlashResult:
+def slash_help(state: SlashState, ctx: SlashContext) -> SlashResult:
     '''/help — 정적 도움말. 프런트엔드는 notice를 그대로 보여주거나 자체 헬프 사용.'''
     text = (
         '명령어:\n'

@@ -1,5 +1,5 @@
 '''슬래시 라우터 — 명령 문자열을 파싱해 적절한 핸들러로 디스패치.'''
-from .types import SlashState, SlashResult
+from .types import SlashState, SlashResult, SlashContext
 from . import handlers as h
 
 
@@ -26,16 +26,19 @@ def parse(cmd: str) -> tuple[str, str]:
     return name, arg
 
 
-def dispatch(cmd: str, state: SlashState) -> SlashResult:
+def dispatch(cmd: str, state: SlashState, ctx: SlashContext | None = None) -> SlashResult:
     '''명령 문자열을 파싱해 핸들러 호출.
 
+    ctx: 핸들러가 사용할 콜백/외부 함수. None이면 빈 SlashContext()를 만들어 사용.
     알 수 없는 명령은 SlashResult.unknown으로 반환 (handled=False).
     프런트엔드는 handled=False일 때 자기 로컬 핸들러로 폴백할 수 있다.
     '''
+    if ctx is None:
+        ctx = SlashContext()
     name, arg = parse(cmd)
     if name not in KNOWN_COMMANDS:
         return SlashResult.unknown(state, f'알 수 없는 명령: {name}')
     fn, needs_arg = KNOWN_COMMANDS[name]
     if needs_arg:
-        return fn(state, arg)
-    return fn(state)
+        return fn(state, ctx, arg)
+    return fn(state, ctx)

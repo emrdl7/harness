@@ -1118,7 +1118,8 @@ def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, 
             profile=profile,
             undo_count=undo_count,
         )
-        result = harness_core.dispatch(cmd, core_state)
+        core_ctx = harness_core.SlashContext(run_agent=run_agent)
+        result = harness_core.dispatch(cmd, core_state, core_ctx)
         if result.handled:
             # 추가 데이터 렌더 (notice로 표현 안 되는 것)
             if name == '/sessions':

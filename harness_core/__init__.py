@@ -9,7 +9,7 @@
 1차 추출 대상은 의존성이 가장 적은 핸들러. agent 실행이 필요한 것들은
 다음 세션에서 callback 인젝션으로 추가.
 '''
-from .types import SlashState, SlashResult
+from .types import SlashState, SlashResult, SlashContext
 from .router import dispatch, KNOWN_COMMANDS
 
-__all__ = ['SlashState', 'SlashResult', 'dispatch', 'KNOWN_COMMANDS']
+__all__ = ['SlashState', 'SlashResult', 'SlashContext', 'dispatch', 'KNOWN_COMMANDS']
