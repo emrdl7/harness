@@ -1495,13 +1495,27 @@ def main():
                 )
                 continue
 
-            # cd <경로> → /cd 로 라우팅
-            if _re.match(r'^cd(\s+\S+)?$', user_input.strip()):
-                path = user_input.strip()[2:].strip() or '~'
+            # shell 기본 명령어 직접 처리 (cd, ls, pwd, clear)
+            _stripped = user_input.strip()
+            if _re.match(r'^cd(\s+\S+)?$', _stripped):
+                path = _stripped[2:].strip() or '~'
                 session_msgs, working_dir, undo_count = handle_slash(
                     f'/cd {path}', session_msgs, working_dir, profile, undo_count
                 )
                 profile = prof.load(working_dir)
+                continue
+            if _re.match(r'^ls(\s.*)?$', _stripped):
+                import subprocess as _sp
+                args = _stripped[2:].strip()
+                r = _sp.run(['ls'] + (args.split() if args else ['-la']),
+                            cwd=working_dir, capture_output=True, text=True)
+                console.print(r.stdout if r.stdout else r.stderr, end='', highlight=False, markup=False)
+                continue
+            if _stripped == 'pwd':
+                console.print(working_dir)
+                continue
+            if _stripped == 'clear':
+                console.clear()
                 continue
 
             # 자연어로 /cplan 트리거 감지
