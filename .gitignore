@@ -5,6 +5,11 @@ __pycache__/
 *.egg-info/
 .DS_Store
 context/.index/
-context/__pycache__/
 .env
 *.log
+ui/node_modules/
+benchmarks/
+.claw/
+.context-handoff.md
+harness_app.py
+harness_server.py
