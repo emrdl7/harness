@@ -359,14 +359,8 @@ def main():
             client.stop()
         return
 
-    import asyncio as _asyncio
-
-    async def _handle_turn(user_input: str) -> bool:
-        '''한 턴 처리 — True: REPL 계속, False: 종료.
-
-        입력 원문(멀티라인 가능)에서 trim 후 분기. blocking 동기 호출은
-        asyncio.to_thread 로 감싸 Application UI 가 멈추지 않게 한다.
-        '''
+    def _handle_turn(user_input: str) -> bool:
+        '''한 턴 처리 — True: REPL 계속, False: 종료. Sync 함수.'''
         nonlocal session_msgs, working_dir, undo_count, profile
 
         user_input = user_input.strip()
@@ -375,8 +369,8 @@ def main():
 
         # @claude 프리픽스
         if user_input.startswith('@claude '):
-            await _asyncio.to_thread(
-                _run_claude_cli, user_input[8:].strip(),
+            _run_claude_cli(
+                user_input[8:].strip(),
                 session_msgs=session_msgs,
                 working_dir=working_dir,
                 model=profile.get('claude_model') or None,
@@ -385,8 +379,7 @@ def main():
 
         if user_input.startswith('/'):
             if user_input in ('/quit', '/exit', '/q'):
-                await _asyncio.to_thread(
-                    evolution.run,
+                evolution.run(
                     session_msgs=session_msgs,
                     working_dir=working_dir,
                     profile=profile,
@@ -399,10 +392,9 @@ def main():
                     unknown_tools=_all_unknown_tools,
                     tool_call_sequence=_tool_call_sequence,
                 )
-                # long-running Application 이 stdin 을 독점하므로 Confirm.ask
-                # 를 그대로 못 부른다. 세션 저장은 /save 로 명시 유도.
-                if session_msgs:
-                    console.print('  [dim]세션 저장은 /save 로 따로 해주세요[/dim]')
+                if session_msgs and Confirm.ask('  세션을 저장할까요?', default=False):
+                    fn = sess.save(session_msgs, working_dir)
+                    console.print(f'  [dim]저장됨: {fn}[/dim]')
                 console.print('  [dim]종료[/dim]')
                 return False
 
@@ -421,12 +413,10 @@ def main():
                 session_msgs = session_msgs[:last_user_idx]
                 preview = original[:80] + ('...' if len(original) > 80 else '')
                 console.print(f'  [dim]재실행: {preview}[/dim]')
-                snippets = await _asyncio.to_thread(
-                    get_context_snippets, original, working_dir, profile,
-                )
+                snippets = get_context_snippets(original, working_dir, profile)
                 _response_header()
                 _ui.reset()
-                await _asyncio.to_thread(_run_agent, original, context_snippets=snippets)
+                _run_agent(original, context_snippets=snippets)
                 _response_footer()
                 return True
 
@@ -439,9 +429,7 @@ def main():
                 if file_arg:
                     cmd.extend(['--', file_arg])
                 try:
-                    diff_result = await _asyncio.to_thread(
-                        _subp.run, cmd, capture_output=True, text=True, timeout=10,
-                    )
+                    diff_result = _subp.run(cmd, capture_output=True, text=True, timeout=10)
                 except FileNotFoundError:
                     console.print('  [tool.fail]git 명령어를 찾을 수 없습니다[/tool.fail]')
                     return True
@@ -462,8 +450,8 @@ def main():
                 ))
                 return True
 
-            session_msgs, working_dir, undo_count = await _asyncio.to_thread(
-                handle_slash, user_input, session_msgs, working_dir, profile, undo_count,
+            session_msgs, working_dir, undo_count = handle_slash(
+                user_input, session_msgs, working_dir, profile, undo_count,
                 run_agent=_run_agent_for_core,
                 run_agent_ephemeral=_run_agent_ephemeral,
                 ask_claude=_ask_claude_for_core,
@@ -478,23 +466,23 @@ def main():
             msg = _extract_commit_msg(user_input)
             if msg or _is_commit_intent(user_input):
                 commit_cmd = f'/commit {msg}' if msg else '/commit'
-                session_msgs, working_dir, undo_count = await _asyncio.to_thread(
-                    handle_slash, commit_cmd, session_msgs, working_dir, profile, undo_count,
+                session_msgs, working_dir, undo_count = handle_slash(
+                    commit_cmd, session_msgs, working_dir, profile, undo_count,
                 )
-            session_msgs, working_dir, undo_count = await _asyncio.to_thread(
-                handle_slash, '/push', session_msgs, working_dir, profile, undo_count,
+            session_msgs, working_dir, undo_count = handle_slash(
+                '/push', session_msgs, working_dir, profile, undo_count,
             )
             return True
         if _is_pull_intent(user_input):
-            session_msgs, working_dir, undo_count = await _asyncio.to_thread(
-                handle_slash, '/pull', session_msgs, working_dir, profile, undo_count,
+            session_msgs, working_dir, undo_count = handle_slash(
+                '/pull', session_msgs, working_dir, profile, undo_count,
             )
             return True
         if _is_commit_intent(user_input):
             msg = _extract_commit_msg(user_input)
             commit_cmd = f'/commit {msg}' if msg else '/commit'
-            session_msgs, working_dir, undo_count = await _asyncio.to_thread(
-                handle_slash, commit_cmd, session_msgs, working_dir, profile, undo_count,
+            session_msgs, working_dir, undo_count = handle_slash(
+                commit_cmd, session_msgs, working_dir, profile, undo_count,
             )
             return True
 
@@ -502,16 +490,16 @@ def main():
         _stripped = user_input
         if _re.match(r'^cd(\s+\S+)?$', _stripped):
             path = _stripped[2:].strip() or '~'
-            session_msgs, working_dir, undo_count = await _asyncio.to_thread(
-                handle_slash, f'/cd {path}', session_msgs, working_dir, profile, undo_count,
+            session_msgs, working_dir, undo_count = handle_slash(
+                f'/cd {path}', session_msgs, working_dir, profile, undo_count,
             )
             profile = prof.load(working_dir)
             return True
         if _re.match(r'^ls(\s.*)?$', _stripped):
             import subprocess as _sp
             _ls_args = _stripped[2:].strip()
-            r = await _asyncio.to_thread(
-                _sp.run, ['ls'] + (_ls_args.split() if _ls_args else ['-la']),
+            r = _sp.run(
+                ['ls'] + (_ls_args.split() if _ls_args else ['-la']),
                 cwd=working_dir, capture_output=True, text=True,
             )
             console.print(r.stdout if r.stdout else r.stderr,
@@ -527,8 +515,8 @@ def main():
         # 자연어 /cplan
         if _is_cplan_intent(user_input):
             task = _extract_cplan_task(user_input)
-            session_msgs, working_dir, undo_count = await _asyncio.to_thread(
-                handle_slash, f'/cplan {task}', session_msgs, working_dir, profile, undo_count,
+            session_msgs, working_dir, undo_count = handle_slash(
+                f'/cplan {task}', session_msgs, working_dir, profile, undo_count,
                 run_agent=_run_agent_for_core,
                 run_agent_ephemeral=_run_agent_ephemeral,
                 ask_claude=_ask_claude_for_core,
@@ -537,12 +525,10 @@ def main():
             return True
 
         # 기본: agent 실행
-        snippets = await _asyncio.to_thread(
-            get_context_snippets, user_input, working_dir, profile,
-        )
+        snippets = get_context_snippets(user_input, working_dir, profile)
         _response_header()
         _ui.reset()
-        await _asyncio.to_thread(_run_agent, user_input, context_snippets=snippets)
+        _run_agent(user_input, context_snippets=snippets)
         _response_footer()
         return True
 
