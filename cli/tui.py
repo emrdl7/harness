@@ -140,6 +140,10 @@ TextArea#input-box > .text-area--cursor-gutter {
 '''
 
 
+# ── 스피너 프레임 ─────────────────────────────────────────────────
+SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+
+
 # ── 입력 이벤트 + TextArea 커스텀 ─────────────────────────────────
 class InputSubmitted(Message):
     '''_InputArea 가 Enter 로 submit 될 때 발송.'''
@@ -257,6 +261,9 @@ class HarnessApp(App):
         self._tool_start_ts = 0.0
         # 미등록 툴 수집 — turn 끝에 _suggest_unknown_tools_tui 호출
         self._unknown_tools: list[tuple[str, dict]] = []
+        # 스피너 — set_interval 타이머가 status-bar 앞에 회전 프레임을 찍음
+        self._spinner_timer = None
+        self._spinner_frame_idx = 0
 
         # TUI 모드 전환용 원본 백업 (exit 시 복원)
         self._orig_cb = {}
@@ -420,11 +427,21 @@ class HarnessApp(App):
             pct = int(used / total * 100) if total else 0
             mode = config.APPROVAL_MODE
             claude = 'claude ✓' if claude_available() else 'claude ✗'
+            if self._agent_running:
+                frame = SPINNER_FRAMES[self._spinner_frame_idx % len(SPINNER_FRAMES)]
+                prefix = f'[cyan]{frame}[/cyan] 처리 중  ·  '
+            else:
+                prefix = ''
             self.query_one('#status-bar', Static).update(
-                f' {config.MODEL}  ·  ctx {pct}%  ·  mode {mode}  ·  {claude}'
+                f' {prefix}{config.MODEL}  ·  ctx {pct}%  ·  mode {mode}  ·  {claude}'
             )
         except Exception:
             pass
+
+    def _spinner_tick(self):
+        '''set_interval 콜백 — status-bar 의 회전 프레임 진행.'''
+        self._spinner_frame_idx += 1
+        self._update_status()
 
     def _refresh_prompt(self):
         try:
@@ -563,6 +580,18 @@ class HarnessApp(App):
                 inp.disabled = running
             except Exception:
                 pass
+            # 스피너 타이머 start/stop — status-bar 회전 프레임
+            if running:
+                self._spinner_frame_idx = 0
+                if self._spinner_timer is None:
+                    self._spinner_timer = self.set_interval(0.1, self._spinner_tick)
+            else:
+                if self._spinner_timer is not None:
+                    try:
+                        self._spinner_timer.stop()
+                    except Exception:
+                        pass
+                    self._spinner_timer = None
             # TextArea 에는 placeholder 가 없어 prompt-label 을 힌트용으로 전환
             self._set_prompt_hint('처리 중...' if running else None)
             if not running:
@@ -572,7 +601,10 @@ class HarnessApp(App):
         try:
             self.call_from_thread(_upd)
         except RuntimeError:
-            pass
+            try:
+                _upd()
+            except Exception:
+                pass
 
     def _set_prompt_hint(self, hint: str | None):
         '''prompt-label 영역에 임시 힌트 표시. None 이면 기본 디렉토리 라벨.'''
