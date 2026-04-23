@@ -206,12 +206,14 @@ def run_app(
         try:
             if not app.is_running:
                 return
+            # Cursor home → visible screen clear (ED2) → scrollback clear (ED3).
+            # VS Code terminal 이 ED2 만으로는 반응 안 해서 ED3 까지 추가.
+            # 과거 출력 scrollback 은 날아가지만 누적 버그가 먼저.
             wrote = -1
             try:
-                wrote = _os.write(1, b'\x1b[2J\x1b[H')
+                wrote = _os.write(1, b'\x1b[H\x1b[2J\x1b[3J')
             except Exception:
                 pass
-            # 진단 marker — 실제 kernel 로 몇 byte 쓰였는지 확인
             try:
                 console.print(f'[dim red]▸ resize (wrote {wrote}B)[/dim red]')
             except Exception:
