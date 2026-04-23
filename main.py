@@ -359,171 +359,205 @@ def main():
             client.stop()
         return
 
-    while True:
-        try:
-            turns = len([m for m in session_msgs if m['role'] == 'user'])
-            user_input = get_input(turns, working_dir, session_msgs=session_msgs).strip()
+    import asyncio as _asyncio
 
-            if not user_input:
-                continue
+    async def _handle_turn(user_input: str) -> bool:
+        '''한 턴 처리 — True: REPL 계속, False: 종료.
 
-            # @claude 프리픽스 — Claude CLI 질문 (세션에 기록)
-            if user_input.startswith('@claude '):
-                _run_claude_cli(user_input[8:].strip(), session_msgs=session_msgs, working_dir=working_dir, model=profile.get('claude_model') or None)
-                continue
+        입력 원문(멀티라인 가능)에서 trim 후 분기. blocking 동기 호출은
+        asyncio.to_thread 로 감싸 Application UI 가 멈추지 않게 한다.
+        '''
+        nonlocal session_msgs, working_dir, undo_count, profile
 
-            if user_input.startswith('/'):
-                if user_input in ('/quit', '/exit', '/q'):
-                    evolution.run(
-                        session_msgs=session_msgs,
-                        working_dir=working_dir,
-                        profile=profile,
-                        console=console,
-                        agent_run=agent.run,
-                        on_token=on_token,
-                        on_tool=_effective_on_tool,
-                        confirm_write=lambda p: True,
-                        undo_count=undo_count,
-                        unknown_tools=_all_unknown_tools,
-                        tool_call_sequence=_tool_call_sequence,
+        user_input = user_input.strip()
+        if not user_input:
+            return True
+
+        # @claude 프리픽스
+        if user_input.startswith('@claude '):
+            await _asyncio.to_thread(
+                _run_claude_cli, user_input[8:].strip(),
+                session_msgs=session_msgs,
+                working_dir=working_dir,
+                model=profile.get('claude_model') or None,
+            )
+            return True
+
+        if user_input.startswith('/'):
+            if user_input in ('/quit', '/exit', '/q'):
+                await _asyncio.to_thread(
+                    evolution.run,
+                    session_msgs=session_msgs,
+                    working_dir=working_dir,
+                    profile=profile,
+                    console=console,
+                    agent_run=agent.run,
+                    on_token=on_token,
+                    on_tool=_effective_on_tool,
+                    confirm_write=lambda p: True,
+                    undo_count=undo_count,
+                    unknown_tools=_all_unknown_tools,
+                    tool_call_sequence=_tool_call_sequence,
+                )
+                # long-running Application 이 stdin 을 독점하므로 Confirm.ask
+                # 를 그대로 못 부른다. 세션 저장은 /save 로 명시 유도.
+                if session_msgs:
+                    console.print('  [dim]세션 저장은 /save 로 따로 해주세요[/dim]')
+                console.print('  [dim]종료[/dim]')
+                return False
+
+            # /retry
+            if user_input.strip() == '/retry':
+                last_user_idx = None
+                for i in range(len(session_msgs) - 1, -1, -1):
+                    if session_msgs[i]['role'] == 'user':
+                        last_user_idx = i
+                        break
+                if last_user_idx is None:
+                    console.print('  [dim]재실행할 이전 입력이 없습니다[/dim]')
+                    return True
+                stored = session_msgs[last_user_idx]['content']
+                original = stored.rsplit('\n\n---\n', 1)[-1] if '\n\n---\n' in stored else stored
+                session_msgs = session_msgs[:last_user_idx]
+                preview = original[:80] + ('...' if len(original) > 80 else '')
+                console.print(f'  [dim]재실행: {preview}[/dim]')
+                snippets = await _asyncio.to_thread(
+                    get_context_snippets, original, working_dir, profile,
+                )
+                _response_header()
+                _ui.reset()
+                await _asyncio.to_thread(_run_agent, original, context_snippets=snippets)
+                _response_footer()
+                return True
+
+            # /diff
+            if user_input.strip() == '/diff' or user_input.startswith('/diff '):
+                parts = user_input.split(maxsplit=1)
+                file_arg = parts[1].strip() if len(parts) > 1 else ''
+                import subprocess as _subp
+                cmd = ['git', '-C', working_dir, 'diff']
+                if file_arg:
+                    cmd.extend(['--', file_arg])
+                try:
+                    diff_result = await _asyncio.to_thread(
+                        _subp.run, cmd, capture_output=True, text=True, timeout=10,
                     )
-                    if session_msgs and Confirm.ask('  세션을 저장할까요?', default=False):
-                        fn = sess.save(session_msgs, working_dir)
-                        console.print(f'  [dim]저장됨: {fn}[/dim]')
-                    console.print('  [dim]종료[/dim]')
-                    break
+                except FileNotFoundError:
+                    console.print('  [tool.fail]git 명령어를 찾을 수 없습니다[/tool.fail]')
+                    return True
+                except _subp.TimeoutExpired:
+                    console.print('  [tool.fail]git diff 타임아웃[/tool.fail]')
+                    return True
+                if diff_result.returncode != 0:
+                    stderr = (diff_result.stderr or '').strip()
+                    console.print(f'  [tool.fail]{stderr or "git diff 실패"}[/tool.fail]')
+                    return True
+                if not diff_result.stdout.strip():
+                    target = file_arg or 'HEAD'
+                    console.print(f'  [dim]변경사항 없음 ({target})[/dim]')
+                    return True
+                console.print(Syntax(
+                    diff_result.stdout, 'diff', theme='monokai',
+                    line_numbers=False, word_wrap=False,
+                ))
+                return True
 
-                # /retry — 마지막 user 메시지까지 롤백 후 재실행
-                if user_input.strip() == '/retry':
-                    last_user_idx = None
-                    for i in range(len(session_msgs) - 1, -1, -1):
-                        if session_msgs[i]['role'] == 'user':
-                            last_user_idx = i
-                            break
-                    if last_user_idx is None:
-                        console.print('  [dim]재실행할 이전 입력이 없습니다[/dim]')
-                        continue
-                    stored = session_msgs[last_user_idx]['content']
-                    # skills.build_context 프리픽스 제거 → 원본 user 입력 복원
-                    original = stored.rsplit('\n\n---\n', 1)[-1] if '\n\n---\n' in stored else stored
-                    session_msgs = session_msgs[:last_user_idx]
-                    preview = original[:80] + ('...' if len(original) > 80 else '')
-                    console.print(f'  [dim]재실행: {preview}[/dim]')
-                    snippets = get_context_snippets(original, working_dir, profile)
-                    _response_header()
-                    _ui.reset()
-                    _run_agent(original, context_snippets=snippets)
-                    _response_footer()
-                    continue
-
-                # /diff [file] — git diff 결과를 syntax highlight로 표시
-                if user_input.strip() == '/diff' or user_input.startswith('/diff '):
-                    parts = user_input.split(maxsplit=1)
-                    file_arg = parts[1].strip() if len(parts) > 1 else ''
-                    import subprocess as _subp
-                    cmd = ['git', '-C', working_dir, 'diff']
-                    if file_arg:
-                        cmd.extend(['--', file_arg])
-                    try:
-                        diff_result = _subp.run(cmd, capture_output=True, text=True, timeout=10)
-                    except FileNotFoundError:
-                        console.print('  [tool.fail]git 명령어를 찾을 수 없습니다[/tool.fail]')
-                        continue
-                    except _subp.TimeoutExpired:
-                        console.print('  [tool.fail]git diff 타임아웃[/tool.fail]')
-                        continue
-                    if diff_result.returncode != 0:
-                        stderr = (diff_result.stderr or '').strip()
-                        console.print(f'  [tool.fail]{stderr or "git diff 실패"}[/tool.fail]')
-                        continue
-                    if not diff_result.stdout.strip():
-                        target = file_arg or 'HEAD'
-                        console.print(f'  [dim]변경사항 없음 ({target})[/dim]')
-                        continue
-                    console.print(Syntax(diff_result.stdout, 'diff', theme='monokai', line_numbers=False, word_wrap=False))
-                    continue
-
-                session_msgs, working_dir, undo_count = handle_slash(
-                    user_input, session_msgs, working_dir, profile, undo_count,
-                    run_agent=_run_agent_for_core,
-                    run_agent_ephemeral=_run_agent_ephemeral,
-                    ask_claude=_ask_claude_for_core,
-                    confirm_execute=_confirm_execute_for_core,
-                )
-                if user_input.startswith('/cd'):
-                    profile = prof.load(working_dir)
-                continue
-
-            # 자연어로 /commit+push / /push / /pull 트리거 감지
-            if _is_push_intent(user_input):
-                msg = _extract_commit_msg(user_input)
-                if msg or _is_commit_intent(user_input):
-                    # "커밋/푸시" 또는 "커밋하고 푸시" → commit 후 push
-                    commit_cmd = f'/commit {msg}' if msg else '/commit'
-                    session_msgs, working_dir, undo_count = handle_slash(
-                        commit_cmd, session_msgs, working_dir, profile, undo_count
-                    )
-                session_msgs, working_dir, undo_count = handle_slash(
-                    '/push', session_msgs, working_dir, profile, undo_count
-                )
-                continue
-            if _is_pull_intent(user_input):
-                session_msgs, working_dir, undo_count = handle_slash(
-                    '/pull', session_msgs, working_dir, profile, undo_count
-                )
-                continue
-            if _is_commit_intent(user_input):
-                msg = _extract_commit_msg(user_input)
-                commit_cmd = f'/commit {msg}' if msg else '/commit'
-                session_msgs, working_dir, undo_count = handle_slash(
-                    commit_cmd, session_msgs, working_dir, profile, undo_count
-                )
-                continue
-
-            # shell 기본 명령어 직접 처리 (cd, ls, pwd, clear)
-            _stripped = user_input.strip()
-            if _re.match(r'^cd(\s+\S+)?$', _stripped):
-                path = _stripped[2:].strip() or '~'
-                session_msgs, working_dir, undo_count = handle_slash(
-                    f'/cd {path}', session_msgs, working_dir, profile, undo_count
-                )
+            session_msgs, working_dir, undo_count = await _asyncio.to_thread(
+                handle_slash, user_input, session_msgs, working_dir, profile, undo_count,
+                run_agent=_run_agent_for_core,
+                run_agent_ephemeral=_run_agent_ephemeral,
+                ask_claude=_ask_claude_for_core,
+                confirm_execute=_confirm_execute_for_core,
+            )
+            if user_input.startswith('/cd'):
                 profile = prof.load(working_dir)
-                continue
-            if _re.match(r'^ls(\s.*)?$', _stripped):
-                import subprocess as _sp
-                args = _stripped[2:].strip()
-                r = _sp.run(['ls'] + (args.split() if args else ['-la']),
-                            cwd=working_dir, capture_output=True, text=True)
-                console.print(r.stdout if r.stdout else r.stderr, end='', highlight=False, markup=False)
-                continue
-            if _stripped == 'pwd':
-                console.print(working_dir)
-                continue
-            if _stripped == 'clear':
-                console.clear()
-                continue
+            return True
 
-            # 자연어로 /cplan 트리거 감지 — handle_slash를 통해 harness_core로 라우팅
-            if _is_cplan_intent(user_input):
-                task = _extract_cplan_task(user_input)
-                session_msgs, working_dir, undo_count = handle_slash(
-                    f'/cplan {task}', session_msgs, working_dir, profile, undo_count,
-                    run_agent=_run_agent_for_core,
-                    run_agent_ephemeral=_run_agent_ephemeral,
-                    ask_claude=_ask_claude_for_core,
-                    confirm_execute=_confirm_execute_for_core,
+        # 자연어 commit/push/pull
+        if _is_push_intent(user_input):
+            msg = _extract_commit_msg(user_input)
+            if msg or _is_commit_intent(user_input):
+                commit_cmd = f'/commit {msg}' if msg else '/commit'
+                session_msgs, working_dir, undo_count = await _asyncio.to_thread(
+                    handle_slash, commit_cmd, session_msgs, working_dir, profile, undo_count,
                 )
-                continue
+            session_msgs, working_dir, undo_count = await _asyncio.to_thread(
+                handle_slash, '/push', session_msgs, working_dir, profile, undo_count,
+            )
+            return True
+        if _is_pull_intent(user_input):
+            session_msgs, working_dir, undo_count = await _asyncio.to_thread(
+                handle_slash, '/pull', session_msgs, working_dir, profile, undo_count,
+            )
+            return True
+        if _is_commit_intent(user_input):
+            msg = _extract_commit_msg(user_input)
+            commit_cmd = f'/commit {msg}' if msg else '/commit'
+            session_msgs, working_dir, undo_count = await _asyncio.to_thread(
+                handle_slash, commit_cmd, session_msgs, working_dir, profile, undo_count,
+            )
+            return True
 
-            snippets = get_context_snippets(user_input, working_dir, profile)
-            _response_header()
-            _ui.reset()
-            _run_agent(user_input, context_snippets=snippets)
-            _response_footer()
+        # shell 기본 명령어 직접 처리
+        _stripped = user_input
+        if _re.match(r'^cd(\s+\S+)?$', _stripped):
+            path = _stripped[2:].strip() or '~'
+            session_msgs, working_dir, undo_count = await _asyncio.to_thread(
+                handle_slash, f'/cd {path}', session_msgs, working_dir, profile, undo_count,
+            )
+            profile = prof.load(working_dir)
+            return True
+        if _re.match(r'^ls(\s.*)?$', _stripped):
+            import subprocess as _sp
+            _ls_args = _stripped[2:].strip()
+            r = await _asyncio.to_thread(
+                _sp.run, ['ls'] + (_ls_args.split() if _ls_args else ['-la']),
+                cwd=working_dir, capture_output=True, text=True,
+            )
+            console.print(r.stdout if r.stdout else r.stderr,
+                          end='', highlight=False, markup=False)
+            return True
+        if _stripped == 'pwd':
+            console.print(working_dir)
+            return True
+        if _stripped == 'clear':
+            console.clear()
+            return True
 
-        except (KeyboardInterrupt, EOFError):
-            console.print('\n  [dim]종료[/dim]')
-            break
+        # 자연어 /cplan
+        if _is_cplan_intent(user_input):
+            task = _extract_cplan_task(user_input)
+            session_msgs, working_dir, undo_count = await _asyncio.to_thread(
+                handle_slash, f'/cplan {task}', session_msgs, working_dir, profile, undo_count,
+                run_agent=_run_agent_for_core,
+                run_agent_ephemeral=_run_agent_ephemeral,
+                ask_claude=_ask_claude_for_core,
+                confirm_execute=_confirm_execute_for_core,
+            )
+            return True
+
+        # 기본: agent 실행
+        snippets = await _asyncio.to_thread(
+            get_context_snippets, user_input, working_dir, profile,
+        )
+        _response_header()
+        _ui.reset()
+        await _asyncio.to_thread(_run_agent, user_input, context_snippets=snippets)
+        _response_footer()
+        return True
+
+    def _state_getter():
+        turns = len([m for m in session_msgs if m['role'] == 'user'])
+        return session_msgs, turns
+
+    def _wd_getter():
+        return working_dir
+
+    from cli.app import run_app
+    try:
+        run_app(_wd_getter, _state_getter, _handle_turn)
+    except (KeyboardInterrupt, EOFError):
+        console.print('\n  [dim]종료[/dim]')
 
     for client in _mcp_clients.values():
         client.stop()
