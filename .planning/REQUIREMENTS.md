@@ -12,22 +12,22 @@
 
 ### FND — Foundation (Phase 1 전제. 모두 coarse 필수)
 
-- [ ] **FND-01**: ui-ink 의 의존성을 `ink@7 / react@19.2 / zustand@5 / @types/react@19.2 / ws@8` 으로 bump 하고, `ink-text-input` 은 제거한다
-- [ ] **FND-02**: `@inkjs/ui@2 · ink-spinner@5 · ink-select-input@6.2 · ink-link@5 · diff@9 · cli-highlight@2 · vitest@4 · ink-testing-library@4` 을 설치 후 Phase 1 초반에 ink@7 peer 호환 스모크로 검증한다
-- [ ] **FND-03**: 현재 스켈레톤의 잘못된 WS 이벤트 이름(`on_token`, `on_tool`, `error.message`)을 실제 서버 프로토콜(`token`, `tool_start`+`tool_end`, `error.text`)로 전수 교정한다
-- [ ] **FND-04**: `src/protocol.ts` 를 신설해 `harness_server.py` 가 broadcast 하는 23+ ServerMsg 를 discriminated union 으로 타입화한다 (exhaustive switch 로 컴파일 시 미처리 탐지)
-- [ ] **FND-05**: `src/ws/{client,dispatch,parse}.ts` 로 WS 레이어를 순수 TS 모듈로 분리한다 (`HarnessClient` 클래스 — connect / send / reconnect / heartbeat)
-- [ ] **FND-06**: `src/store/{messages,input,status,room,confirm,index}.ts` 로 Zustand 단일 스토어 5 슬라이스 구조로 분할한다
-- [ ] **FND-07**: 스트리밍 토큰은 "마지막 메시지 content += " in-place 업데이트로 처리 (매 토큰 새 메시지 push 금지)
-- [ ] **FND-08**: 각 메시지에 `crypto.randomUUID()` id 부여하고 React key 로 사용한다 (index key 금지)
-- [ ] **FND-09**: tsconfig 를 `"jsx":"react-jsx"` · `"moduleResolution":"bundler"` · strict · `lib:["ES2022"]` (DOM 제외) 로 고정한다
-- [ ] **FND-10**: ESLint 로 `process.stdout.write` · `console.log` · `<div>/<span>` JSX · `child_process.spawn` 를 금지한다 (CI 실패)
-- [ ] **FND-11**: `grep '\x1b\[?1049\|?1000' src/` 가 항상 빈 결과여야 한다는 CI 가드를 넣는다 (alternate screen · mouse tracking 금지)
-- [ ] **FND-12**: 진입점(`index.tsx`)에 TTY 가드 + one-shot 분기(non-TTY 또는 argv 질문 존재 시 one-shot)
-- [ ] **FND-13**: `uncaughtException` · `unhandledRejection` · `SIGHUP` · `SIGINT` · `SIGTERM` 핸들러에서 `setRawMode(false)` + 커서 복원 + `stdin.pause()` cleanup 을 수행한다
-- [ ] **FND-14**: `render(<App/>, { patchConsole: false })` 로 Ink 의 console 가로채기를 끈다
-- [ ] **FND-15**: `trap 'stty sane' EXIT` 을 포함하는 쉘 진입 스크립트를 제공한다
-- [ ] **FND-16**: Phase 1 exit criteria — `bun start` → 연결 → 토큰 스트리밍 → `agent_end` end-to-end 스모크가 통과해야 한다
+- [x] **FND-01**: ui-ink 의 의존성을 `ink@7 / react@19.2 / zustand@5 / @types/react@19.2 / ws@8` 으로 bump 하고, `ink-text-input` 은 제거한다
+- [x] **FND-02**: `@inkjs/ui@2 · ink-spinner@5 · ink-select-input@6.2 · ink-link@5 · diff@9 · cli-highlight@2 · vitest@4 · ink-testing-library@4` 을 설치 후 Phase 1 초반에 ink@7 peer 호환 스모크로 검증한다
+- [x] **FND-03**: 현재 스켈레톤의 잘못된 WS 이벤트 이름(`on_token`, `on_tool`, `error.message`)을 실제 서버 프로토콜(`token`, `tool_start`+`tool_end`, `error.text`)로 전수 교정한다
+- [x] **FND-04**: `src/protocol.ts` 를 신설해 `harness_server.py` 가 broadcast 하는 23+ ServerMsg 를 discriminated union 으로 타입화한다 (exhaustive switch 로 컴파일 시 미처리 탐지)
+- [x] **FND-05**: `src/ws/{client,dispatch,parse}.ts` 로 WS 레이어를 순수 TS 모듈로 분리한다 (`HarnessClient` 클래스 — connect / send / reconnect / heartbeat)
+- [x] **FND-06**: `src/store/{messages,input,status,room,confirm,index}.ts` 로 Zustand 단일 스토어 5 슬라이스 구조로 분할한다
+- [x] **FND-07**: 스트리밍 토큰은 "마지막 메시지 content += " in-place 업데이트로 처리 (매 토큰 새 메시지 push 금지)
+- [x] **FND-08**: 각 메시지에 `crypto.randomUUID()` id 부여하고 React key 로 사용한다 (index key 금지)
+- [x] **FND-09**: tsconfig 를 `"jsx":"react-jsx"` · `"moduleResolution":"bundler"` · strict · `lib:["ES2022"]` (DOM 제외) 로 고정한다
+- [x] **FND-10**: ESLint 로 `process.stdout.write` · `console.log` · `<div>/<span>` JSX · `child_process.spawn` 를 금지한다 (CI 실패)
+- [x] **FND-11**: `grep '\x1b\[?1049\|?1000' src/` 가 항상 빈 결과여야 한다는 CI 가드를 넣는다 (alternate screen · mouse tracking 금지)
+- [x] **FND-12**: 진입점(`index.tsx`)에 TTY 가드 + one-shot 분기(non-TTY 또는 argv 질문 존재 시 one-shot)
+- [x] **FND-13**: `uncaughtException` · `unhandledRejection` · `SIGHUP` · `SIGINT` · `SIGTERM` 핸들러에서 `setRawMode(false)` + 커서 복원 + `stdin.pause()` cleanup 을 수행한다
+- [x] **FND-14**: `render(<App/>, { patchConsole: false })` 로 Ink 의 console 가로채기를 끈다
+- [x] **FND-15**: `trap 'stty sane' EXIT` 을 포함하는 쉘 진입 스크립트를 제공한다
+- [x] **FND-16**: Phase 1 exit criteria — `bun start` → 연결 → 토큰 스트리밍 → `agent_end` end-to-end 스모크가 통과해야 한다
 
 ### INPT — Input Surface (Phase 2)
 
