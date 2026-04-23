@@ -43,7 +43,11 @@
 4. `kill -9 <pid>` 이후 터미널 에코 · 라인 편집 · 커서 가시성 정상 복구. `SIGHUP`/`SIGINT`/`SIGTERM`/`uncaughtException`/`unhandledRejection` 5개 경로 모두 `setRawMode(false)` + 커서 복원 + `stdin.pause()` 수행.
 5. `src/protocol.ts` 에 23+ ServerMsg discriminated union 정의 후 `src/ws/dispatch.ts` exhaustive switch 에서 미처리 이벤트 컴파일 시점 탐지 (intentional unknown event → `tsc` 실패 확인).
 
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 01-PLAN-A-deps-build.md — 의존성 bump (ink@7, react@19.2, zustand@5), tsconfig react-jsx, ESLint 금지 규칙, CI escape 가드
+- [ ] 01-PLAN-B-ws-protocol.md — WS 프로토콜 정합성 복구 (protocol.ts), 5 슬라이스 store, HarnessClient, dispatch exhaustive switch
+- [ ] 01-PLAN-C-hardening-smoke.md — TTY 가드, 시그널 핸들러, patchConsole:false, harness.sh, vitest 4종, tsc smoke
 **UI hint**: yes
 
 ---
