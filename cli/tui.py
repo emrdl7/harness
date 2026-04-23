@@ -128,10 +128,11 @@ Screen {
 #slash-hints {
     height: auto;
     min-height: 0;
-    max-height: 8;
+    max-height: 6;
     background: transparent;
     color: #6a7a8a;
     padding: 0 2;
+    margin-bottom: 1;
 }
 
 /* TextArea 내부 레이어도 투명 — cursor-line 강조/gutter 구분 모두 제거. */
@@ -323,9 +324,10 @@ class HarnessApp(App):
         yield RichLog(id='output', highlight=False, markup=True, wrap=True)
         yield Static('', id='status-bar')
         with Vertical(id='input-container'):
+            # 슬래시 힌트가 입력창 위에서 튀어오르는 형태 (Claude Code 스타일)
+            yield Static('', id='slash-hints')
             yield Static(self._prompt_label(), id='prompt-label')
             yield _InputArea(id='input-box', show_line_numbers=False, soft_wrap=True)
-            yield Static('', id='slash-hints')
 
     def on_mount(self):
         self._install_redirects()
@@ -558,13 +560,13 @@ class HarnessApp(App):
         if not matches:
             hints.update('[dim]일치하는 명령 없음[/dim]')
             return
-        # 최대 8줄
+        # 최대 5줄
         lines = []
-        for cmd, desc in matches[:8]:
+        for cmd, desc in matches[:5]:
             short_desc = desc.split('  ex)')[0]
             lines.append(f'[bold magenta]{cmd:<10}[/bold magenta] [dim]{short_desc}[/dim]')
-        if len(matches) > 8:
-            lines.append(f'[dim]... 외 {len(matches) - 8}개 (Tab 으로 완성)[/dim]')
+        if len(matches) > 5:
+            lines.append(f'[dim]... 외 {len(matches) - 5}개 (Tab 으로 완성)[/dim]')
         hints.update('\n'.join(lines))
 
     @on(InputSubmitted)
