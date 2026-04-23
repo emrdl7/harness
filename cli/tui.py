@@ -270,8 +270,17 @@ class HarnessApp(App):
 
     def on_mount(self):
         self._install_redirects()
-        self._maybe_resume()
+        # 배너 — cli.setup.print_banner 는 console.out 으로 ANSI 그라데이션을
+        # 찍는데, _install_redirects 가 console.file → _TUIStream 이라
+        # Text.from_ansi 로 파싱되어 RichLog 에 그대로 흐른다.
+        from cli.setup import print_banner
+        try:
+            print_banner()
+        except Exception:
+            # 배너 렌더 실패해도 본 UI 는 살아야 함
+            pass
         self._print_welcome()
+        self._maybe_resume()
         self._update_status()
         # MCP 서버 부팅 (blocking — UI 뜨기 전 마무리)
         if self.profile.get('mcp_servers'):
