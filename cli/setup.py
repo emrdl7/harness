@@ -10,7 +10,9 @@
 main.py는 호환을 위해 이 모듈의 심볼을 re-export한다 (tests/test_handle_slash.py
 가 main.get_context_snippets 를 monkeypatch 하는 등의 의존이 있음).
 '''
+import atexit
 import os
+import sys
 
 from rich.live import Live
 from rich.spinner import Spinner
@@ -78,6 +80,47 @@ except Exception:
     pass
 
 
+# ── Claude Code 스타일: 확장 키보드 모드(CSI u) 활성화 ───────────
+# Shift+Enter 를 별도 시퀀스(\x1b[13;2u)로 보내도록 터미널에 요청하고,
+# prompt_toolkit 의 ANSI_SEQUENCES 에 그 시퀀스를 Alt+Enter 와 동일한
+# 이벤트 튜플로 매핑해 기존 _alt_enter_newline 바인딩이 그대로 발화하게
+# 한다. 지원 터미널: iTerm2 3.5+, kitty, foot, WezTerm 등.
+# 미지원 터미널(macOS Terminal.app)은 escape 시퀀스를 무시하고 Ctrl+J /
+# Alt+Enter fallback 으로 동작한다.
+_csi_u_enabled = False
+
+
+def _ensure_csi_u_mode() -> None:
+    global _csi_u_enabled
+    if _csi_u_enabled:
+        return
+    _csi_u_enabled = True
+
+    try:
+        from prompt_toolkit.input.ansi_escape_sequences import ANSI_SEQUENCES
+        # Shift+Enter (modifiers=2) · Ctrl+Enter (=5) · Ctrl+Shift+Enter (=6)
+        # 주요 조합만 Alt+Enter 와 동일한 이벤트 시퀀스로 매핑 → 개행.
+        for seq in ('\x1b[13;2u', '\x1b[13;5u', '\x1b[13;6u'):
+            ANSI_SEQUENCES.setdefault(seq, (Keys.Escape, Keys.Enter))
+    except Exception:
+        pass
+
+    try:
+        sys.stdout.write('\x1b[>1u')  # 터미널에 CSI u 확장 키보드 활성화 요청
+        sys.stdout.flush()
+    except Exception:
+        pass
+
+    def _restore() -> None:
+        try:
+            sys.stdout.write('\x1b[<u')  # 종료 시 복원
+            sys.stdout.flush()
+        except Exception:
+            pass
+
+    atexit.register(_restore)
+
+
 _BAR_WIDTH = 10  # ctx progress bar 셀 수
 
 
@@ -126,6 +169,7 @@ def _build_status_bar(session_msgs: list) -> HTML:
 
 
 def get_input(turns: int, working_dir: str, session_msgs: list | None = None) -> str:
+    _ensure_csi_u_mode()
     short = _short_dir(working_dir)
     slash_completer.working_dir = working_dir  # arg 자동완성이 현재 dir 기준 동작
     toolbar = _build_status_bar(session_msgs) if session_msgs is not None else None
