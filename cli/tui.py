@@ -88,33 +88,34 @@ Screen {
 
 #status-bar {
     height: 1;
-    background: #111111;
-    color: #888888;
-    padding: 0 2;
+    background: #0d0d0d;
+    color: #555555;
+    padding: 0 3;
 }
 
 #input-container {
     height: auto;
     min-height: 3;
     max-height: 14;
-    background: #111111;
-    border-top: solid #1e3a5f;
+    background: #0d0d0d;
     layout: vertical;
+    padding: 1 1 1 1;
 }
 
 #prompt-label {
     height: 1;
-    background: #111111;
+    background: #0d0d0d;
     color: #00aaff;
     text-style: bold;
     padding: 0 2;
+    margin-bottom: 0;
 }
 
 #input-box {
     height: auto;
     min-height: 1;
     max-height: 12;
-    background: #111111;
+    background: #0d0d0d;
     border: none;
     padding: 0 2;
     color: #e0e0e0;
@@ -123,7 +124,22 @@ Screen {
 
 #input-box:focus {
     border: none;
-    background: #111111;
+    background: #0d0d0d;
+}
+
+/* TextArea 내부 레이어 배경 통일 — cursor-line 하이라이트 제거. */
+TextArea#input-box > .text-area--cursor-line {
+    background: #0d0d0d;
+}
+
+TextArea#input-box > .text-area--gutter {
+    background: #0d0d0d;
+    color: #0d0d0d;
+}
+
+TextArea#input-box > .text-area--cursor-gutter {
+    background: #0d0d0d;
+    color: #0d0d0d;
 }
 '''
 
