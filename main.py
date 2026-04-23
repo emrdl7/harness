@@ -146,10 +146,8 @@ def main():
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('-p', '--print', dest='one_shot', metavar='QUERY', default=None)
     parser.add_argument('--continue', dest='resume', action='store_true')
-    parser.add_argument('--classic', dest='classic', action='store_true',
-                        help='Textual TUI 대신 옛 REPL(prompt_toolkit) 모드로 실행')
     parser.add_argument('--tui', dest='tui', action='store_true',
-                        help='(기본값, 유지는 호환용) Textual 분리 입력창 UI')
+                        help='(실험) Textual 분리 입력창 UI — 백업용')
     parser.add_argument('extra', nargs='?', default=None)
     args, _ = parser.parse_known_args()
 
@@ -157,10 +155,9 @@ def main():
     profile = prof.load(working_dir)
     config.runtime_override(profile)
 
-    # 기본: Textual TUI. one-shot(-p) 과 --classic 은 예외적으로 REPL 경로 사용.
-    # -p 는 파이프 출력 위주라 TUI 가 의미 없음.
-    use_classic = args.classic or bool(args.one_shot)
-    if not use_classic:
+    # 기본: 고전 REPL(prompt_toolkit + Rich). --tui 명시 시에만 Textual.
+    # -p(one-shot)은 파이프 출력이라 TUI 우회.
+    if args.tui and not args.one_shot:
         from cli.tui import run_tui
         run_tui(working_dir, profile, args)
         return
