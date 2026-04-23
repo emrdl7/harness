@@ -296,6 +296,29 @@ def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, 
         _run_claude_cli(query, session_msgs=session_msgs, working_dir=working_dir, model=profile.get('claude_model') or None)
         return session_msgs, working_dir, undo_count
 
+    if name == '/think':
+        # 마지막 assistant 메시지의 _thinking 필드 펼치기.
+        # 세션 저장/복원 시에도 JSON 그대로 보존되므로 /resume 후에도 동작.
+        last_think = None
+        for m in reversed(session_msgs):
+            if m.get('role') == 'assistant':
+                last_think = m.get('_thinking')
+                break
+        if not last_think:
+            console.print('  [dim]마지막 응답에 사고 블록이 없습니다 (reasoning 모델이 아닐 수 있음)[/dim]')
+            return session_msgs, working_dir, undo_count
+        duration = last_think.get('duration', 0)
+        tokens = last_think.get('tokens', 0)
+        text = last_think.get('text', '').strip()
+        console.print(
+            f'\n  [dim]▸ {duration:.1f}초 동안 생각함 · {tokens} 토큰[/dim]'
+        )
+        # 사고 본문은 들여쓰기 + dim italic. 원문 개행 유지.
+        for line in text.splitlines() or ['(내용 없음)']:
+            console.print(f'    [dim italic]{line}[/dim italic]')
+        console.print()
+        return session_msgs, working_dir, undo_count
+
     if name == '/mode':
         mode = parts[1].strip() if len(parts) > 1 else ''
         valid = ('suggest', 'auto-edit', 'full-auto')

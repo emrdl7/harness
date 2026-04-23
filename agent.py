@@ -14,6 +14,115 @@ import skills
 
 MAX_TOOL_RESULT_CHARS = 20_000
 
+
+# ── Thinking 스트리밍 파서 ────────────────────────────────────────
+class _ThinkingParser:
+    '''Ollama 스트리밍 토큰에서 <think>...</think> 블록을 분리한다.
+
+    로컬 reasoning 모델(DeepSeek-R1, Qwen3 thinking 등)이 사고 과정을
+    <think> 태그로 감싸서 출력할 때, 답변 토큰과 사고 토큰을 다른 콜백으로
+    라우팅한다. 사고 블록이 없는 일반 모델에서는 기존 동작과 동일
+    (전부 on_answer로 흘러감).
+
+    - on_answer(text): 일반 답변 토큰 (기존 on_token 역할)
+    - on_thought(text): 사고 블록 내부 토큰. None이면 버림
+    - on_thought_end(text, duration, tokens): </think> 만날 때 호출.
+      text=사고 전체, duration=<think>→</think> 경과 초, tokens=대략 추정
+
+    토큰 경계가 태그 중간을 가르는 경우('<th'|'ink>')를 처리하기 위해
+    tail prefix를 carry로 홀드한다. 태그 최대 길이는 CLOSE(8) 기준.
+    '''
+    OPEN = '<think>'
+    CLOSE = '</think>'
+
+    def __init__(self, on_answer=None, on_thought=None, on_thought_end=None):
+        self.on_answer = on_answer
+        self.on_thought = on_thought
+        self.on_thought_end = on_thought_end
+        self._mode = 'answer'          # 'answer' or 'thought'
+        self._carry = ''               # 태그 prefix 후보 suffix 홀드
+        self._thought_start_ts = 0.0
+        self._thought_buf: list[str] = []
+        self.accumulated = ''          # answer 파트만 — session_messages content와 매칭
+        self._thinkings: list[dict] = []  # 완료 블록 [{text, duration, tokens}]
+
+    def feed(self, token: str):
+        data = self._carry + token
+        self._carry = ''
+        while data:
+            if self._mode == 'answer':
+                idx = data.find(self.OPEN)
+                if idx >= 0:
+                    if idx > 0:
+                        self._emit_answer(data[:idx])
+                    data = data[idx + len(self.OPEN):]
+                    self._mode = 'thought'
+                    self._thought_start_ts = time.time()
+                    self._thought_buf = []
+                    continue
+                hold = self._tail_hold(data, self.OPEN)
+                if hold:
+                    if hold < len(data):
+                        self._emit_answer(data[:-hold])
+                    self._carry = data[-hold:]
+                else:
+                    self._emit_answer(data)
+                data = ''
+            else:  # thought
+                idx = data.find(self.CLOSE)
+                if idx >= 0:
+                    if idx > 0:
+                        self._emit_thought(data[:idx])
+                    data = data[idx + len(self.CLOSE):]
+                    text = ''.join(self._thought_buf)
+                    duration = time.time() - self._thought_start_ts
+                    tokens = max(1, len(text) // 4)
+                    self._thinkings.append({'text': text, 'duration': duration, 'tokens': tokens})
+                    if self.on_thought_end:
+                        self.on_thought_end(text, duration, tokens)
+                    self._mode = 'answer'
+                    self._thought_buf = []
+                    continue
+                hold = self._tail_hold(data, self.CLOSE)
+                if hold:
+                    if hold < len(data):
+                        self._emit_thought(data[:-hold])
+                    self._carry = data[-hold:]
+                else:
+                    self._emit_thought(data)
+                data = ''
+
+    def flush(self):
+        '''스트림 종료 호출 — carry 남은 건 현재 모드로 흘려보낸다.
+        미종료 thought는 end 이벤트를 쏘지 않음(`_thinkings`에도 기록 안 함).'''
+        if self._carry:
+            if self._mode == 'answer':
+                self._emit_answer(self._carry)
+            else:
+                self._emit_thought(self._carry)
+            self._carry = ''
+
+    @staticmethod
+    def _tail_hold(data: str, tag: str) -> int:
+        '''data의 suffix가 tag의 prefix일 수 있는 최대 길이.
+        `<th` 가 `<think>`의 prefix인지 체크해서, 맞으면 3 리턴.
+        '''
+        max_check = min(len(tag) - 1, len(data))
+        for k in range(max_check, 0, -1):
+            if tag.startswith(data[-k:]):
+                return k
+        return 0
+
+    def _emit_answer(self, text: str):
+        self.accumulated += text
+        if self.on_answer:
+            self.on_answer(text)
+
+    def _emit_thought(self, text: str):
+        self._thought_buf.append(text)
+        if self.on_thought:
+            self.on_thought(text)
+
 def _system_prompt() -> str:
     '''CONCERNS §3.13: import 시점 f-string 빌드는 config.runtime_override 후
     바뀐 MODEL을 반영 못 함. 호출 시점에 lazy 빌드해 .harness.toml override 반영.
@@ -60,7 +169,7 @@ PLAN_PROMPT = '''다음 작업을 실행하기 전에 단계별 계획을 먼저
 계획 작성 후 "계획 완료"라고 말하면 실행을 시작합니다.'''
 
 
-def _stream_response(messages: list, on_token=None) -> dict:
+def _stream_response(messages: list, on_token=None, on_thought=None, on_thought_end=None) -> dict:
     payload = {
         'model': config.MODEL,
         'messages': messages,
@@ -97,7 +206,11 @@ def _stream_response(messages: list, on_token=None) -> dict:
                 on_token(f'\n[Ollama 재연결 {attempt + 2}/3 — {delay}s 대기: HTTP {status}]\n')
             time.sleep(delay)
 
-    accumulated = ''
+    parser = _ThinkingParser(
+        on_answer=on_token,
+        on_thought=on_thought,
+        on_thought_end=on_thought_end,
+    )
     tool_calls = []
 
     for line in resp.iter_lines():
@@ -107,15 +220,20 @@ def _stream_response(messages: list, on_token=None) -> dict:
         msg = chunk.get('message', {})
         token = msg.get('content', '')
         if token:
-            accumulated += token
-            if on_token:
-                on_token(token)
+            parser.feed(token)
         if msg.get('tool_calls'):
             tool_calls = msg['tool_calls']
         if chunk.get('done'):
             break
+    parser.flush()
 
-    return {'role': 'assistant', 'content': accumulated, 'tool_calls': tool_calls}
+    # assistant 메시지에 _thinking 필드 부착 (완료된 마지막 블록 기준).
+    # Ollama는 payload의 unknown 필드를 무시하므로 세션에 그대로 보관해도 안전.
+    # /think 슬래시가 이 필드를 읽는다.
+    result = {'role': 'assistant', 'content': parser.accumulated, 'tool_calls': tool_calls}
+    if parser._thinkings:
+        result['_thinking'] = parser._thinkings[-1]
+    return result
 
 
 def _parse_text_tool_calls(text: str) -> list:
@@ -188,6 +306,8 @@ def run(
     confirm_write=None,
     confirm_bash=None,
     on_unknown_tool=None,
+    on_thought=None,
+    on_thought_end=None,
     hooks: dict = None,
 ) -> tuple[str, list]:
     if session_messages is None:
@@ -233,7 +353,8 @@ def run(
         if time.time() - _start > config.AGENT_TIMEOUT:
             run_hook((hooks or {}).get('on_stop', ''), 'on_stop', working_dir=working_dir)
             return f'에이전트 타임아웃 ({config.AGENT_TIMEOUT}초 초과)', session_messages
-        msg = _stream_response(session_messages, on_token=on_token)
+        msg = _stream_response(session_messages, on_token=on_token,
+                               on_thought=on_thought, on_thought_end=on_thought_end)
         session_messages.append(msg)
 
         tool_calls = msg.get('tool_calls', [])

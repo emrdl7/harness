@@ -131,6 +131,32 @@ def confirm_bash(command: str) -> bool:
     return Confirm.ask(f'[bold]●[/bold] [bold red]Run[/bold red] [bold]{command[:100]}[/bold]')
 
 
+# ── Thinking 블록 콜백 ─────────────────────────────────────────────
+# 기본 정책: reasoning 모델의 <think>...</think> 내용은 화면에 실시간으로
+# 찍지 않는다. 끝나면 "▸ N초 동안 생각함 · M 토큰" 한 줄 요약만 표시.
+# 원본은 session_msgs의 assistant._thinking 필드에 저장돼 /think 로 펼침.
+_thought_buf: list[str] = []
+
+
+def on_thought(token: str):
+    '''사고 토큰 수신 — 현재는 숨김(버퍼만). 디버그 모드 확장 여지.'''
+    _thought_buf.append(token)
+
+
+def on_thought_end(text: str, duration: float, tokens: int):
+    '''</think> 도달 시 한 줄 요약. answer 스트림이 뒤따르므로 _flush_tokens()
+    로 answer 버퍼는 비우지 않음 (아직 시작 안 함). _spinner만 잠시 멈췄다가
+    곧 answer 토큰이 시작되면 자연스럽게 재개됨.'''
+    _spinner.stop()
+    console.print(
+        f'  [dim]▸ {duration:.1f}초 동안 생각함 · {tokens} 토큰  '
+        f'[/dim][dim italic]/think 로 펼치기[/dim italic]'
+    )
+    _thought_buf.clear()
+    # answer 스트림이 곧 재개되므로 spinner 다시 활성화
+    _spinner.start()
+
+
 # ── 미등록 툴 제안 ────────────────────────────────────────────────
 _INSTALLABLE_TOOLS = {
     'search_web':  ('web.py', 'duckduckgo_search'),

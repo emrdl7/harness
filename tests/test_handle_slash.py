@@ -8,6 +8,42 @@ from unittest.mock import MagicMock
 import main
 
 
+class TestThink:
+    '''/think — 마지막 assistant 메시지의 _thinking 필드 펼치기.'''
+
+    def test_no_thinking_message_soft_fail(self):
+        '''_thinking 필드 없으면 경고만 출력하고 정상 반환.'''
+        msgs = [
+            {'role': 'system', 'content': 's'},
+            {'role': 'user', 'content': 'q'},
+            {'role': 'assistant', 'content': 'a'},
+        ]
+        new_msgs, wd, undo = main.handle_slash('/think', msgs, '/tmp', {}, 0)
+        assert new_msgs == msgs  # 세션 변경 없음
+        assert wd == '/tmp'
+
+    def test_no_assistant_message_soft_fail(self):
+        '''assistant 메시지 자체가 없을 때도 크래시 없음.'''
+        msgs = [{'role': 'system', 'content': 's'}]
+        new_msgs, wd, undo = main.handle_slash('/think', msgs, '/tmp', {}, 0)
+        assert new_msgs == msgs
+
+    def test_finds_latest_thinking(self):
+        '''여러 assistant 메시지 중 마지막 것의 _thinking 을 본다.'''
+        msgs = [
+            {'role': 'system', 'content': 's'},
+            {'role': 'user', 'content': 'q1'},
+            {'role': 'assistant', 'content': 'a1',
+             '_thinking': {'text': '오래된 사고', 'duration': 1.0, 'tokens': 10}},
+            {'role': 'user', 'content': 'q2'},
+            {'role': 'assistant', 'content': 'a2',
+             '_thinking': {'text': '최근 사고', 'duration': 2.5, 'tokens': 20}},
+        ]
+        # 크래시 없이 통과. 실제 출력은 Rich라 캡쳐 안 함 — 렌더 로직만 검증.
+        new_msgs, wd, undo = main.handle_slash('/think', msgs, '/tmp', {}, 0)
+        assert new_msgs == msgs
+
+
 def test_clear_returns_empty_session():
     msgs = [{'role': 'system', 'content': 's'}, {'role': 'user', 'content': 'u'}]
     new_msgs, wd, undo = main.handle_slash('/clear', msgs, '/tmp', {}, 0)
