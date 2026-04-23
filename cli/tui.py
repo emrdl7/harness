@@ -181,6 +181,77 @@ def _lexer_for_path(path: str) -> str:
     return _LEXER_BY_EXT.get(ext, 'text')
 
 
+def _render_diff_body(diff: list, max_lines: int = 60):
+    '''unified_diff 결과를 Claude Code 스타일 Renderable 로 변환.
+
+    - 추가 라인: 녹색 배경 + `+` 마커 + 라인 번호(new)
+    - 삭제 라인: 붉은 배경 + `-` 마커 + 라인 번호(old)
+    - 컨텍스트: dim + 양쪽 라인 번호 중 new 쪽 표시
+    - @@ 헤더: cyan dim, 이후 라인 번호 재설정
+    - 파일 헤더(---/+++) 는 Panel title 로 대체하므로 스킵
+
+    반환: rich.console.Group. Panel 에 직접 넣으면 됨.
+    '''
+    import re
+    from rich.console import Group
+    from rich.text import Text
+
+    ADD_BG = 'on #0a2a0a'
+    DEL_BG = 'on #3a0f0f'
+    CONTEXT_STYLE = 'dim'
+    MARKER_ADD = 'bold green'
+    MARKER_DEL = 'bold red'
+    LN_STYLE = 'dim #4a6a8a'
+
+    rendered: list = []
+    old_ln = 0
+    new_ln = 0
+    count = 0
+
+    for line in diff:
+        if line.startswith('---') or line.startswith('+++'):
+            continue
+        if count >= max_lines:
+            break
+        if line.startswith('@@'):
+            m = re.match(r'@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@', line)
+            if m:
+                old_ln = int(m.group(1))
+                new_ln = int(m.group(2))
+            rendered.append(Text(line, style='dim cyan'))
+            count += 1
+            continue
+        if line.startswith('+') and not line.startswith('+++'):
+            content = line[1:]
+            t = Text(no_wrap=True)
+            t.append(f'{new_ln:>4} ', style=LN_STYLE)
+            t.append('+ ', style=MARKER_ADD)
+            t.append(content.ljust(160), style=ADD_BG)
+            rendered.append(t)
+            new_ln += 1
+        elif line.startswith('-') and not line.startswith('---'):
+            content = line[1:]
+            t = Text(no_wrap=True)
+            t.append(f'{old_ln:>4} ', style=LN_STYLE)
+            t.append('- ', style=MARKER_DEL)
+            t.append(content.ljust(160), style=DEL_BG)
+            rendered.append(t)
+            old_ln += 1
+        else:
+            # 컨텍스트 (앞에 공백 또는 없음)
+            content = line[1:] if line.startswith(' ') else line
+            t = Text(no_wrap=True)
+            t.append(f'{new_ln:>4} ', style=LN_STYLE)
+            t.append('  ', style='')
+            t.append(content, style=CONTEXT_STYLE)
+            rendered.append(t)
+            old_ln += 1
+            new_ln += 1
+        count += 1
+
+    return Group(*rendered)
+
+
 # ── 입력 이벤트 + TextArea 커스텀 ─────────────────────────────────
 class InputSubmitted(Message):
     '''_InputArea 가 Enter 로 submit 될 때 발송.'''
@@ -1050,18 +1121,24 @@ class HarnessApp(App):
                     title = f'[bold #5ab6ff]{path}[/bold #5ab6ff] [dim](새 파일)[/dim]'
 
                 if existing:
-                    # 기존 파일 수정 → unified diff
+                    # 기존 파일 수정 → unified diff 를 Claude Code 스타일로 렌더
                     import difflib as _dl
                     new_lines = [l if l.endswith('\n') else l + '\n' for l in content.splitlines()]
-                    diff = list(_dl.unified_diff(old_lines, new_lines, fromfile=path, tofile=path, lineterm=''))
+                    diff = list(_dl.unified_diff(
+                        old_lines, new_lines,
+                        fromfile=path, tofile=path, lineterm='',
+                    ))
                     if not diff:
-                        self._output(Panel('[dim](변경 없음)[/dim]', title=title, border_style='#1a3a5a', padding=(0, 1)))
+                        self._output(Panel(
+                            '[dim](변경 없음)[/dim]',
+                            title=title, border_style='#1a3a5a', padding=(0, 1),
+                        ))
                     else:
-                        shown = diff[:60]
-                        body = Syntax('\n'.join(shown), 'diff', theme='ansi_dark',
-                                      line_numbers=False, word_wrap=False, background_color='default')
-                        subtitle = (f'[dim]... 외 {len(diff) - 60}줄[/dim]'
-                                    if len(diff) > 60 else None)
+                        body = _render_diff_body(diff, max_lines=60)
+                        extra = sum(1 for d in diff
+                                    if not d.startswith('---') and not d.startswith('+++'))
+                        subtitle = (f'[dim]... 외 {extra - 60}줄[/dim]'
+                                    if extra > 60 else None)
                         self._output(Panel(body, title=title, subtitle=subtitle,
                                             border_style='#1a3a5a', padding=(0, 1)))
                 else:
