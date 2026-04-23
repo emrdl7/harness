@@ -78,14 +78,6 @@ Screen {
     background: #0d0d0d;
 }
 
-#stream-line {
-    height: auto;
-    min-height: 0;
-    padding: 0 2;
-    background: #0d0d0d;
-    color: #e0e0e0;
-}
-
 #status-bar {
     height: 1;
     background: #0d0d0d;
@@ -99,7 +91,7 @@ Screen {
     max-height: 14;
     background: #0d0d0d;
     layout: vertical;
-    padding: 1 1 1 1;
+    padding: 10 1 1 1;
 }
 
 #prompt-label {
@@ -269,7 +261,6 @@ class HarnessApp(App):
     # ── compose ────────────────────────────────────────────────────
     def compose(self) -> ComposeResult:
         yield RichLog(id='output', highlight=False, markup=True, wrap=True)
-        yield Static('', id='stream-line')
         yield Static('', id='status-bar')
         with Vertical(id='input-container'):
             yield Static(self._prompt_label(), id='prompt-label')
@@ -380,10 +371,6 @@ class HarnessApp(App):
             self._stream_buf = ''
         if remaining:
             self._rl_write(Text(remaining))
-        try:
-            self.query_one('#stream-line', Static).update('')
-        except Exception:
-            pass
 
     # ── 상태 ─────────────────────────────────────────────────────
     def _prompt_label(self) -> str:
@@ -700,21 +687,22 @@ class HarnessApp(App):
 
     # ── TUI 콜백 ──────────────────────────────────────────────────
     def _on_token_tui(self, token: str):
+        '''토큰을 버퍼에 모으고 줄바꿈을 만날 때마다 RichLog 에 append.
+
+        이전 버전은 _stream_buf 를 별도 Static(#stream-line, 하단) 에 갱신
+        했는데 줄바꿈 시 완성 라인이 RichLog(상단)로 "순간이동"하는 시각
+        점프가 발생. RichLog 에만 라인 단위로 쓰면 연속된 흐름이 된다.
+        '''
         def _write():
             with self._stream_lock:
                 self._stream_buf += token
-                buf = self._stream_buf
-            if '\n' in buf:
-                lines = buf.split('\n')
-                for line in lines[:-1]:
-                    self._rl_write(Text(line))
-                with self._stream_lock:
-                    self._stream_buf = lines[-1]
-                buf = lines[-1]
-            try:
-                self.query_one('#stream-line', Static).update(Text(buf))
-            except Exception:
-                pass
+                if '\n' not in self._stream_buf:
+                    return
+                lines = self._stream_buf.split('\n')
+                complete = lines[:-1]
+                self._stream_buf = lines[-1]
+            for line in complete:
+                self._rl_write(Text(line))
         try:
             self.call_from_thread(_write)
         except RuntimeError:
