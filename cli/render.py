@@ -201,6 +201,7 @@ SLASH_COMMANDS = {
     '/sessions': '저장된 세션 목록',
     '/init':     '.harness.toml 생성',
     '/claude':   'Claude CLI에 질문 (세션에 기록됨)  ex) /claude 이 함수 설명해줘',
+    '/agents':   '등록된 외부 AI 에이전트 목록 (Claude / 향후 Codex·Gemini)',
     '/think':    '마지막 응답의 reasoning 블록(<think>) 펼쳐보기',
     '/mode':     '승인 모드 전환  ex) /mode suggest | auto-edit | full-auto',
     '/help':     '도움말',
@@ -372,7 +373,7 @@ def _print_help() -> None:
         '진화':   ['/improve', '/learn', '/evolve', '/history', '/restore'],
         '파일':   ['/commit', '/push', '/pull', '/cd', '/files'],
         '세션':   ['/save', '/resume', '/sessions', '/init'],
-        'Claude': ['/claude'],
+        '외부 AI': ['/claude', '/agents'],
         '설정':   ['/mode'],
         '기타':   ['/help', '/quit'],
     }

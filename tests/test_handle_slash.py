@@ -8,6 +8,23 @@ from unittest.mock import MagicMock
 import main
 
 
+class TestAgents:
+    '''/agents — 외부 AI 레지스트리 목록.'''
+
+    def test_runs_without_crash(self):
+        new_msgs, wd, undo = main.handle_slash('/agents', [], '/tmp', {}, 0)
+        assert new_msgs == []
+        assert wd == '/tmp'
+
+    def test_shows_claude_by_default(self, monkeypatch):
+        '''Claude가 기본 등록되어 있으므로 /agents 분기가 빈 목록 브랜치로
+        빠지지 않음. 실제 Rich 출력은 캡쳐 없이 크래시만 검증.'''
+        new_msgs, wd, undo = main.handle_slash('/agents', [], '/tmp', {}, 0)
+        # registry는 모듈 import 시점에 등록됨 — 최소 1개는 있음
+        from tools import external_ai
+        assert len(external_ai.list_all()) >= 1
+
+
 class TestThink:
     '''/think — 마지막 assistant 메시지의 _thinking 필드 펼치기.'''
 

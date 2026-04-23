@@ -296,6 +296,24 @@ def handle_slash(cmd: str, session_msgs: list, working_dir: str, profile: dict, 
         _run_claude_cli(query, session_msgs=session_msgs, working_dir=working_dir, model=profile.get('claude_model') or None)
         return session_msgs, working_dir, undo_count
 
+    if name == '/agents':
+        from tools import external_ai
+        agents = external_ai.list_all()
+        if not agents:
+            console.print('  [dim]등록된 외부 에이전트가 없습니다[/dim]')
+            return session_msgs, working_dir, undo_count
+        t = Table(box=box.SIMPLE, show_header=True, border_style='dim')
+        t.add_column('키', style='bold magenta', no_wrap=True)
+        t.add_column('이름', no_wrap=True)
+        t.add_column('상태', no_wrap=True)
+        t.add_column('설명', style='dim')
+        for a in agents:
+            status = '[tool.ok]사용 가능[/tool.ok]' if a.is_available() else '[tool.fail]미설치[/tool.fail]'
+            t.add_row(a.key, a.name, status, a.description)
+        console.print(t)
+        console.print('  [dim]다른 에이전트를 붙이려면 tools/external_ai.py 참조[/dim]\n')
+        return session_msgs, working_dir, undo_count
+
     if name == '/think':
         # 마지막 assistant 메시지의 _thinking 필드 펼치기.
         # 세션 저장/복원 시에도 JSON 그대로 보존되므로 /resume 후에도 동작.
