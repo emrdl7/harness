@@ -23,8 +23,9 @@ from prompt_toolkit.formatted_text import HTML, to_formatted_text
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
 from prompt_toolkit.layout import Layout
-from prompt_toolkit.layout.containers import HSplit, Window
+from prompt_toolkit.layout.containers import Float, FloatContainer, HSplit, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
+from prompt_toolkit.layout.menus import CompletionsMenu
 from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.widgets import TextArea
 
@@ -132,10 +133,20 @@ def run_app(
         if not input_area.text and _running['task'] is None:
             event.app.exit()
 
-    layout = Layout(
-        HSplit([top_rule, input_area, bot_rule, status_win]),
-        focused_element=input_area,
+    # FloatContainer 로 입력창 위에 자동완성 popup (CompletionsMenu) 을 띄운다.
+    # xcursor/ycursor=True 로 커서 위치 근처에 popup 이 뜨고, complete_while_typing
+    # 을 켜뒀으므로 `/` 입력 즉시 슬래시 카탈로그 드롭다운이 보인다.
+    root = FloatContainer(
+        content=HSplit([top_rule, input_area, bot_rule, status_win]),
+        floats=[
+            Float(
+                xcursor=True,
+                ycursor=True,
+                content=CompletionsMenu(max_height=8, scroll_offset=1),
+            ),
+        ],
     )
+    layout = Layout(root, focused_element=input_area)
 
     app = Application(
         layout=layout,

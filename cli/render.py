@@ -140,6 +140,21 @@ def _infer_tool_purpose(name: str, args: dict) -> str:
 _SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 
 
+def _pt_app_running() -> bool:
+    '''prompt_toolkit Application 이 지금 돌고 있는지.
+
+    long-running Application(`cli.app.run_app`) 경로에서는 하단 layout 이
+    live 로 매 tick 재그려진다. 이 상태에서 `_Spinner` 가 sys.stdout 에
+    직접 ANSI escape 를 찍으면 cursor-up 으로 live 영역을 침범해 깜빡임 /
+    레이아웃 손상 유발. 진행 상태는 Application 상태바에서 대체 표시.
+    '''
+    try:
+        from prompt_toolkit.application.current import get_app_or_none
+        return get_app_or_none() is not None
+    except Exception:
+        return False
+
+
 class _Spinner:
     def __init__(self):
         self._stop = threading.Event()
@@ -148,6 +163,9 @@ class _Spinner:
 
     def start(self):
         if self.active:
+            return
+        if _pt_app_running():
+            # Application 모드에서는 no-op — live 영역과 충돌 회피
             return
         self.active = True
         self._stop.clear()
