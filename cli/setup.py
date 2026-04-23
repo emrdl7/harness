@@ -17,6 +17,8 @@ from rich.spinner import Spinner
 
 from prompt_toolkit import prompt as pt_prompt
 from prompt_toolkit.formatted_text import HTML
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.keys import Keys
 
 import config
 import context
@@ -33,6 +35,35 @@ from cli.render import (
 
 # ── 슬래시 자동완성 싱글톤 ──────────────────────────────────────
 slash_completer = SlashCompleter()
+
+
+# ── 입력 키바인딩 ────────────────────────────────────────────────
+# Claude Code 느낌: Enter = 제출, Meta/Option+Enter 또는 Shift+Enter = 개행.
+# multiline=True 에서 prompt_toolkit 기본은 Enter=newline 이므로 명시적으로
+# 오버라이드한다.
+_INPUT_KB = KeyBindings()
+
+
+@_INPUT_KB.add('enter')
+def _enter_submit(event):
+    event.current_buffer.validate_and_handle()
+
+
+@_INPUT_KB.add(Keys.Escape, Keys.Enter, eager=True)
+def _alt_enter_newline(event):
+    '''Meta+Enter (Option+Enter) = 실제 개행 삽입.'''
+    event.current_buffer.insert_text('\n')
+
+
+# 일부 터미널 (iTerm2 "Natural Text Editing", Alacritty 등) 은 Shift+Enter 를
+# 별도 키 시퀀스로 전송한다. 해당 환경에서는 이 바인딩이 newline 으로 먹고,
+# 구분을 못 보내는 터미널에서는 위의 `enter` 핸들러가 그대로 제출로 처리.
+try:
+    @_INPUT_KB.add('s-enter')
+    def _shift_enter_newline(event):
+        event.current_buffer.insert_text('\n')
+except Exception:
+    pass
 
 
 _BAR_WIDTH = 10  # ctx progress bar 셀 수
@@ -94,6 +125,9 @@ def get_input(turns: int, working_dir: str, session_msgs: list | None = None) ->
         style=PT_STYLE,
         complete_while_typing=True,
         bottom_toolbar=toolbar,
+        multiline=True,
+        key_bindings=_INPUT_KB,
+        prompt_continuation=lambda width, line_number, wrap_count: '',
     )
 
 
