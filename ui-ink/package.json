@@ -5,19 +5,35 @@
   "scripts": {
     "start": "bun run src/index.tsx",
     "dev": "bun run --watch src/index.tsx",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --max-warnings=0",
+    "test": "vitest run",
+    "ci:no-escape": "bash scripts/ci-no-escape.sh"
+  },
+  "engines": {
+    "bun": ">=1.2.19",
+    "node": ">=22.0.0"
   },
   "dependencies": {
-    "ink": "^5.0.1",
-    "ink-text-input": "^6.0.0",
-    "react": "^18.3.1",
-    "zustand": "^4.5.2",
-    "ws": "^8.18.0"
+    "@inkjs/ui": "^2.0.0",
+    "cli-highlight": "^2.1.11",
+    "diff": "^9.0.0",
+    "ink": "^7.0.1",
+    "ink-link": "^5.0.0",
+    "ink-select-input": "^6.2.0",
+    "ink-spinner": "^5.0.0",
+    "react": "^19.2.5",
+    "ws": "^8.20.0",
+    "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@eslint/js": "^9.0.0",
     "@types/bun": "latest",
-    "@types/react": "^18.3.3",
+    "@types/react": "^19.1.0",
     "@types/ws": "^8.5.10",
-    "typescript": "^5.4.5"
+    "eslint": "^9.0.0",
+    "ink-testing-library": "^4.0.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
   }
 }
