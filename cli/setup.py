@@ -35,23 +35,35 @@ from cli.render import (
 slash_completer = SlashCompleter()
 
 
-def _build_status_bar(session_msgs: list) -> HTML:
-    '''prompt_toolkit bottom_toolbar — model · ctx% · approval_mode.
+_BAR_WIDTH = 10  # ctx progress bar 셀 수
 
-    색상 의미:
-    - ctx: 80%↑ yellow, 95%↑ red
-    - mode: suggest=blue(읽기만), auto-edit=green(안전 기본), full-auto=red(위험)
+
+def _build_status_bar(session_msgs: list) -> HTML:
+    '''prompt_toolkit bottom_toolbar.
+
+    레이아웃 (역상 배경 제거, 레이블 생략, 공백 호흡):
+        {model}      {mode}      {▰▰▱▱▱▱▱▱▱▱} {pct}%
+
+    - 모델: cyan (정체성)
+    - 모드: 위험도 색 — suggest=blue / auto-edit=green / full-auto=red
+    - 진행바: dim(빈 셀) + ctx 색(채움 셀), 셀 수 _BAR_WIDTH
+    - %: 80%↑ yellow, 95%↑ red — 압축 타이밍 신호
     '''
     used = sum(len(m.get('content') or '') for m in session_msgs) // 4
     total = config.CONTEXT_WINDOW
     pct = int(used / total * 100) if total else 0
+    pct_clamped = min(pct, 100)
 
-    if pct >= 95:
+    if pct_clamped >= 95:
         ctx_color = 'ansired'
-    elif pct >= 80:
+    elif pct_clamped >= 80:
         ctx_color = 'ansiyellow'
     else:
         ctx_color = 'ansigreen'
+
+    filled = int(pct_clamped * _BAR_WIDTH / 100)
+    bar_filled = '▰' * filled
+    bar_empty = '▱' * (_BAR_WIDTH - filled)
 
     mode = config.APPROVAL_MODE
     mode_color = {
@@ -60,11 +72,13 @@ def _build_status_bar(session_msgs: list) -> HTML:
         'full-auto': 'ansired',
     }.get(mode, 'ansibrightblack')
 
-    sep = '<ansibrightblack>  ·  </ansibrightblack>'
+    # 세그먼트는 공백 4칸으로 분리 — 점/파이프 구분자보다 깔끔.
+    # pct 는 오른쪽 정렬 3칸으로 흔들림 없이 고정.
     return HTML(
-        f'  <ansibrightblack>model</ansibrightblack> <ansicyan>{config.MODEL}</ansicyan>'
-        f'{sep}<ansibrightblack>ctx</ansibrightblack> <{ctx_color}>{pct}%</{ctx_color}>'
-        f'{sep}<ansibrightblack>mode</ansibrightblack> <{mode_color}>{mode}</{mode_color}>'
+        f'  <ansicyan>{config.MODEL}</ansicyan>'
+        f'    <{mode_color}>{mode}</{mode_color}>'
+        f'    <{ctx_color}>{bar_filled}</{ctx_color}><ansibrightblack>{bar_empty}</ansibrightblack>'
+        f' <{ctx_color}>{pct:>3}%</{ctx_color}>'
     )
 
 

@@ -214,6 +214,10 @@ PT_STYLE = PtStyle.from_dict({
     'completion-menu.completion.current':      'bg:#0f3460 #ffffff bold',
     'completion-menu.meta.completion':         'bg:#1a1a2e #555555',
     'completion-menu.meta.completion.current': 'bg:#0f3460 #aaccff',
+    # bottom_toolbar 기본 스타일은 'bg:#aaaaaa #222222' (역상). 이를 제거해
+    # 터미널 기본 배경 + 기본 전경으로 띄움. 각 세그먼트가 자기 색만 입힘.
+    'bottom-toolbar':                          'noreverse bg:default fg:default',
+    'bottom-toolbar.text':                     'noreverse bg:default',
 })
 
 
