@@ -46,7 +46,7 @@
 
 ### 🟠 잔여 미해결 항목 요약 (2026-04-23 기준)
 
-- §1 Bugs: **4건** — 1.4(M, /commit+/push double-run), 1.9(M, hooks swallow), 1.10(H, run_command shell-quoting — sticky-deny로 부분 완화), 1.12(M, spinner vs Live)
+- §1 Bugs: **3건** — 1.4(M, /commit+/push double-run), 1.10(H, run_command shell-quoting — sticky-deny로 부분 완화), 1.12(M, spinner vs Live)
 - §2 Security: **2건** — 2.8(L, manual YAML), 2.10(M, per-conn HARNESS_CWD)
 - §3 Architecture: ~11건 (3.2/3.3 닫힘) — 3.1(H, main.py 1666줄)이 가장 큼
 - §4 Performance: 5건 (전부 L/M)
@@ -97,10 +97,10 @@
 - **Description:** `list_files(pattern='/Users/**')` is happily expanded. No `cwd` pinning. Combined with `read_file` accepting `os.path.expanduser(path)` everywhere, a compromised model can enumerate `~/.ssh`, `~/.aws`, `~/.claude`.
 - **Suggestion:** Normalize pattern relative to `working_dir` and reject absolute paths unless explicitly approved.
 
-### 1.9 `tools/hooks.py` swallows all errors, including hook-requested blocks (Medium)
-- **Location:** `tools/hooks.py:40-43`
-- **Description:** Both `TimeoutExpired` and generic `Exception` return `True` ("allow tool"). That means a hook that fails to start (wrong PATH, missing binary) is treated as approval. A security-minded `pre_tool_use` hook is silently bypassed the moment it has any runtime problem.
-- **Suggestion:** Make the policy explicit: on hook error return `False` (deny) by default; expose `HARNESS_HOOK_FAIL_MODE=allow|deny` env.
+### 1.9 ~~`tools/hooks.py` swallows all errors, including hook-requested blocks~~ ✅ FIXED 2026-04-23
+- **Location:** `tools/hooks.py:50-58`
+- **Description (당시):** Both `TimeoutExpired` and generic `Exception` returned `True` ("allow tool") → 보안 hook이 잘못된 PATH/누락 바이너리로 실행 실패 시 silently bypass.
+- **Fix applied:** `_fail_mode_allow()` 헬퍼 추가. timeout/exception 시 `HARNESS_HOOK_FAIL_MODE=allow` opt-in 없으면 **False**(deny) 반환. 기본 fail-close. 단위 테스트 9건(`tests/test_hooks.py`).
 
 ### 1.10 `run_command` shell-quoting relies on the model (High)
 - **Location:** `tools/shell.py:55-74` uses `shell=True`
