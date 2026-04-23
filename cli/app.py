@@ -31,7 +31,7 @@ from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.widgets import TextArea
 
 from cli.render import PT_STYLE, console
-from cli.setup import _build_status_bar, _ensure_csi_u_mode, slash_completer
+from cli.setup import _build_status_bar, slash_completer
 
 
 # 상태바 스피너 프레임 — brail dots. Application 내부 렌더로 회전하므로
@@ -51,15 +51,15 @@ def run_app(
         state_getter: (session_msgs, turns) 반환 — status bar 렌더용
         handle_turn: async fn. 입력 한 턴 처리 후 True(계속) / False(종료) 반환
     '''
-    _ensure_csi_u_mode()
+    # CSI u 확장 키보드 모드는 쓰지 않는다.
+    # 활성화 시 터미널이 `\x1b[27u` 같은 미매핑 시퀀스를 보내면 prompt_toolkit
+    # 이 해석 못 해 `[27u` 가 literal 로 입력창에 들어가는 버그가 있어 제거.
+    # Shift+Enter 는 Ctrl+J (모든 터미널에서 동작) 로 대체 유도.
 
     _running: dict = {'task': None}
     _spin: dict = {'i': 0}
 
-    # 입력 영역: 높이는 오로지 개행 수로만 결정. 폭 변경 시 늘어나지 않음.
-    # - wrap_lines=False: 긴 한 줄이 soft-wrap 되지 않아 폭이 줄어도 높이
-    #   증가 없음 (잘리는 부분은 가로 스크롤로 보임).
-    # - height=Dimension(min=1, max=10): 1줄 시작, 개행으로 최대 10줄.
+    # 입력 영역: content-based height, 1~10줄.
     input_area = TextArea(
         multiline=True,
         prompt=HTML('<prompt>❯ </prompt>'),
@@ -67,9 +67,19 @@ def run_app(
         complete_while_typing=True,
         wrap_lines=False,
         scrollbar=False,
-        height=Dimension(min=1, max=10),
         style='class:input',
     )
+
+    # 입력창 높이를 동적 callable 로 교체.
+    # Dimension(min=1, max=10) 의 preferred 기본값은 max(10) 이라 TextArea 가
+    # 초기부터 10줄을 차지해 화면 상단에 큰 빈 공간을 만드는 문제가 있다.
+    # content 의 `\n` 개수에 맞춰 preferred 를 계산하면 빈 입력은 1줄, 개행
+    # 여럿이면 그만큼 (최대 10) 만 차지.
+    def _input_height():
+        lines = input_area.buffer.text.count('\n') + 1
+        return Dimension(min=1, max=10, preferred=max(1, min(lines, 10)))
+
+    input_area.window.height = _input_height
 
     top_rule = Window(height=1, char='─', style='class:frame')
     bot_rule = Window(height=1, char='─', style='class:frame')
@@ -180,58 +190,55 @@ def run_app(
         refresh_interval=0.1,
     )
 
-    # SIGWINCH 에서 stale 라인 방지.
-    # prompt_toolkit inline 렌더러는 폭 변경 후 cursor-up 범위가 부정확 →
-    # 위쪽 `─` (top_rule) 이 누적됨. 현재 커서는 input_area 안쪽이라서
-    # erase_down() 만 하면 input 아래만 지워지고 top_rule 은 남는다.
-    # 해결: live 영역 최대 높이(14줄)만큼 먼저 cursor_up 후 erase_down
-    # → top_rule 포함 live 영역 전체 제거 → invalidate 로 깨끗이 재그림.
-    # scrollback(위쪽 과거 출력)은 건드리지 않음.
+    # SIGWINCH 에서 stale 라인 제거.
+    #
+    # 구현 핵심:
+    # 1) asyncio loop.add_signal_handler 로 등록 — signal.signal 은
+    #    prompt_toolkit 의 asyncio 경로에 덮여 호출 안 되는 이슈 회피.
+    #    app.run 시작 후 (pre_run 훅에서) 설치해 prompt_toolkit 의 기본
+    #    SIGWINCH 핸들러를 의도적으로 override.
+    # 2) escape 직접 쏘기 — cursor_up(넉넉히) → cursor_backward → erase_down.
+    #    이전 render 의 live 영역 + stale 누적분을 한 번에 제거.
+    # 3) renderer 내부 _last_screen = None 으로 초기화 → prompt_toolkit 이
+    #    "처음 그리는 것" 처럼 행동해 잘못된 cursor-up 계산 없이 새로 그림.
+    # 4) CPR 요청 + invalidate — next render 가 정확한 절대 좌표에서 시작.
     import signal as _signal
 
-    # live 영역 최대 행수: top_rule(1) + input_max(10) + bot_rule(1) +
-    #                    status(1) + 여유(1) = 14
-    _LIVE_ROWS = 14
+    # cursor up 량 — live 영역 충분히 커버 + resize 누적분까지 여유있게.
+    # scrollback 을 조금 건드릴 수 있지만 빈 줄이 될 뿐 원본 텍스트는
+    # scrollback buffer 에 보존되어 위로 스크롤 시 복구.
+    _WINCH_CLEAR_ROWS = 30
 
-    def _on_winch(*_a, **_kw):
+    def _on_winch():
         try:
             if not app.is_running:
                 return
             out = app.output
-            out.cursor_up(_LIVE_ROWS)
+            out.cursor_up(_WINCH_CLEAR_ROWS)
             out.cursor_backward(10_000)
             out.erase_down()
             out.flush()
+            # renderer internal state 초기화 → 다음 render 가 cursor-up 없이
+            # 현재 위치에서 처음부터 그림
+            try:
+                app.renderer._last_screen = None
+            except Exception:
+                pass
             app.renderer.request_absolute_cursor_position()
             app.invalidate()
         except Exception:
             pass
 
-    try:
-        _prev_winch = _signal.getsignal(_signal.SIGWINCH)
-    except (AttributeError, ValueError):
-        _prev_winch = None
+    def _pre_run():
+        '''Application 이 돌기 시작한 후 실행 — asyncio loop 에 SIGWINCH
+        핸들러를 등록해 prompt_toolkit 의 기본 핸들러를 override.'''
+        try:
+            import asyncio as _asyncio
+            loop = _asyncio.get_event_loop()
+            loop.add_signal_handler(_signal.SIGWINCH, _on_winch)
+        except (NotImplementedError, ValueError, RuntimeError, AttributeError):
+            # Windows / non-main thread 등은 SIGWINCH 미지원 — 스킵
+            pass
 
-    def _chained_winch(signum, frame):
-        _on_winch()
-        if callable(_prev_winch):
-            try:
-                _prev_winch(signum, frame)
-            except Exception:
-                pass
-
-    try:
-        _signal.signal(_signal.SIGWINCH, _chained_winch)
-    except (AttributeError, ValueError, OSError):
-        # 메인 스레드 아니거나 플랫폼(win32)이 SIGWINCH 미지원인 경우 무시
-        pass
-
-    try:
-        with patch_stdout(raw=True):
-            app.run()
-    finally:
-        if _prev_winch is not None:
-            try:
-                _signal.signal(_signal.SIGWINCH, _prev_winch)
-            except (AttributeError, ValueError, OSError):
-                pass
+    with patch_stdout(raw=True):
+        app.run(pre_run=_pre_run)
