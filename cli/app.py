@@ -197,26 +197,23 @@ def run_app(
 
     # Resize 누적 방지.
     #
-    # 지금까지 app.output.write_raw 로 escape 를 보냈지만 효과 없음 →
-    # patch_stdout 이 prompt_toolkit 의 Output 경로를 가로채고 있어 실제
-    # 터미널에 escape 가 안 나갔을 가능성이 큼. sys.__stdout__ (원본 stdout,
-    # patch 우회) 로 직접 쏜다.
-    # 그리고 일시적 debug 마커 — resize 감지가 실제로 호출되는지 확인.
-    import sys as _sys
+    # polling 은 호출되지만 sys.__stdout__.write 경로도 효과 없음이 관찰됨.
+    # 최저 레벨 os.write(fd=1) 로 직접 kernel write syscall → 어떤 Python
+    # buffering/patch 도 우회. 응답 byte 수로 실제 송출 확인 가능.
+    import os as _os
 
     def _on_winch():
         try:
             if not app.is_running:
                 return
-            # 진단용 marker — 호출되면 scrollback 에 ▸ 찍힘. 확인 후 제거.
+            wrote = -1
             try:
-                console.print('[dim red]▸ resize[/dim red]')
+                wrote = _os.write(1, b'\x1b[2J\x1b[H')
             except Exception:
                 pass
-            # patch_stdout 우회해서 원본 terminal 에 직접 escape.
+            # 진단 marker — 실제 kernel 로 몇 byte 쓰였는지 확인
             try:
-                _sys.__stdout__.write('\x1b[2J\x1b[H')
-                _sys.__stdout__.flush()
+                console.print(f'[dim red]▸ resize (wrote {wrote}B)[/dim red]')
             except Exception:
                 pass
             try:
