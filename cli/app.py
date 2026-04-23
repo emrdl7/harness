@@ -56,14 +56,16 @@ def run_app(
     _running: dict = {'task': None}
     _spin: dict = {'i': 0}
 
-    # 입력 영역 높이 제한 — 기본 1줄, 내용 따라 최대 10줄까지 확장 후 scroll.
-    # 제한 없으면 wrap_lines 로 터미널 폭이 줄 때마다 높이가 누적되는 버그.
+    # 입력 영역: 높이는 오로지 개행 수로만 결정. 폭 변경 시 늘어나지 않음.
+    # - wrap_lines=False: 긴 한 줄이 soft-wrap 되지 않아 폭이 줄어도 높이
+    #   증가 없음 (잘리는 부분은 가로 스크롤로 보임).
+    # - height=Dimension(min=1, max=10): 1줄 시작, 개행으로 최대 10줄.
     input_area = TextArea(
         multiline=True,
         prompt=HTML('<prompt>❯ </prompt>'),
         completer=slash_completer,
         complete_while_typing=True,
-        wrap_lines=True,
+        wrap_lines=False,
         scrollbar=False,
         height=Dimension(min=1, max=10),
         style='class:input',
