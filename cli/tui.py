@@ -330,6 +330,10 @@ class HarnessApp(App):
         # 스피너 — set_interval 타이머가 status-bar 앞에 회전 프레임을 찍음
         self._spinner_timer = None
         self._spinner_frame_idx = 0
+        # 코드 블록 감지 — ```lang ... ``` 을 Syntax Panel 로 렌더
+        self._code_fence_open = False
+        self._code_lang = ''
+        self._code_buf: list[str] = []
 
         # TUI 모드 전환용 원본 백업 (exit 시 복원)
         self._orig_cb = {}
@@ -480,7 +484,14 @@ class HarnessApp(App):
                     (config.MODEL, 'bold orange3'),
                 ))
                 self._assistant_header_printed = True
-            self._rl_write(Text('  ' + remaining))
+            # 코드 펜스 안이면 버퍼에 쌓고, 밖이면 평문
+            if self._code_fence_open:
+                self._code_buf.append(remaining)
+            else:
+                self._rl_write(Text('  ' + remaining))
+        # 코드 펜스 미종료 상태로 스트림 끝났으면 버퍼 내용이라도 Panel 로 렌더
+        if self._code_fence_open:
+            self._flush_code_block()
 
     # ── 상태 ─────────────────────────────────────────────────────
     def _prompt_label(self) -> str:
@@ -722,6 +733,9 @@ class HarnessApp(App):
         self._set_running(True)
         self._assistant_header_printed = False
         self._unknown_tools.clear()
+        self._code_fence_open = False
+        self._code_lang = ''
+        self._code_buf.clear()
         self._output(Text())
         try:
             snippets = get_context_snippets(user_input, self.working_dir, self.profile)
@@ -789,6 +803,9 @@ class HarnessApp(App):
         '''harness_core.dispatch → /plan / /cplan 실행 시 에이전트 호출.'''
         self._assistant_header_printed = False
         self._unknown_tools.clear()
+        self._code_fence_open = False
+        self._code_lang = ''
+        self._code_buf.clear()
         self._output(Text())
         try:
             _, self.session_msgs = agent.run(
@@ -866,8 +883,8 @@ class HarnessApp(App):
     def _on_token_tui(self, token: str):
         '''토큰을 버퍼에 모으고 줄바꿈을 만날 때마다 RichLog 에 append.
 
-        첫 완성 라인 직전에 `● 모델명` 헤더를 한 번 출력, 이후 각 라인에
-        2칸 들여쓰기 — REPL _flush_tokens 와 동일한 스타일.
+        ```lang ... ``` 코드 블록을 감지해 블록이 끝나면 Syntax Panel 로 렌더.
+        평문 라인은 그대로 2칸 들여쓰기. 첫 라인 직전에 `● 모델명` 헤더.
         '''
         def _write():
             with self._stream_lock:
@@ -884,7 +901,7 @@ class HarnessApp(App):
                 ))
                 self._assistant_header_printed = True
             for line in complete:
-                self._rl_write(Text('  ' + line))
+                self._handle_assistant_line(line)
         try:
             self.call_from_thread(_write)
         except RuntimeError:
@@ -892,6 +909,49 @@ class HarnessApp(App):
                 _write()
             except Exception:
                 pass
+
+    def _handle_assistant_line(self, line: str):
+        '''assistant 응답 한 라인 처리 — 코드 펜스 상태머신.'''
+        stripped = line.strip()
+        is_fence = stripped.startswith('```') or stripped.startswith('~~~')
+        if self._code_fence_open:
+            if is_fence:
+                # 블록 종료 → Syntax Panel 로 한 번에 렌더
+                self._flush_code_block()
+            else:
+                self._code_buf.append(line)
+        else:
+            if is_fence:
+                self._code_fence_open = True
+                # ```html 또는 ``` 뒤 언어 추출
+                self._code_lang = stripped.lstrip('`~').strip() or 'text'
+                self._code_buf = []
+            else:
+                self._rl_write(Text('  ' + line))
+
+    def _flush_code_block(self):
+        '''코드 펜스 종료 시 버퍼 내용을 Syntax Panel 로 렌더.'''
+        if not self._code_buf:
+            self._code_fence_open = False
+            self._code_lang = ''
+            return
+        from rich.syntax import Syntax
+        from rich.panel import Panel
+        code_text = '\n'.join(self._code_buf)
+        try:
+            body = Syntax(code_text, self._code_lang or 'text',
+                          theme='ansi_dark', line_numbers=False,
+                          word_wrap=False, background_color='default')
+        except Exception:
+            # 알 수 없는 lexer → 평문
+            body = Syntax(code_text, 'text', theme='ansi_dark',
+                          line_numbers=False, word_wrap=False,
+                          background_color='default')
+        title = f'[#5ab6ff]{self._code_lang}[/#5ab6ff]' if self._code_lang != 'text' else None
+        self._rl_write(Panel(body, title=title, border_style='#1a3a5a', padding=(0, 1)))
+        self._code_fence_open = False
+        self._code_lang = ''
+        self._code_buf = []
 
     def _on_tool_tui(self, name: str, args: dict, result):
         import time as _time
