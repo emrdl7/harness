@@ -180,17 +180,30 @@ def run_app(
         refresh_interval=0.1,
     )
 
-    # SIGWINCH 에서 렌더러 내부 state 를 강제로 지워 stale 라인 누적 방지.
-    # prompt_toolkit inline(full_screen=False) 은 terminal 폭이 바뀌면 이전
-    # 렌더의 soft-wrap 라인 수를 못 맞춰 cursor-up 범위가 부정확해진다.
-    # erase() 로 전체 지우고 다음 tick 에 깨끗이 다시 그린다.
+    # SIGWINCH 에서 stale 라인 방지.
+    # prompt_toolkit inline 렌더러는 폭 변경 후 cursor-up 범위가 부정확 →
+    # 위쪽 `─` (top_rule) 이 누적됨. 현재 커서는 input_area 안쪽이라서
+    # erase_down() 만 하면 input 아래만 지워지고 top_rule 은 남는다.
+    # 해결: live 영역 최대 높이(14줄)만큼 먼저 cursor_up 후 erase_down
+    # → top_rule 포함 live 영역 전체 제거 → invalidate 로 깨끗이 재그림.
+    # scrollback(위쪽 과거 출력)은 건드리지 않음.
     import signal as _signal
+
+    # live 영역 최대 행수: top_rule(1) + input_max(10) + bot_rule(1) +
+    #                    status(1) + 여유(1) = 14
+    _LIVE_ROWS = 14
 
     def _on_winch(*_a, **_kw):
         try:
-            if app.is_running:
-                app.renderer.erase()
-                app.invalidate()
+            if not app.is_running:
+                return
+            out = app.output
+            out.cursor_up(_LIVE_ROWS)
+            out.cursor_backward(10_000)
+            out.erase_down()
+            out.flush()
+            app.renderer.request_absolute_cursor_position()
+            app.invalidate()
         except Exception:
             pass
 
