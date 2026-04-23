@@ -2,6 +2,8 @@ import json
 import os
 import re
 import time
+from collections import deque
+
 import requests
 import config
 from tools import TOOL_DEFINITIONS, TOOL_MAP
@@ -12,7 +14,11 @@ import skills
 
 MAX_TOOL_RESULT_CHARS = 20_000
 
-SYSTEM_PROMPT = f'''당신은 코드 작성 전문 AI 에이전트입니다.
+def _system_prompt() -> str:
+    '''CONCERNS §3.13: import 시점 f-string 빌드는 config.runtime_override 후
+    바뀐 MODEL을 반영 못 함. 호출 시점에 lazy 빌드해 .harness.toml override 반영.
+    '''
+    return f'''당신은 코드 작성 전문 AI 에이전트입니다.
 당신의 실제 모델명은 {config.MODEL}입니다. 자신의 정체를 물으면 이 모델명을 정확히 답하세요.
 Anthropic의 Claude가 아니며, Claude 기반이라고 주장하지 마세요.
 파일 읽기/쓰기, 코드 실행, git 툴을 사용해 사용자의 요청을 완수하세요.
@@ -149,7 +155,7 @@ def _parse_text_tool_calls(text: str) -> list:
 
 
 def _build_system(working_dir: str, profile: dict, context_snippets: str = '') -> str:
-    parts = [SYSTEM_PROMPT, f'\n현재 작업 디렉토리: {working_dir}']
+    parts = [_system_prompt(), f'\n현재 작업 디렉토리: {working_dir}']
 
     if profile.get('global_doc'):
         parts.append(f'\n--- HARNESS.md ---\n{profile["global_doc"]}')
@@ -215,7 +221,9 @@ def run(
 
     consecutive_failures = 0
     _start = time.time()
-    _tool_call_history: list[tuple[str, str]] = []  # (tool_name, args_hash)
+    # CONCERNS §3.8: maxlen=10으로 unbounded 성장 차단. REPEAT_WINDOW=3 기준
+    # 충분 — 과거 기록을 길게 들고 있어도 활용 안 됨.
+    _tool_call_history: deque[tuple[str, str]] = deque(maxlen=10)
     # 사용자가 이번 turn 안에서 confirm을 한 번이라도 거부했으면 True.
     # 이후 모든 run_command/run_python은 safe 분류여도 confirm을 강제 (모델이
     # 우회 명령으로 같은 의도를 달성하는 것을 차단).
@@ -364,9 +372,10 @@ def run(
             continue
 
         # 반복 감지: 최근 3회 동일 툴+인자 반복 시 강제 개입
+        # deque는 슬라이싱 미지원이라 list 변환 (maxlen=10이라 비용 무시 가능).
         REPEAT_WINDOW = 3
         if len(_tool_call_history) >= REPEAT_WINDOW:
-            recent = _tool_call_history[-REPEAT_WINDOW:]
+            recent = list(_tool_call_history)[-REPEAT_WINDOW:]
             if all(tc == recent[0] for tc in recent):
                 session_messages.append({
                     'role': 'user',

@@ -121,3 +121,20 @@ class TestStreamRetry:
         with pytest.raises(requests.HTTPError):
             agent._stream_response([])
         assert len(calls) == 3
+
+
+class TestSystemPromptLazy:
+    '''CONCERNS §3.13 — SYSTEM_PROMPT가 import 시점이 아닌 호출 시점에 빌드되어
+    config.runtime_override로 바뀐 MODEL을 반영해야 함.'''
+
+    def test_reflects_runtime_model(self, monkeypatch):
+        monkeypatch.setattr(agent.config, 'MODEL', 'test-model:99b')
+        prompt = agent._system_prompt()
+        assert 'test-model:99b' in prompt
+
+    def test_changes_when_model_changes_again(self, monkeypatch):
+        monkeypatch.setattr(agent.config, 'MODEL', 'first:7b')
+        assert 'first:7b' in agent._system_prompt()
+        monkeypatch.setattr(agent.config, 'MODEL', 'second:14b')
+        assert 'second:14b' in agent._system_prompt()
+        assert 'first:7b' not in agent._system_prompt()

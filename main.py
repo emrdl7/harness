@@ -14,8 +14,6 @@ from rich.spinner import Spinner
 from rich.table import Table
 from rich.tree import Tree
 from rich.theme import Theme
-from rich.markdown import Markdown
-from rich.text import Text
 from rich.syntax import Syntax
 from rich import box
 

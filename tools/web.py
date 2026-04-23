@@ -5,7 +5,6 @@ import socket
 import ipaddress
 import html
 import re
-import unicodedata
 
 try:
     from ddgs import DDGS

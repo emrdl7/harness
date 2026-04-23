@@ -13,9 +13,13 @@ def search(query: str, directory: str, k: int = TOP_K) -> list[dict]:
 
     try:
         collection = _get_client(project_id)
+        # CONCERNS §4.4: count()는 한 번만 호출하고 결과를 재사용. 0이면 즉시 종료.
+        n = collection.count()
+        if n == 0:
+            return []
         results = collection.query(
             query_texts=[query],
-            n_results=min(k, collection.count()),
+            n_results=min(k, n),
             include=['documents', 'metadatas', 'distances'],
         )
     except Exception:

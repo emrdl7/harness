@@ -47,9 +47,9 @@
 ### 🟠 잔여 미해결 항목 요약 (2026-04-23 기준)
 
 - §1 Bugs: **2건** — 1.10(H, run_command shell-quoting — sticky-deny로 부분 완화), 1.12(M, spinner vs Live)
-- §2 Security: **1건** — 2.8(L, manual YAML)
-- §3 Architecture: ~11건 (3.2/3.3 닫힘) — 3.1(H, main.py 1666줄)이 가장 큼
-- §4 Performance: 5건 (전부 L/M)
+- §2 Security: **1건** — 2.8(L, manual YAML — PyYAML 의존성 비용 vs 가치 미해결)
+- §3 Architecture: **7건** (3.2/3.3/3.8/3.12/3.13 닫힘) — 3.1(H, main.py 1666줄)이 가장 큼. 3.4·3.5·3.6·3.7·3.9·3.10·3.11 잔여
+- §4 Performance: **6건** (4.4 닫힘) — 4.1·4.2·4.3·4.5·4.6·4.7
 
 ---
 
@@ -271,10 +271,10 @@
 - **Description:** Budget constants live in 4 modules and are not connected to `CONTEXT_WINDOW`. Changing `num_ctx` does not adjust compaction or tool result truncation.
 - **Suggestion:** Derive from a single `BUDGETS = compute_budgets(CONTEXT_WINDOW)` object at startup.
 
-### 3.8 `agent.py` tracks `_tool_call_history` but never clears on new user turn (Low)
-- **Location:** `agent.py:274-318`
-- **Description:** The repetition detector resets `_tool_call_history.clear()` only after it triggers. On a long multi-turn conversation the list grows unbounded. Memory is small, but the `REPEAT_WINDOW` check only looks at the last 3, so historical entries are dead weight.
-- **Suggestion:** Reset at the top of `run()` or cap with `collections.deque(maxlen=10)`.
+### 3.8 ~~`agent.py` tracks `_tool_call_history` but never clears on new user turn~~ ✅ FIXED 2026-04-23
+- **Location:** `agent.py` (run 함수 내부)
+- **Description (당시):** list가 unbounded 성장. trigger 후에만 clear.
+- **Fix applied:** `collections.deque(maxlen=10)`로 변경. REPEAT_WINDOW=3 기준 충분한 히스토리 유지하면서 자동 cap. 슬라이싱은 `list(...)[-N:]`로 변환.
 
 ### 3.9 `_parse_text_tool_calls` accepts both XML and JSON, normalizes neither (Low)
 - **Location:** `agent.py:94-115`
@@ -291,14 +291,14 @@
 - **Description:** Sessions, logs, patterns, proposals, changelog, history, mtimes, idle locks all dumped flat. No schema version field → a future format change breaks old data silently.
 - **Suggestion:** Add `~/.harness/version.json` and a lightweight migrator.
 
-### 3.12 Unused module-level imports (Low)
-- **Location:** `main.py:15-19` imports `Markdown`, `Text` (unused); `session/logger.py` no timezone awareness; `tools/web.py:5` imports `unicodedata` (unused).
-- **Suggestion:** Run `ruff --select F401` once.
+### 3.12 ~~Unused module-level imports~~ ✅ FIXED 2026-04-23
+- **Location:** `main.py`, `tools/web.py`
+- **Fix applied:** `main.py`에서 `Markdown`, `Text` 제거. `tools/web.py`에서 `unicodedata` 제거. `session/logger.py` timezone 부분은 별 항목으로 남겨둠 (현재 운영 영향 없음).
 
-### 3.13 `config.py:runtime_override` mutates module globals (Medium)
-- **Location:** `config.py:30-52`
-- **Description:** `global MODEL, OLLAMA_BASE_URL, CONTEXT_WINDOW, OLLAMA_OPTIONS, APPROVAL_MODE`. Modules that `from config import MODEL` early will hold a stale reference. Most files use `config.MODEL` (correct), but `agent.py:15` builds `SYSTEM_PROMPT = f'...{config.MODEL}...'` at import time — before `runtime_override` runs. Result: the system prompt always names the `config.py` default, never the `.harness.toml` override.
-- **Suggestion:** Build `SYSTEM_PROMPT` lazily inside `_build_system`.
+### 3.13 ~~`config.py:runtime_override` mutates module globals — SYSTEM_PROMPT가 stale MODEL 참조~~ ✅ FIXED 2026-04-23
+- **Location:** `agent.py`
+- **Description (당시):** `SYSTEM_PROMPT = f'...{config.MODEL}...'`이 import 시점 빌드 → `runtime_override` 후 변경된 MODEL 미반영.
+- **Fix applied:** `_system_prompt()` 함수로 변환. `_build_system`이 호출 시점에 `_system_prompt()`로 빌드 → `.harness.toml` override 정상 반영. 단위 테스트 2건(`tests/test_agent_retry.py::TestSystemPromptLazy`).
 
 ---
 
@@ -319,9 +319,9 @@
 - **Description:** Hard truncation of concatenated source at 10 000 chars. Once the harness grows past that (already close: `main.py` alone is 60 KB), the self-improvement agent reasons over a partial view. It will produce plausible-looking diffs that break unseen code.
 - **Suggestion:** Restrict to `affected_files` only, read each in full, and use a dedicated larger-context model path.
 
-### 4.4 `context/retriever.py` calls `collection.count()` every search (Low)
-- **Location:** `context/retriever.py:19`
-- **Description:** ChromaDB `count()` is cheap but not free. Cache or use a sentinel for empty collection.
+### 4.4 ~~`context/retriever.py` calls `collection.count()` every search~~ ✅ FIXED 2026-04-23
+- **Location:** `context/retriever.py:18`
+- **Fix applied:** count()를 한 번만 호출해 변수 `n`에 저장 후 재사용. n==0이면 query 자체를 건너뛰고 즉시 빈 결과 반환 (빈 컬렉션 fast-path).
 
 ### 4.5 `/improve` reads entire log history and entire source set into one prompt (Medium)
 - **Location:** `main.py:540-555`
