@@ -72,30 +72,29 @@ Screen {
 }
 
 #output {
-    /* 내용이 짧으면 그만큼만, 화면 넘치면 1fr 까지 확장 후 내부 스크롤.
-       덕분에 초반엔 배너/환영 바로 아래 입력창이 붙어있다가, 대화가
-       쌓일수록 입력창이 자연스럽게 내려오다 하단 고정으로 전환.
-       border-bottom 으로 입력 영역과의 경계선 한 줄만 유지 (매 턴마다
-       그어지던 Rule 을 대체). */
-    height: auto;
-    max-height: 1fr;
+    /* 남은 공간 차지 (1fr). 최소 5줄은 확보해 작은 터미널도 안정.
+       border-bottom 으로 입력 영역과의 경계선 한 줄만 유지. */
+    height: 1fr;
+    min-height: 5;
     padding: 0 2;
     scrollbar-size: 1 1;
     background: transparent;
-    border-bottom: solid #2a2a2a;
+    border-bottom: solid #1a3a5a;
 }
 
 #status-bar {
     height: 1;
     background: transparent;
-    color: #555555;
+    color: #4a6a8a;
     padding: 0 3;
 }
 
 #input-container {
+    /* label(1) + margin(1) + input-box(최대 6) + hints(최대 6) + padding(2)
+       ≈ 16. 이 이상 커지지 않아 output 이 절대 짓눌리지 않음. */
     height: auto;
     min-height: 4;
-    max-height: 24;
+    max-height: 16;
     background: transparent;
     layout: vertical;
     padding: 1 1 1 1;
@@ -104,16 +103,17 @@ Screen {
 #prompt-label {
     height: 1;
     background: transparent;
-    color: #00aaff;
+    color: #5ab6ff;
     text-style: bold;
     padding: 0 2;
     margin-bottom: 1;
 }
 
 #input-box {
+    /* 입력 6줄까지 표시. 그 이상은 TextArea 내부 스크롤. */
     height: auto;
     min-height: 1;
-    max-height: 12;
+    max-height: 6;
     background: transparent;
     border: none;
     padding: 0 2;
@@ -126,13 +126,13 @@ Screen {
 }
 
 #slash-hints {
+    /* 기본 0 높이(없을 땐 공간 안 차지). / 입력 시 5~6줄 나타남. */
     height: auto;
     min-height: 0;
     max-height: 6;
     background: transparent;
-    color: #6a7a8a;
+    color: #4a6a8a;
     padding: 0 2;
-    margin-bottom: 1;
 }
 
 /* TextArea 내부 레이어도 투명 — cursor-line 강조/gutter 구분 모두 제거. */
@@ -324,10 +324,10 @@ class HarnessApp(App):
         yield RichLog(id='output', highlight=False, markup=True, wrap=True)
         yield Static('', id='status-bar')
         with Vertical(id='input-container'):
-            # 슬래시 힌트가 입력창 위에서 튀어오르는 형태 (Claude Code 스타일)
-            yield Static('', id='slash-hints')
             yield Static(self._prompt_label(), id='prompt-label')
             yield _InputArea(id='input-box', show_line_numbers=False, soft_wrap=True)
+            # 슬래시 힌트는 입력창 바로 아래
+            yield Static('', id='slash-hints')
 
     def on_mount(self):
         self._install_redirects()
@@ -560,13 +560,13 @@ class HarnessApp(App):
         if not matches:
             hints.update('[dim]일치하는 명령 없음[/dim]')
             return
-        # 최대 5줄
+        # 최대 5줄 — 청색 계열 cmd + dim 설명
         lines = []
         for cmd, desc in matches[:5]:
             short_desc = desc.split('  ex)')[0]
-            lines.append(f'[bold magenta]{cmd:<10}[/bold magenta] [dim]{short_desc}[/dim]')
+            lines.append(f'[bold #5ab6ff]{cmd:<10}[/bold #5ab6ff] [#4a6a8a]{short_desc}[/#4a6a8a]')
         if len(matches) > 5:
-            lines.append(f'[dim]... 외 {len(matches) - 5}개 (Tab 으로 완성)[/dim]')
+            lines.append(f'[#3a5a7a]... 외 {len(matches) - 5}개 (Tab 으로 완성)[/#3a5a7a]')
         hints.update('\n'.join(lines))
 
     @on(InputSubmitted)
