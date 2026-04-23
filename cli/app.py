@@ -190,24 +190,24 @@ def run_app(
         refresh_interval=0.1,
     )
 
-    # SIGWINCH 에서 stale 라인 제거.
+    # Resize 누적 방지 — asyncio polling 으로 직접 감지.
     #
-    # 구현 핵심:
-    # 1) asyncio loop.add_signal_handler 로 등록 — signal.signal 은
-    #    prompt_toolkit 의 asyncio 경로에 덮여 호출 안 되는 이슈 회피.
-    #    app.run 시작 후 (pre_run 훅에서) 설치해 prompt_toolkit 의 기본
-    #    SIGWINCH 핸들러를 의도적으로 override.
-    # 2) escape 직접 쏘기 — cursor_up(넉넉히) → cursor_backward → erase_down.
-    #    이전 render 의 live 영역 + stale 누적분을 한 번에 제거.
-    # 3) renderer 내부 _last_screen = None 으로 초기화 → prompt_toolkit 이
-    #    "처음 그리는 것" 처럼 행동해 잘못된 cursor-up 계산 없이 새로 그림.
-    # 4) CPR 요청 + invalidate — next render 가 정확한 절대 좌표에서 시작.
-    import signal as _signal
-
-    # cursor up 량 — live 영역 충분히 커버 + resize 누적분까지 여유있게.
-    # scrollback 을 조금 건드릴 수 있지만 빈 줄이 될 뿐 원본 텍스트는
-    # scrollback buffer 에 보존되어 위로 스크롤 시 복구.
-    _WINCH_CLEAR_ROWS = 30
+    # 왜 SIGWINCH signal 대신 polling?
+    #  · signal.signal 은 prompt_toolkit 의 asyncio 경로에 덮여 호출 안 됨.
+    #  · loop.add_signal_handler 도 prompt_toolkit 기본 핸들러와 충돌.
+    #  · shutil.get_terminal_size 를 주기(100ms) 폴링 → 확실히 감지.
+    #
+    # 왜 창 "줄일" 때만 누적?
+    #  · Window(char='─') 이 old 폭(예 100)에서 100개를 그리면 new 폭(80)
+    #    에서 soft-wrap 되어 terminal 상 2줄 사용. prompt_toolkit 은 이걸
+    #    논리적 1줄로 기억해 cursor_up(1) 만 하므로 위 1줄이 stale 로 남음.
+    #  · 폭 넓힐 때는 wrap 이 없어 누적 없음.
+    #
+    # 처리: cursor_up(50) → cursor_backward → erase_down → _last_screen=None
+    #       → CPR 요청 → invalidate. 50 줄은 live 영역(≤ max 13) + 누적분
+    #       여유. scrollback 일부는 빈 줄이 되지만 terminal buffer 에는
+    #       원본 보존이라 위로 스크롤 시 복구.
+    _WINCH_CLEAR_ROWS = 50
 
     def _on_winch():
         try:
@@ -218,8 +218,6 @@ def run_app(
             out.cursor_backward(10_000)
             out.erase_down()
             out.flush()
-            # renderer internal state 초기화 → 다음 render 가 cursor-up 없이
-            # 현재 위치에서 처음부터 그림
             try:
                 app.renderer._last_screen = None
             except Exception:
@@ -230,15 +228,31 @@ def run_app(
             pass
 
     def _pre_run():
-        '''Application 이 돌기 시작한 후 실행 — asyncio loop 에 SIGWINCH
-        핸들러를 등록해 prompt_toolkit 의 기본 핸들러를 override.'''
+        '''app.run 시작 후 호출 — asyncio background task 로 terminal size
+        변경을 100ms 주기로 polling. signal 기반보다 확실.'''
+        import shutil as _shutil
+        import asyncio as _asyncio
+
+        _size_state = {'size': _shutil.get_terminal_size()}
+
+        async def _watch_size():
+            while True:
+                try:
+                    cur = _shutil.get_terminal_size()
+                    if cur != _size_state['size']:
+                        _size_state['size'] = cur
+                        _on_winch()
+                except Exception:
+                    pass
+                await _asyncio.sleep(0.1)
+
         try:
-            import asyncio as _asyncio
-            loop = _asyncio.get_event_loop()
-            loop.add_signal_handler(_signal.SIGWINCH, _on_winch)
-        except (NotImplementedError, ValueError, RuntimeError, AttributeError):
-            # Windows / non-main thread 등은 SIGWINCH 미지원 — 스킵
-            pass
+            app.create_background_task(_watch_size())
+        except Exception:
+            try:
+                _asyncio.ensure_future(_watch_size())
+            except Exception:
+                pass
 
     with patch_stdout(raw=True):
         app.run(pre_run=_pre_run)
