@@ -1,10 +1,27 @@
 // ESLint flat config — Ink 금지 패턴 강제 (FND-10)
 import js from '@eslint/js'
+import tsParser from '@typescript-eslint/parser'
 
 export default [
-  js.configs.recommended,
+  {
+    // JS 기본 권장 규칙 — TypeScript 가 커버하는 항목은 비활성화
+    ...js.configs.recommended,
+    rules: {
+      ...js.configs.recommended.rules,
+      'no-undef': 'off',        // tsc --noEmit 이 처리
+      'no-unused-vars': 'off',  // tsc --noEmit 이 처리
+    }
+  },
   {
     files: ['src/**/*.{ts,tsx}'],
+    languageOptions: {
+      parser: tsParser,
+      parserOptions: {
+        ecmaVersion: 2022,
+        sourceType: 'module',
+        ecmaFeatures: {jsx: true}
+      }
+    },
     rules: {
       // Ink 이중 렌더 붕괴 방지 (CLAUDE.md 절대 금지)
       'no-restricted-syntax': [
