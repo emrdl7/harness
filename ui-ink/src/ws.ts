@@ -1,13 +1,13 @@
-/* harness_server.py 와의 WebSocket 연결.
+/* harness_server.py 와의 WebSocket 연결 (레거시 — Plan C 에서 ws/client.ts 로 교체 예정).
  *
- * 프로토콜(현행 기준, 다음 세션에 명세 확정):
- *   · 서버 → 클라: ready / state_snapshot / on_token / on_tool /
+ * 프로토콜 (교정된 이름):
+ *   · 서버 → 클라: ready / state_snapshot / token / tool_start / tool_end /
  *                   confirm_write / confirm_bash / error / agent_start /
  *                   agent_end / room_* / queue / queue_ready
  *   · 클라 → 서버: input / confirm_write_response / confirm_bash_response /
  *                   slash
  *
- * 현 스켈레톤은 연결 + 기본 메시지 라우팅만. 상세 구현은 plan phase 에서.
+ * 현 스켈레톤은 연결 + 기본 메시지 라우팅만. 상세 구현은 ws/dispatch.ts 참조.
  */
 import WebSocket from 'ws';
 import {useStore, Message} from './store.js';
@@ -44,13 +44,19 @@ export function connect({url, token, room}: ConnectOptions): WebSocket {
       case 'ready':
         // TODO: 초기화 처리
         break;
-      case 'on_token':
+      case 'token':
         appendMessage({role: 'assistant', content: String(msg.text ?? '')});
         break;
-      case 'on_tool':
+      case 'tool_start':
         appendMessage({
           role: 'tool',
           content: `[${msg.name}] ${JSON.stringify(msg.args ?? {})}`,
+        });
+        break;
+      case 'tool_end':
+        appendMessage({
+          role: 'tool',
+          content: `[${msg.name}] ${msg.result ?? ''}`,
           meta: {result: msg.result},
         });
         break;
@@ -61,7 +67,7 @@ export function connect({url, token, room}: ConnectOptions): WebSocket {
         setBusy(false);
         break;
       case 'error':
-        appendMessage({role: 'system', content: `error: ${msg.message}`});
+        appendMessage({role: 'system', content: `오류: ${msg.text}`});
         break;
       // TODO: confirm_write / confirm_bash / room_* / state_snapshot
     }
