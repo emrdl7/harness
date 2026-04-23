@@ -38,29 +38,41 @@ slash_completer = SlashCompleter()
 
 
 # ── 입력 키바인딩 ────────────────────────────────────────────────
-# Claude Code 느낌: Enter = 제출, Meta/Option+Enter 또는 Shift+Enter = 개행.
-# multiline=True 에서 prompt_toolkit 기본은 Enter=newline 이므로 명시적으로
-# 오버라이드한다.
+# Claude Code 느낌: Enter = 제출, 개행은 아래 바인딩 중 동작하는 걸 사용.
+# multiline=True 의 prompt_toolkit 기본은 Enter=newline 이므로 `eager=True`
+# 로 우리 바인딩이 우선하게 해서 override.
+#
+# 개행 키:
+#  · Ctrl+J — 모든 터미널에서 동작하는 범용 개행 (가장 확실).
+#  · Meta+Enter (Option+Enter → ESC Enter 시퀀스) — macOS Terminal.app 은
+#    Preferences → Profiles → Keyboard "Use Option as Meta key" 체크 필요.
+#    iTerm2 는 Profile → Keys → Left/Right Option Key → "Esc+".
+#  · Shift+Enter — iTerm2 "Natural Text Editing" 등 일부에서만.
 _INPUT_KB = KeyBindings()
 
 
-@_INPUT_KB.add('enter')
+@_INPUT_KB.add('enter', eager=True)
 def _enter_submit(event):
+    '''Enter = 제출. (개행은 Ctrl+J / Meta+Enter / Shift+Enter.)'''
     event.current_buffer.validate_and_handle()
+
+
+@_INPUT_KB.add('c-j')
+def _ctrl_j_newline(event):
+    '''Ctrl+J = 개행 (가장 범용 — 터미널 설정 없이 모두 동작).'''
+    event.current_buffer.insert_text('\n')
 
 
 @_INPUT_KB.add(Keys.Escape, Keys.Enter, eager=True)
 def _alt_enter_newline(event):
-    '''Meta+Enter (Option+Enter) = 실제 개행 삽입.'''
+    '''Meta+Enter (Option+Enter) = 개행. 터미널이 Option→Meta 설정된 경우.'''
     event.current_buffer.insert_text('\n')
 
 
-# 일부 터미널 (iTerm2 "Natural Text Editing", Alacritty 등) 은 Shift+Enter 를
-# 별도 키 시퀀스로 전송한다. 해당 환경에서는 이 바인딩이 newline 으로 먹고,
-# 구분을 못 보내는 터미널에서는 위의 `enter` 핸들러가 그대로 제출로 처리.
 try:
     @_INPUT_KB.add('s-enter')
     def _shift_enter_newline(event):
+        '''Shift+Enter = 개행 (iTerm2 Natural Text Editing 등에서만 동작).'''
         event.current_buffer.insert_text('\n')
 except Exception:
     pass
