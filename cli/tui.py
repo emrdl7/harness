@@ -87,8 +87,8 @@ Screen {
 
 #input-container {
     height: auto;
-    min-height: 5;
-    max-height: 18;
+    min-height: 4;
+    max-height: 16;
     background: #0d0d0d;
     layout: vertical;
     padding: 1 1 1 1;
@@ -100,7 +100,7 @@ Screen {
     color: #00aaff;
     text-style: bold;
     padding: 0 2;
-    margin-bottom: 2;
+    margin-bottom: 1;
 }
 
 #input-box {
