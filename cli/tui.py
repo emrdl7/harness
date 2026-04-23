@@ -30,7 +30,6 @@ from textual.binding import Binding
 from textual.message import Message
 from textual import on
 
-from rich.rule import Rule
 from rich.text import Text
 from rich.panel import Panel
 from rich import box
@@ -75,12 +74,15 @@ Screen {
 #output {
     /* 내용이 짧으면 그만큼만, 화면 넘치면 1fr 까지 확장 후 내부 스크롤.
        덕분에 초반엔 배너/환영 바로 아래 입력창이 붙어있다가, 대화가
-       쌓일수록 입력창이 자연스럽게 내려오다 하단 고정으로 전환. */
+       쌓일수록 입력창이 자연스럽게 내려오다 하단 고정으로 전환.
+       border-bottom 으로 입력 영역과의 경계선 한 줄만 유지 (매 턴마다
+       그어지던 Rule 을 대체). */
     height: auto;
     max-height: 1fr;
     padding: 0 2;
     scrollbar-size: 1 1;
     background: transparent;
+    border-bottom: solid #2a2a2a;
 }
 
 #status-bar {
@@ -571,7 +573,7 @@ class HarnessApp(App):
 
     def _run_agent_thread(self, user_input: str, plan_mode: bool = False):
         self._set_running(True)
-        self._output(Rule(style='dim'), Text())
+        self._output(Text())
         try:
             snippets = get_context_snippets(user_input, self.working_dir, self.profile)
             _, self.session_msgs = agent.run(
@@ -595,7 +597,7 @@ class HarnessApp(App):
             self.call_from_thread(self._flush_stream)
         except RuntimeError:
             pass
-        self._output(Text(), Rule(style='dim'), Text())
+        self._output(Text())
         self._set_running(False)
 
     def _run_claude_thread(self, query: str):
@@ -634,7 +636,7 @@ class HarnessApp(App):
     # ── handle_slash DI 콜백들 ────────────────────────────────────
     def _run_agent_for_core(self, user_input, *, plan_mode=False, context_snippets=''):
         '''harness_core.dispatch → /plan / /cplan 실행 시 에이전트 호출.'''
-        self._output(Rule(style='dim'), Text())
+        self._output(Text())
         try:
             _, self.session_msgs = agent.run(
                 user_input,
@@ -662,7 +664,7 @@ class HarnessApp(App):
     def _run_agent_ephemeral(self, user_input, *, system_prompt, working_dir, profile):
         '''/improve, /learn 임시 세션.'''
         session = [{'role': 'system', 'content': system_prompt}]
-        self._output(Rule(style='dim'), Text())
+        self._output(Text())
         try:
             agent.run(
                 user_input,
@@ -688,7 +690,7 @@ class HarnessApp(App):
         '''/cplan phase 1 — Claude 플랜 수집 (스트리밍).'''
         from tools.claude_cli import ask as _ask
         collected = []
-        self._output(Rule('[bold blue]Claude[/bold blue]', style='blue dim', align='left'))
+        self._output(Text.assemble(('\n● Claude', 'bold blue'), ('\n', '')))
 
         def _tok(line):
             collected.append(line)
@@ -698,7 +700,7 @@ class HarnessApp(App):
         except Exception as e:
             self._output(Text(f'  ✗ {e}\n', style='bold red'))
             return ''
-        self._output(Rule(style='dim'))
+        self._output(Text())
         return ''.join(collected).strip()
 
     def _confirm_execute_for_core(self, plan_text, task):
