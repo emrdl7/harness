@@ -1,6 +1,6 @@
 # harness — ui-ink Milestone State
 
-**Last updated:** 2026-04-23
+**Last updated:** 2026-04-24
 
 ---
 
@@ -15,10 +15,10 @@
 ## Current Position
 
 - **Phase:** 1 — Foundation
-- **Plan:** (not yet planned)
-- **Status:** Not started
+- **Plan:** 3 plans (Wave 1: A+B 병렬 / Wave 2: C)
+- **Status:** Ready to execute
 - **Progress:** `[░░░░░░░░░░] 0% (0/5 phases complete)`
-- **Next action:** `/gsd-discuss-phase 1` (discuss mode) 또는 `/gsd-plan-phase 1` (직행)
+- **Next action:** `/gsd-execute-phase 1`
 
 ---
 
@@ -26,7 +26,7 @@
 
 | # | Name | Status | Plans |
 |---|------|--------|-------|
-| 1 | Foundation | Not started | 0/0 |
+| 1 | Foundation | Ready to execute | 3/3 |
 | 2 | Core UX | Not started | 0/0 |
 | 3 | Remote Room + Session Control | Not started | 0/0 |
 | 4 | Testing + Docs + External Beta | Not started | 0/0 |
@@ -74,15 +74,16 @@
 
 ### Last session summary
 
-- `/gsd-new-project` 실행 → PROJECT.md · REQUIREMENTS.md · research/{STACK, FEATURES, ARCHITECTURE, PITFALLS, SUMMARY}.md · ROADMAP.md · STATE.md 생성 완료.
-- 85개 v1 REQ-ID 를 5 phase 로 매핑 완료 (Phase 1: 16 · Phase 2: 28 · Phase 3: 24 · Phase 4: 9 · Phase 5: 8).
-- 누적 결정: BB-1/BB-2 완료 · `main.py` 분할 완료 (1666 → 515) — 이번 milestone 에서 `main.py` 자체가 삭제 대상.
+- `/gsd-plan-phase 1` 실행 → Phase 1 플랜 3개 생성 완료. 검증 통과 (0 blocker, 0 warning).
+- Plan A (Wave 1): 의존성 bump (ink@7/react@19.2/zustand@5), tsconfig, ESLint, CI 가드 — FND-01,02,09,10,11
+- Plan B (Wave 1, 병렬): WS 프로토콜 교정, protocol.ts, ws/ 모듈, store 5 슬라이스 — FND-03..08
+- Plan C (Wave 2): 하드닝, vitest 4종, end-to-end 스모크 — FND-12..16
+- 이전: `/gsd-new-project` 실행 · 85 REQ-ID · ROADMAP 5 phase · BB-1/BB-2 완료.
 
 ### Next session should
 
-1. Phase 1 discuss 또는 plan 진입.
-2. `/gsd-discuss-phase 1` 으로 의존성 bump · 프로토콜 정합성 · 하드닝 3 개 작업군의 상호 의존성/병렬 가능성 논의.
-3. 또는 `/gsd-plan-phase 1` 으로 바로 plan 수립.
+1. `/gsd-execute-phase 1` — Wave 1 (Plan A + Plan B 병렬) → Wave 2 (Plan C) 순서로 실행.
+2. Phase 1 exit criteria 확인: `bun start` smoke · `tsc --noEmit` green · vitest green · alternate screen 가드.
 
 ---
 
