@@ -27,6 +27,8 @@ from cli.render import (
     _tool_meta_for,
     _tool_result_hint,
     _infer_tool_purpose,
+    _render_diff_body,
+    _summarize_diff,
 )
 
 
@@ -91,36 +93,43 @@ def on_tool(name: str, args: dict, result):
         _spinner.start()
 
 
+_last_write_stats: dict = {}  # on_tool 에서 "+N 추가 -M 삭제" 요약에 재사용
+
+
 def confirm_write(path: str, content: str = None) -> bool:
     _flush_tokens()
+    _spinner.stop()
     if content is not None:
-        # diff 미리보기
         try:
             if os.path.exists(path):
                 with open(path, encoding='utf-8', errors='replace') as f:
                     old_lines = f.readlines()
-                label = path
+                is_new = False
             else:
                 old_lines = []
-                label = f'{path} (새 파일)'
+                is_new = True
             new_lines = [l if l.endswith('\n') else l + '\n' for l in content.splitlines()]
-            diff = list(difflib.unified_diff(old_lines, new_lines, fromfile=label, tofile=label, lineterm=''))
+            diff = list(difflib.unified_diff(
+                old_lines, new_lines, fromfile=path, tofile=path, lineterm='',
+            ))
             if diff:
-                for line in diff[:60]:
-                    if line.startswith('+++') or line.startswith('---'):
-                        console.print(f'  [dim]{line}[/dim]')
-                    elif line.startswith('+'):
-                        console.print(f'  [green]{line}[/green]')
-                    elif line.startswith('-'):
-                        console.print(f'  [red]{line}[/red]')
-                    elif line.startswith('@@'):
-                        console.print(f'  [cyan]{line}[/cyan]')
-                    else:
-                        console.print(f'  [dim]{line}[/dim]')
+                from rich.panel import Panel
+                title = f'{path}' + (' (새 파일)' if is_new else '')
+                body = _render_diff_body(diff, max_lines=60)
+                console.print(Panel(body, title=title, title_align='left',
+                                    border_style='dim', padding=(0, 1)))
+                stats = _summarize_diff(diff, path)
+                _last_write_stats.clear()
+                _last_write_stats.update(stats)
+                extra = ''
                 if len(diff) > 60:
-                    console.print(f'  [dim]... (이하 {len(diff)-60}줄 생략)[/dim]')
+                    extra = f' [dim](이하 {len(diff) - 60}줄 생략)[/dim]'
+                console.print(
+                    f'  [green]+{stats["added"]} 추가[/green]  '
+                    f'[red]-{stats["removed"]} 삭제[/red]{extra}'
+                )
             else:
-                console.print(f'  [dim]변경 없음[/dim]')
+                console.print('  [dim]변경 없음[/dim]')
         except Exception:
             pass
     return Confirm.ask(f'[bold]●[/bold] [warn]Write[/warn] [bold]{path}[/bold]')

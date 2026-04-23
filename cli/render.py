@@ -397,3 +397,134 @@ def _print_help() -> None:
         '  [dim]@claude <질문>[/dim] — Claude에게 직접 질문 (세션에 기록)\n'
         '  [dim]@claude [/dim] 로 시작하는 입력은 슬래시 없이도 동작합니다\n'
     )
+
+
+# ── Write/Edit diff 렌더 (Claude Code 스타일) ─────────────────────
+_LEXER_BY_EXT = {
+    '.py': 'python', '.pyi': 'python',
+    '.js': 'javascript', '.mjs': 'javascript', '.jsx': 'jsx',
+    '.ts': 'typescript', '.tsx': 'tsx',
+    '.html': 'html', '.htm': 'html',
+    '.css': 'css', '.scss': 'scss', '.sass': 'sass',
+    '.json': 'json', '.jsonc': 'json',
+    '.toml': 'toml', '.yaml': 'yaml', '.yml': 'yaml',
+    '.md': 'markdown', '.markdown': 'markdown',
+    '.sh': 'bash', '.bash': 'bash', '.zsh': 'bash',
+    '.go': 'go', '.rs': 'rust', '.rb': 'ruby',
+    '.sql': 'sql', '.xml': 'xml',
+    '.c': 'c', '.h': 'c', '.cpp': 'cpp', '.hpp': 'cpp',
+    '.java': 'java', '.kt': 'kotlin',
+    '.swift': 'swift', '.dart': 'dart',
+    '.lua': 'lua', '.php': 'php',
+    '.dockerfile': 'dockerfile',
+}
+
+
+def _lexer_for_path(path: str) -> str:
+    '''확장자 → pygments lexer 이름. 모르면 text.'''
+    ext = os.path.splitext(path.lower())[1]
+    return _LEXER_BY_EXT.get(ext, 'text')
+
+
+def _summarize_diff(diff: list, path: str) -> dict:
+    '''unified_diff 결과에서 추가/삭제 카운트 + 샘플 라인(최대 6개) 추출.
+
+    반환: {'path', 'added', 'removed', 'samples': [(line_no, kind, content), ...]}
+    '''
+    import re
+    added = 0
+    removed = 0
+    samples: list = []
+    old_ln = 0
+    new_ln = 0
+    for d in diff:
+        if d.startswith('---') or d.startswith('+++'):
+            continue
+        if d.startswith('@@'):
+            m = re.match(r'@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@', d)
+            if m:
+                old_ln = int(m.group(1))
+                new_ln = int(m.group(2))
+            continue
+        if d.startswith('+'):
+            added += 1
+            if len(samples) < 6:
+                samples.append((new_ln, '+', d[1:].rstrip('\n')))
+            new_ln += 1
+        elif d.startswith('-'):
+            removed += 1
+            if len(samples) < 6:
+                samples.append((old_ln, '-', d[1:].rstrip('\n')))
+            old_ln += 1
+        else:
+            old_ln += 1
+            new_ln += 1
+    return {'path': path, 'added': added, 'removed': removed, 'samples': samples}
+
+
+def _render_diff_body(diff: list, max_lines: int = 60):
+    '''unified_diff → Claude Code 스타일 Renderable (rich.console.Group).
+
+    - 추가: 녹색 배경 + `+` + 라인번호(new)
+    - 삭제: 적색 배경 + `-` + 라인번호(old)
+    - 컨텍스트: dim + new 라인번호
+    - @@ 헤더: cyan dim, 이후 라인번호 재설정
+    - 파일 헤더(---/+++) 는 스킵 (Panel title로 대체)
+    '''
+    import re
+    from rich.console import Group
+    from rich.text import Text
+
+    ADD_BG = 'on #0a2a0a'
+    DEL_BG = 'on #3a0f0f'
+    CONTEXT_STYLE = 'dim'
+    MARKER_ADD = 'bold green'
+    MARKER_DEL = 'bold red'
+    LN_STYLE = 'dim #4a6a8a'
+
+    rendered: list = []
+    old_ln = 0
+    new_ln = 0
+    count = 0
+
+    for line in diff:
+        if line.startswith('---') or line.startswith('+++'):
+            continue
+        if count >= max_lines:
+            break
+        if line.startswith('@@'):
+            m = re.match(r'@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@', line)
+            if m:
+                old_ln = int(m.group(1))
+                new_ln = int(m.group(2))
+            rendered.append(Text(line, style='dim cyan'))
+            count += 1
+            continue
+        if line.startswith('+') and not line.startswith('+++'):
+            content = line[1:].rstrip('\n')
+            t = Text(no_wrap=True)
+            t.append(f'{new_ln:>4} ', style=LN_STYLE)
+            t.append('+ ', style=MARKER_ADD)
+            t.append(content.ljust(160), style=ADD_BG)
+            rendered.append(t)
+            new_ln += 1
+        elif line.startswith('-') and not line.startswith('---'):
+            content = line[1:].rstrip('\n')
+            t = Text(no_wrap=True)
+            t.append(f'{old_ln:>4} ', style=LN_STYLE)
+            t.append('- ', style=MARKER_DEL)
+            t.append(content.ljust(160), style=DEL_BG)
+            rendered.append(t)
+            old_ln += 1
+        else:
+            content = (line[1:] if line.startswith(' ') else line).rstrip('\n')
+            t = Text(no_wrap=True)
+            t.append(f'{new_ln:>4} ', style=LN_STYLE)
+            t.append('  ', style='')
+            t.append(content, style=CONTEXT_STYLE)
+            rendered.append(t)
+            old_ln += 1
+            new_ln += 1
+        count += 1
+
+    return Group(*rendered)
