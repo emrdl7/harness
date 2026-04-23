@@ -218,6 +218,10 @@ PT_STYLE = PtStyle.from_dict({
     # 터미널 기본 배경 + 기본 전경으로 띄움. 각 세그먼트가 자기 색만 입힘.
     'bottom-toolbar':                          'noreverse bg:default fg:default',
     'bottom-toolbar.text':                     'noreverse bg:default',
+    # Application 기반 입력창 (get_input): 라운드 프레임 + 프롬프트 색
+    'frame':                                   'fg:#5a6a7a',
+    'input-prompt':                            'fg:ansicyan bold',
+    'status-bar':                              'noreverse bg:default fg:default',
 })
 
 

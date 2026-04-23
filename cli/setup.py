@@ -173,26 +173,95 @@ def _build_status_bar(session_msgs: list, working_dir: str, turns: int) -> HTML:
 
 
 def get_input(turns: int, working_dir: str, session_msgs: list | None = None) -> str:
+    '''Claude Code 스타일 입력창 — 위/아래 수평선 + 좌측 `>` 프롬프트.
+
+    ─────────────────────────────────────────────
+    > 입력
+      연속 줄
+    ─────────────────────────────────────────────
+      ~/harness    model    turn N    mode    ▰▰▱▱…  pct%
+
+    - Enter=제출, Ctrl+J / Alt+Enter / Shift+Enter=개행
+    - erase_when_done=True: 제출 후 입력 영역은 사라지고 단순 echo 라인만
+      console 에 남아 대화 로그로 보존.
+    '''
     _ensure_csi_u_mode()
-    slash_completer.working_dir = working_dir  # arg 자동완성이 현재 dir 기준 동작
-    toolbar = (
-        _build_status_bar(session_msgs, working_dir, turns)
-        if session_msgs is not None else None
-    )
-    # Claude Code 스타일: 입력 영역 위쪽 구분선 (하단은 bottom_toolbar 가 담당).
-    width = max(10, console.size.width)
-    console.print(f'[dim]{"─" * width}[/dim]')
-    return pt_prompt(
-        HTML('<ansicyan><b>❯</b></ansicyan> '),
-        completer=slash_completer,
-        style=PT_STYLE,
-        complete_while_typing=True,
-        bottom_toolbar=toolbar,
+    slash_completer.working_dir = working_dir
+
+    from prompt_toolkit.application import Application
+    from prompt_toolkit.formatted_text import to_formatted_text
+    from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.layout import Layout
+    from prompt_toolkit.layout.containers import HSplit, Window
+    from prompt_toolkit.layout.controls import FormattedTextControl
+    from prompt_toolkit.widgets import TextArea
+
+    input_area = TextArea(
         multiline=True,
-        key_bindings=_INPUT_KB,
-        # 연속 줄은 첫 줄의 "❯ " 폭(2칸)에 맞춰 공백 두 칸으로 들여쓰기
-        prompt_continuation=lambda width, line_number, wrap_count: '  ',
+        prompt='> ',
+        completer=slash_completer,
+        complete_while_typing=True,
+        wrap_lines=True,
+        scrollbar=False,
+        focus_on_click=True,
+        style='class:input',
     )
+
+    top_rule    = Window(height=1, char='─', style='class:frame')
+    bottom_rule = Window(height=1, char='─', style='class:frame')
+
+    def _status_ft():
+        return to_formatted_text(
+            _build_status_bar(session_msgs or [], working_dir, turns)
+        )
+
+    status = Window(
+        content=FormattedTextControl(text=_status_ft),
+        height=1,
+        style='class:status-bar',
+    )
+
+    kb = KeyBindings()
+
+    @kb.add('enter', eager=True)
+    def _submit(event):
+        event.app.exit(result=input_area.text)
+
+    @kb.add('c-j')
+    def _newline_ctrl_j(event):
+        input_area.buffer.insert_text('\n')
+
+    @kb.add(Keys.Escape, Keys.Enter, eager=True)
+    def _newline_alt_enter(event):
+        input_area.buffer.insert_text('\n')
+
+    @kb.add('c-c')
+    def _interrupt(event):
+        event.app.exit(exception=KeyboardInterrupt())
+
+    @kb.add('c-d')
+    def _eof(event):
+        if not input_area.text:
+            event.app.exit(exception=EOFError())
+
+    layout = Layout(HSplit([top_rule, input_area, bottom_rule, status]))
+
+    app = Application(
+        layout=layout,
+        key_bindings=kb,
+        style=PT_STYLE,
+        full_screen=False,
+        mouse_support=False,
+        erase_when_done=True,
+    )
+    result = app.run()
+
+    # 입력 영역이 사라진 자리에 단순 echo 를 console 로 남긴다.
+    if result is not None:
+        for i, line in enumerate(result.split('\n')):
+            prefix = '[prompt]>[/prompt] ' if i == 0 else '  '
+            console.print(f'{prefix}{line}')
+    return result if result is not None else ''
 
 
 # ── 인덱싱 ────────────────────────────────────────────────────────
