@@ -146,12 +146,21 @@ def main():
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('-p', '--print', dest='one_shot', metavar='QUERY', default=None)
     parser.add_argument('--continue', dest='resume', action='store_true')
+    parser.add_argument('--tui', dest='tui', action='store_true',
+                        help='Textual 기반 분리 입력창 UI (실험적)')
     parser.add_argument('extra', nargs='?', default=None)
     args, _ = parser.parse_known_args()
 
     working_dir = os.path.abspath(os.environ.get('HARNESS_CWD') or os.getcwd())
     profile = prof.load(working_dir)
     config.runtime_override(profile)
+
+    # --tui: Textual 앱으로 분기. REPL 경로는 그대로 유지.
+    if args.tui:
+        from cli.tui import run_tui
+        run_tui(working_dir, profile, args)
+        return
+
     session_msgs: list = []
     undo_count: int = 0
 

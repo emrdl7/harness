@@ -15,12 +15,14 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "pytest>=8.0",
+  "pytest-asyncio>=1.0",  # cli.tui 의 Textual Pilot 테스트 (async)
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-q"
+asyncio_mode = "auto"  # async test 자동 감지 — 별도 @pytest.mark.asyncio 불필요
 filterwarnings = [
   "ignore::DeprecationWarning",
 ]
