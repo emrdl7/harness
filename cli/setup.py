@@ -198,7 +198,7 @@ def get_input(turns: int, working_dir: str, session_msgs: list | None = None) ->
 
     input_area = TextArea(
         multiline=True,
-        prompt='> ',
+        prompt=HTML('<prompt>❯ </prompt>'),
         completer=slash_completer,
         complete_while_typing=True,
         wrap_lines=True,
@@ -259,7 +259,7 @@ def get_input(turns: int, working_dir: str, session_msgs: list | None = None) ->
     # 입력 영역이 사라진 자리에 단순 echo 를 console 로 남긴다.
     if result is not None:
         for i, line in enumerate(result.split('\n')):
-            prefix = '[prompt]>[/prompt] ' if i == 0 else '  '
+            prefix = '[prompt]❯[/prompt] ' if i == 0 else '  '
             console.print(f'{prefix}{line}')
     return result if result is not None else ''
 
