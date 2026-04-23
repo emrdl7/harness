@@ -181,6 +181,44 @@ def _lexer_for_path(path: str) -> str:
     return _LEXER_BY_EXT.get(ext, 'text')
 
 
+def _summarize_diff(diff: list, path: str) -> dict:
+    '''unified_diff 결과에서 추가/삭제 카운트와 샘플 라인(최대 6개) 추출.
+
+    반환:
+        {'path': str, 'added': int, 'removed': int,
+         'samples': [(line_no, kind, content), ...]}
+    '''
+    import re
+    added = 0
+    removed = 0
+    samples: list = []
+    old_ln = 0
+    new_ln = 0
+    for d in diff:
+        if d.startswith('---') or d.startswith('+++'):
+            continue
+        if d.startswith('@@'):
+            m = re.match(r'@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@', d)
+            if m:
+                old_ln = int(m.group(1))
+                new_ln = int(m.group(2))
+            continue
+        if d.startswith('+'):
+            added += 1
+            if len(samples) < 6:
+                samples.append((new_ln, '+', d[1:]))
+            new_ln += 1
+        elif d.startswith('-'):
+            removed += 1
+            if len(samples) < 6:
+                samples.append((old_ln, '-', d[1:]))
+            old_ln += 1
+        else:
+            old_ln += 1
+            new_ln += 1
+    return {'path': path, 'added': added, 'removed': removed, 'samples': samples}
+
+
 def _render_diff_body(diff: list, max_lines: int = 60):
     '''unified_diff 결과를 Claude Code 스타일 Renderable 로 변환.
 
@@ -405,6 +443,9 @@ class HarnessApp(App):
         self._code_fence_open = False
         self._code_lang = ''
         self._code_buf: list[str] = []
+        # 최근 confirm_write 시점에 계산한 diff 통계 — _on_tool_tui 에서 꺼내
+        # "Added N / Removed M + 샘플 라인" 형태로 풍부한 결과 hint 를 출력.
+        self._last_write_stats: dict | None = None
 
         # TUI 모드 전환용 원본 백업 (exit 시 복원)
         self._orig_cb = {}
@@ -1043,13 +1084,20 @@ class HarnessApp(App):
             elapsed_str = f' · {elapsed:.1f}s' if elapsed > 0.5 else ''
             hint = _tool_result_hint(name, result)
             if result.get('ok'):
-                self._output(Text.assemble(
-                    ('  ⎿  ', 'dim'),
-                    ('✓ ', 'green'),
-                    (hint, 'dim'),
-                    (elapsed_str, 'dim'),
-                    ('\n', ''),
-                ))
+                # write_file / edit_file + 저장된 stats 있으면 Claude Code 스타일 요약
+                if (name in ('write_file', 'edit_file')
+                        and self._last_write_stats
+                        and self._last_write_stats.get('path') == args.get('path')):
+                    self._emit_write_stats_hint(elapsed_str)
+                    self._last_write_stats = None
+                else:
+                    self._output(Text.assemble(
+                        ('  ⎿  ', 'dim'),
+                        ('✓ ', 'green'),
+                        (hint, 'dim'),
+                        (elapsed_str, 'dim'),
+                        ('\n', ''),
+                    ))
             else:
                 self._output(Text.assemble(
                     ('  ⎿  ', 'dim'),
@@ -1058,6 +1106,36 @@ class HarnessApp(App):
                     (elapsed_str, 'dim'),
                     ('\n', ''),
                 ))
+
+    def _emit_write_stats_hint(self, elapsed_str: str):
+        '''Claude Code 스타일: ⎿ Added N  Removed M + 샘플 라인 몇 개.'''
+        s = self._last_write_stats or {}
+        added = s.get('added', 0)
+        removed = s.get('removed', 0)
+        samples = s.get('samples', [])  # [(line_no, kind, content), ...]
+        summary = Text.assemble(
+            ('  ⎿  ', 'dim'),
+            (f'+{added} ', 'bold green'),
+            ('추가', 'dim'),
+            ('  ', ''),
+            (f'-{removed} ', 'bold red'),
+            ('삭제', 'dim'),
+            (elapsed_str, 'dim'),
+            ('\n', ''),
+        )
+        self._output(summary)
+        # 샘플 최대 3줄
+        for ln_no, kind, content in samples[:3]:
+            marker_style = 'bold green' if kind == '+' else 'bold red'
+            bg_style = 'on #0a2a0a' if kind == '+' else 'on #3a0f0f'
+            t = Text(no_wrap=True)
+            t.append('      ', style='')
+            t.append(f'{ln_no:>4} ', style='dim #4a6a8a')
+            t.append(f'{kind} ', style=marker_style)
+            t.append(content[:120].ljust(120), style=bg_style)
+            self._output(t)
+        if len(samples) > 3:
+            self._output(Text(f'      ... 외 {len(samples) - 3}줄', style='dim'))
 
     def _on_thought_tui(self, token: str):
         # thinking 은 화면에 안 찍고 세션에만 보관 (agent.py 가 저장).
@@ -1133,6 +1211,9 @@ class HarnessApp(App):
                             '[dim](변경 없음)[/dim]',
                             title=title, border_style='#1a3a5a', padding=(0, 1),
                         ))
+                        self._last_write_stats = {
+                            'path': path, 'added': 0, 'removed': 0, 'samples': [],
+                        }
                     else:
                         body = _render_diff_body(diff, max_lines=60)
                         extra = sum(1 for d in diff
@@ -1141,17 +1222,26 @@ class HarnessApp(App):
                                     if extra > 60 else None)
                         self._output(Panel(body, title=title, subtitle=subtitle,
                                             border_style='#1a3a5a', padding=(0, 1)))
+                        self._last_write_stats = _summarize_diff(diff, path)
                 else:
                     # 새 파일 → 확장자 기반 syntax 그대로
                     lexer = _lexer_for_path(path)
-                    shown_content = '\n'.join(content.splitlines()[:60])
+                    lines_all = content.splitlines()
+                    shown_content = '\n'.join(lines_all[:60])
                     body = Syntax(shown_content, lexer, theme='ansi_dark',
                                   line_numbers=True, word_wrap=False, background_color='default')
-                    total_lines = len(content.splitlines())
+                    total_lines = len(lines_all)
                     subtitle = (f'[dim]... 외 {total_lines - 60}줄[/dim]'
                                 if total_lines > 60 else None)
                     self._output(Panel(body, title=title, subtitle=subtitle,
                                         border_style='#1a3a5a', padding=(0, 1)))
+                    # 새 파일 전체가 추가 — 샘플은 앞 3줄
+                    self._last_write_stats = {
+                        'path': path,
+                        'added': total_lines,
+                        'removed': 0,
+                        'samples': [(i + 1, '+', lines_all[i]) for i in range(min(3, total_lines))],
+                    }
             except Exception:
                 pass
         return self._ask_yes_no(f'Write {path}', default=False)
