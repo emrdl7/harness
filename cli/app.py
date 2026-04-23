@@ -154,7 +154,9 @@ def run_app(
             _render(),
             console=live_console,
             refresh_per_second=10,
-            transient=False,
+            # transient=True: live.stop() / __exit__ 시 region 을 지워
+            # scrollback 에 status bar 가 중복으로 쌓이는 현상 방지.
+            transient=True,
             screen=False,
             get_renderable=_render,
             auto_refresh=True,
