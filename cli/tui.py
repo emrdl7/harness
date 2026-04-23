@@ -95,7 +95,7 @@ Screen {
 #input-container {
     height: auto;
     min-height: 4;
-    max-height: 16;
+    max-height: 24;
     background: transparent;
     layout: vertical;
     padding: 1 1 1 1;
@@ -123,6 +123,15 @@ Screen {
 #input-box:focus {
     border: none;
     background: transparent;
+}
+
+#slash-hints {
+    height: auto;
+    min-height: 0;
+    max-height: 8;
+    background: transparent;
+    color: #6a7a8a;
+    padding: 0 2;
 }
 
 /* TextArea 내부 레이어도 투명 — cursor-line 강조/gutter 구분 모두 제거. */
@@ -160,11 +169,13 @@ class _InputArea(TextArea):
     - Enter: submit (기본 newline 동작 override)
     - Shift+Enter: 줄바꿈 (multi-line 입력)
     - Ctrl+J: 줄바꿈 (OS 환경에 따라 Shift+Enter 가 막힐 때 대안)
+    - Tab: 슬래시 자동완성 (단일 매칭이면 완성, 여러 개면 공통 prefix)
     '''
     BINDINGS = [
         Binding('enter', 'submit_input', 'Submit', show=False, priority=True),
         Binding('shift+enter', 'newline', 'Newline', show=False),
         Binding('ctrl+j', 'newline', 'Newline', show=False),
+        Binding('tab', 'complete_slash', 'Complete', show=False, priority=True),
     ]
 
     def action_submit_input(self) -> None:
@@ -175,6 +186,33 @@ class _InputArea(TextArea):
     def action_newline(self) -> None:
         # 현재 커서 위치에 개행 삽입
         self.insert('\n')
+
+    def action_complete_slash(self) -> None:
+        '''Tab — 현재 라인이 `/word` 로 시작하면 매칭 슬래시로 완성.
+        매칭 여러 개면 공통 prefix 까지 확장. 매칭 없으면 탭 무시.
+        '''
+        from cli.render import SLASH_COMMANDS
+        txt = self.text
+        if not txt.startswith('/'):
+            return
+        # 현재 입력 전체를 커맨드 prefix 로 간주 (공백 뒤 arg 는 제외)
+        parts = txt.split(maxsplit=1)
+        word = parts[0]
+        # 매칭
+        candidates = [c for c in SLASH_COMMANDS if c.startswith(word)]
+        if not candidates:
+            return
+        if len(candidates) == 1:
+            # 공백 추가해 arg 입력 유도
+            completed = candidates[0] + ' '
+            rest = parts[1] if len(parts) > 1 else ''
+            self.text = completed + rest
+        else:
+            # 공통 prefix 계산
+            prefix = os.path.commonprefix(candidates)
+            if len(prefix) > len(word):
+                rest = parts[1] if len(parts) > 1 else ''
+                self.text = prefix + (' ' + rest if rest else '')
 
 
 # ── TUI 스트림 — rich Console.file 을 가로채 RichLog로 흘림 ───────
@@ -287,6 +325,7 @@ class HarnessApp(App):
         with Vertical(id='input-container'):
             yield Static(self._prompt_label(), id='prompt-label')
             yield _InputArea(id='input-box', show_line_numbers=False, soft_wrap=True)
+            yield Static('', id='slash-hints')
 
     def on_mount(self):
         self._install_redirects()
@@ -498,10 +537,44 @@ class HarnessApp(App):
         self.call_from_thread(self._update_status)
 
     # ── 입력 처리 ─────────────────────────────────────────────────
+    @on(TextArea.Changed, '#input-box')
+    def on_input_changed(self, event):
+        '''TextArea 내용이 바뀔 때마다 슬래시 힌트 갱신.'''
+        self._update_slash_hints(event.text_area.text)
+
+    def _update_slash_hints(self, text: str):
+        '''`/` 로 시작하면 매칭 슬래시 목록을 #slash-hints 에 표시.
+        아니면 빈 문자열. 최대 8줄.'''
+        from cli.render import SLASH_COMMANDS
+        try:
+            hints = self.query_one('#slash-hints', Static)
+        except Exception:
+            return
+        if not text.startswith('/'):
+            hints.update('')
+            return
+        word = text.split(maxsplit=1)[0]
+        matches = [(c, d) for c, d in SLASH_COMMANDS.items() if c.startswith(word)]
+        if not matches:
+            hints.update('[dim]일치하는 명령 없음[/dim]')
+            return
+        # 최대 8줄
+        lines = []
+        for cmd, desc in matches[:8]:
+            short_desc = desc.split('  ex)')[0]
+            lines.append(f'[bold magenta]{cmd:<10}[/bold magenta] [dim]{short_desc}[/dim]')
+        if len(matches) > 8:
+            lines.append(f'[dim]... 외 {len(matches) - 8}개 (Tab 으로 완성)[/dim]')
+        hints.update('\n'.join(lines))
+
     @on(InputSubmitted)
     def handle_input(self, event: InputSubmitted):
         text = event.text.strip()
-        # _InputArea.action_submit_input 이 이미 text 를 비움
+        # _InputArea.action_submit_input 이 이미 text 를 비움 + 슬래시 힌트 클리어
+        try:
+            self.query_one('#slash-hints', Static).update('')
+        except Exception:
+            pass
         if not text:
             return
 
