@@ -73,7 +73,11 @@ Screen {
 }
 
 #output {
-    height: 1fr;
+    /* 내용이 짧으면 그만큼만, 화면 넘치면 1fr 까지 확장 후 내부 스크롤.
+       덕분에 초반엔 배너/환영 바로 아래 입력창이 붙어있다가, 대화가
+       쌓일수록 입력창이 자연스럽게 내려오다 하단 고정으로 전환. */
+    height: auto;
+    max-height: 1fr;
     padding: 0 2;
     scrollbar-size: 1 1;
     background: transparent;
