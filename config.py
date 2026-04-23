@@ -4,8 +4,12 @@ OLLAMA_BASE_URL = os.environ.get('HARNESS_OLLAMA_URL', 'http://localhost:11434')
 MODEL           = os.environ.get('HARNESS_MODEL',      'qwen3-coder:30b')
 MAX_RETRIES     = 3
 
-# 승인 모드: suggest(제안만) | auto-edit(파일자동+쉘확인) | full-auto(모두자동)
-APPROVAL_MODE   = os.environ.get('HARNESS_APPROVAL', 'auto-edit')
+# 승인 모드: suggest(제안만) | auto-edit(파일 쓸 때마다 확인) | full-auto(모두자동)
+# 기본 full-auto — 혼자 쓰는 로컬 CLI 특성상 매번 y/n 물어보면 번거롭다.
+# 안전하게 쓰려면 HARNESS_APPROVAL=auto-edit 환경변수나 /mode auto-edit 로 전환.
+# full-auto 에서도 agent.py 가 fs.set_sandbox(working_dir) 로 작업 디렉토리
+# 밖 쓰기 차단, run_python 은 항상 confirm 강제.
+APPROVAL_MODE   = os.environ.get('HARNESS_APPROVAL', 'full-auto')
 CONTEXT_WINDOW  = int(os.environ.get('HARNESS_CTX',  '32768'))
 
 # Ollama 생성 파라미터 — 환경변수로 오버라이드 가능
