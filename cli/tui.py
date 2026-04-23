@@ -464,13 +464,23 @@ class HarnessApp(App):
 
     # ── compose ────────────────────────────────────────────────────
     def compose(self) -> ComposeResult:
-        yield RichLog(id='output', highlight=False, markup=True, wrap=True)
-        yield Static('', id='status-bar')
+        # can_focus=False — output/status/hints 를 클릭해도 포커스가 뺏기지 않도록.
+        # 포커스는 항상 #input-box 에만 갈 수 있어 사용자가 클릭 없이 바로 타이핑.
+        # 마우스 휠 스크롤은 그대로 동작 (focus 와 무관).
+        output = RichLog(id='output', highlight=False, markup=True, wrap=True)
+        output.can_focus = False
+        yield output
+        status = Static('', id='status-bar')
+        status.can_focus = False
+        yield status
         with Vertical(id='input-container'):
-            yield Static(self._prompt_label(), id='prompt-label')
+            prompt = Static(self._prompt_label(), id='prompt-label')
+            prompt.can_focus = False
+            yield prompt
             yield _InputArea(id='input-box', show_line_numbers=False, soft_wrap=True)
-            # 슬래시 힌트는 입력창 바로 아래
-            yield Static('', id='slash-hints')
+            hints = Static('', id='slash-hints')
+            hints.can_focus = False
+            yield hints
 
     def on_mount(self):
         self._install_redirects()
@@ -1288,6 +1298,18 @@ class HarnessApp(App):
         self._unknown_tools.clear()
 
     # ── 액션 ──────────────────────────────────────────────────────
+    def on_key(self, event):
+        '''모든 키 이벤트 전에 포커스가 input-box 아닌 곳이면 강제로 돌려놓음.
+        can_focus=False 로 기본 방어하지만 일부 엣지케이스(모달/tab 등)에서
+        놓치는 경우에도 타이핑이 반드시 input 으로 가게 한다.'''
+        try:
+            inp = self.query_one('#input-box', _InputArea)
+            if self.focused is not inp and not self._awaiting_confirm:
+                # 확인 다이얼로그 외엔 무조건 input 에 포커스
+                inp.focus()
+        except Exception:
+            pass
+
     def action_request_quit(self):
         # 세션 자동 저장 없음 — 원하면 /save 사전 호출
         self.exit()
