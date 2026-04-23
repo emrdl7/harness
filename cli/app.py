@@ -195,26 +195,37 @@ def run_app(
         refresh_interval=0.1,
     )
 
-    # Resize 누적 방지 — visible screen 전체 클리어 + renderer 초기화.
+    # Resize 누적 방지.
     #
-    # 기존 cursor_up + erase_down 방식이 어떤 이유로든 실제 terminal 에
-    # 반영 안 되는 환경이 있음 (polling/signal 경로 모두 무효). 따라서
-    # 더 공격적으로 `\x1b[2J` (ED mode 2 = visible screen 전체 지움) +
-    # `\x1b[H` (cursor home) 을 raw write 로 쏜다. ED 2 는 xterm/iTerm2/
-    # VS Code terminal 등 대부분에서 scrollback buffer 는 건드리지 않으므로
-    # 위로 스크롤하면 과거 출력은 그대로 유지.
+    # 지금까지 app.output.write_raw 로 escape 를 보냈지만 효과 없음 →
+    # patch_stdout 이 prompt_toolkit 의 Output 경로를 가로채고 있어 실제
+    # 터미널에 escape 가 안 나갔을 가능성이 큼. sys.__stdout__ (원본 stdout,
+    # patch 우회) 로 직접 쏜다.
+    # 그리고 일시적 debug 마커 — resize 감지가 실제로 호출되는지 확인.
+    import sys as _sys
+
     def _on_winch():
         try:
             if not app.is_running:
                 return
-            out = app.output
-            out.write_raw('\x1b[2J\x1b[H')
-            out.flush()
+            # 진단용 marker — 호출되면 scrollback 에 ▸ 찍힘. 확인 후 제거.
             try:
-                app.renderer._last_screen = None
+                console.print('[dim red]▸ resize[/dim red]')
             except Exception:
                 pass
-            app.renderer.request_absolute_cursor_position()
+            # patch_stdout 우회해서 원본 terminal 에 직접 escape.
+            try:
+                _sys.__stdout__.write('\x1b[2J\x1b[H')
+                _sys.__stdout__.flush()
+            except Exception:
+                pass
+            try:
+                app.renderer.reset()
+            except Exception:
+                try:
+                    app.renderer._last_screen = None
+                except Exception:
+                    pass
             app.invalidate()
         except Exception:
             pass
