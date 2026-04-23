@@ -47,7 +47,7 @@
 Plans:
 - [x] 01-PLAN-A-deps-build.md — 의존성 bump (ink@7, react@19.2, zustand@5), tsconfig react-jsx, ESLint 금지 규칙, CI escape 가드
 - [x] 01-PLAN-B-ws-protocol.md — WS 프로토콜 정합성 복구 (protocol.ts), 5 슬라이스 store, HarnessClient, dispatch exhaustive switch
-- [ ] 01-PLAN-C-hardening-smoke.md — TTY 가드, 시그널 핸들러, patchConsole:false, harness.sh, vitest 4종, tsc smoke
+- [x] 01-PLAN-C-hardening-smoke.md — TTY 가드, 시그널 핸들러, patchConsole:false, harness.sh, vitest 4종, tsc smoke
 **UI hint**: yes
 
 ---
