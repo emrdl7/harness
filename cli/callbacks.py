@@ -40,12 +40,59 @@ _token_buf: list[str] = []
 def _flush_tokens():
     _spinner.stop()
     text = ''.join(_token_buf).strip()
-    if text:
-        console.print(f'\n[orange3]● {config.MODEL}[/orange3]')
-        # 각 줄에 2칸 들여쓰기 적용
-        indented = '\n'.join('  ' + l for l in text.splitlines())
-        console.out(indented, highlight=False)
     _token_buf.clear()
+    if not text:
+        return
+    console.print(f'\n[orange3]● {config.MODEL}[/orange3]')
+
+    # 라인 단위로 ``` / ~~~ 코드 펜스 상태머신을 돌려,
+    # 펜스 밖은 2칸 들여쓰기 평문, 펜스 안은 Syntax Panel 로 한 번에 렌더.
+    lines = text.splitlines()
+    in_code = False
+    code_lang = ''
+    code_buf: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        is_fence = stripped.startswith('```') or stripped.startswith('~~~')
+        if in_code:
+            if is_fence:
+                _render_code_block(code_buf, code_lang)
+                in_code = False
+                code_lang = ''
+                code_buf = []
+            else:
+                code_buf.append(line)
+        else:
+            if is_fence:
+                in_code = True
+                code_lang = stripped.lstrip('`~').strip() or 'text'
+                code_buf = []
+            else:
+                console.out('  ' + line, highlight=False)
+    # 펜스가 안 닫힌 채 끝났으면 버퍼 내용을 평문으로 흘려보냄
+    if in_code and code_buf:
+        for line in code_buf:
+            console.out('  ' + line, highlight=False)
+
+
+def _render_code_block(buf: list[str], lang: str) -> None:
+    '''```lang ... ``` 구간을 Syntax Panel 로 렌더.'''
+    if not buf:
+        return
+    from rich.syntax import Syntax
+    from rich.panel import Panel
+    code_text = '\n'.join(buf)
+    try:
+        body = Syntax(code_text, lang or 'text',
+                      theme='ansi_dark', line_numbers=False,
+                      word_wrap=False, background_color='default')
+    except Exception:
+        body = Syntax(code_text, 'text', theme='ansi_dark',
+                      line_numbers=False, word_wrap=False,
+                      background_color='default')
+    title = f'[#5ab6ff]{lang}[/#5ab6ff]' if lang and lang != 'text' else None
+    console.print(Panel(body, title=title, title_align='left',
+                        border_style='#1a3a5a', padding=(0, 1)))
 
 
 # ── UI 상태 ────────────────────────────────────────────────────────
