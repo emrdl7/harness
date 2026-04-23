@@ -25,12 +25,18 @@ from prompt_toolkit.keys import Keys
 from prompt_toolkit.layout import Layout
 from prompt_toolkit.layout.containers import Float, FloatContainer, HSplit, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
+from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.layout.menus import CompletionsMenu
 from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.widgets import TextArea
 
 from cli.render import PT_STYLE, console
 from cli.setup import _build_status_bar, _ensure_csi_u_mode, slash_completer
+
+
+# 상태바 스피너 프레임 — brail dots. Application 내부 렌더로 회전하므로
+# ANSI escape 직접 쓰기 없이도 live 영역과 충돌 없이 자연스럽게 돈다.
+_SPIN_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 
 
 def run_app(
@@ -48,7 +54,10 @@ def run_app(
     _ensure_csi_u_mode()
 
     _running: dict = {'task': None}
+    _spin: dict = {'i': 0}
 
+    # 입력 영역 높이 제한 — 기본 1줄, 내용 따라 최대 10줄까지 확장 후 scroll.
+    # 제한 없으면 wrap_lines 로 터미널 폭이 줄 때마다 높이가 누적되는 버그.
     input_area = TextArea(
         multiline=True,
         prompt=HTML('<prompt>❯ </prompt>'),
@@ -56,6 +65,7 @@ def run_app(
         complete_while_typing=True,
         wrap_lines=True,
         scrollbar=False,
+        height=Dimension(min=1, max=10),
         style='class:input',
     )
 
@@ -64,9 +74,18 @@ def run_app(
 
     def _status_ft():
         msgs, turns = state_getter()
-        return to_formatted_text(
+        bar_ft = to_formatted_text(
             _build_status_bar(msgs, working_dir_getter(), turns)
         )
+        # 진행 중인 턴이 있으면 상태바 맨 앞에 spinner 프레임.
+        # refresh_interval 로 자동 invalidate → 프레임 회전.
+        running = _running['task'] is not None and not _running['task'].done()
+        if running:
+            frame = _SPIN_FRAMES[_spin['i'] % len(_SPIN_FRAMES)]
+            _spin['i'] += 1
+            spin_ft = to_formatted_text(HTML(f' <ansicyan>{frame}</ansicyan>'))
+            return spin_ft + bar_ft
+        return bar_ft
 
     status_win = Window(
         content=FormattedTextControl(text=_status_ft),
@@ -155,7 +174,49 @@ def run_app(
         full_screen=False,
         mouse_support=False,
         erase_when_done=True,
+        # spinner 프레임 회전 + resize 후 stale line 완화용 주기 리드로.
+        refresh_interval=0.1,
     )
 
-    with patch_stdout(raw=True):
-        app.run()
+    # SIGWINCH 에서 렌더러 내부 state 를 강제로 지워 stale 라인 누적 방지.
+    # prompt_toolkit inline(full_screen=False) 은 terminal 폭이 바뀌면 이전
+    # 렌더의 soft-wrap 라인 수를 못 맞춰 cursor-up 범위가 부정확해진다.
+    # erase() 로 전체 지우고 다음 tick 에 깨끗이 다시 그린다.
+    import signal as _signal
+
+    def _on_winch(*_a, **_kw):
+        try:
+            if app.is_running:
+                app.renderer.erase()
+                app.invalidate()
+        except Exception:
+            pass
+
+    try:
+        _prev_winch = _signal.getsignal(_signal.SIGWINCH)
+    except (AttributeError, ValueError):
+        _prev_winch = None
+
+    def _chained_winch(signum, frame):
+        _on_winch()
+        if callable(_prev_winch):
+            try:
+                _prev_winch(signum, frame)
+            except Exception:
+                pass
+
+    try:
+        _signal.signal(_signal.SIGWINCH, _chained_winch)
+    except (AttributeError, ValueError, OSError):
+        # 메인 스레드 아니거나 플랫폼(win32)이 SIGWINCH 미지원인 경우 무시
+        pass
+
+    try:
+        with patch_stdout(raw=True):
+            app.run()
+    finally:
+        if _prev_winch is not None:
+            try:
+                _signal.signal(_signal.SIGWINCH, _prev_winch)
+            except (AttributeError, ValueError, OSError):
+                pass
