@@ -7,13 +7,11 @@ import argparse
 import re as _re
 from datetime import datetime
 
-from rich.console import Console
 from rich.prompt import Confirm
 from rich.live import Live
 from rich.spinner import Spinner
 from rich.table import Table
 from rich.tree import Tree
-from rich.theme import Theme
 from rich.syntax import Syntax
 from rich import box
 
@@ -36,70 +34,16 @@ from tools import register_mcp_tools
 import evolution
 from tools.claude_cli import ask as claude_ask, is_available as claude_available
 
-THEME = Theme({
-    'tool.read':    'cyan',
-    'tool.write':   'yellow',
-    'tool.run':     'magenta',
-    'tool.git':     'green',
-    'tool.ok':      'green',
-    'tool.fail':    'bold red',
-    'tool.hint':    'dim white',
-    'response':     'white',
-    'prompt':       'bold cyan',
-    'cmd':          'bold magenta',
-    'info':         'dim white',
-    'warn':         'yellow',
-    'claude.label': 'bold blue',
-})
-console = Console(theme=THEME, highlight=False)
-
-# ── 도구 메타데이터 ────────────────────────────────────────────────
-_TOOL_META = {
-    'read_file':     ('Read',    'tool.read',  lambda a: a.get('path', '')),
-    'write_file':    ('Write',   'tool.write', lambda a: a.get('path', '')),
-    'list_files':    ('Glob',    'tool.read',  lambda a: a.get('pattern', '')),
-    'run_command':   ('Run',     'tool.run',   lambda a: a.get('command', '')[:70]),
-    'run_python':    ('Python',  'tool.run',   lambda a: (a.get('code', '').split('\n')[0])[:70]),
-    'git_status':    ('Git',     'tool.git',   lambda _: 'status'),
-    'git_diff':      ('Git',     'tool.git',   lambda a: 'diff' + (' --staged' if a.get('staged') else '')),
-    'git_log':       ('Git',     'tool.git',   lambda a: f'log -{a.get("n", 10)}'),
-    'git_diff_full': ('Git',     'tool.git',   lambda _: 'diff HEAD'),
-    'search_web':    ('Search',  'cyan',       lambda a: a.get('query', '')[:70]),
-    'fetch_page':    ('Fetch',   'cyan',       lambda a: a.get('url', '')[:70]),
-}
-
-
-def _tool_meta_for(name: str) -> tuple:
-    if name in _TOOL_META:
-        return _TOOL_META[name]
-    if name.startswith('mcp__'):
-        parts = name.split('__', 2)
-        server = parts[1] if len(parts) > 1 else 'mcp'
-        tool = parts[2] if len(parts) > 2 else name
-        return (f'MCP:{server}', 'cyan', lambda a: tool)
-    return (name, 'dim white', lambda _: '')
-
-
-def _tool_result_hint(name: str, result: dict) -> str:
-    if not result.get('ok'):
-        err = result.get('error') or result.get('stderr') or ''
-        return err.strip()[:80]
-    if name == 'read_file':
-        lines = result.get('content', '').count('\n') + 1
-        return f'{lines}줄'
-    if name == 'write_file':
-        return '저장됨'
-    if name == 'list_files':
-        return f'{len(result.get("files", []))}개 파일'
-    if name in ('run_command', 'run_python'):
-        out = (result.get('stdout') or result.get('stderr') or '').strip()
-        first = out.split('\n')[0][:60] if out else ''
-        rc = result.get('returncode', 0)
-        return f'{first}' if first else f'exit {rc}'
-    if name.startswith('git_'):
-        out = (result.get('output') or result.get('stdout') or '').strip()
-        return out.split('\n')[0][:60] if out else 'ok'
-    return 'ok'
+# ── 렌더 핵심 — cli.render로 분리 (Phase 3.1-B) ──────────────────
+# console + THEME + 툴 메타 / 추정 / spinner / _short_dir 통합 이전.
+# main.* 호환 위해 re-export.
+from cli.render import (
+    THEME,
+    console,
+    _TOOL_META,
+    _tool_meta_for,
+    _tool_result_hint,
+)
 
 
 # ── 슬래시 명령어 정의 ─────────────────────────────────────────────
@@ -235,14 +179,7 @@ class SlashCompleter(Completer):
 slash_completer = SlashCompleter()
 
 
-def _short_dir(path: str) -> str:
-    home = os.path.expanduser('~')
-    if path.startswith(home):
-        path = '~' + path[len(home):]
-    parts = path.split(os.sep)
-    if len(parts) > 3:
-        return os.sep.join(['…'] + parts[-2:])
-    return path
+from cli.render import _short_dir  # noqa: E402  Phase 3.1-B 분리 — 호환 re-export
 
 
 def get_input(turns: int, working_dir: str) -> str:
@@ -258,45 +195,8 @@ def get_input(turns: int, working_dir: str) -> str:
     )
 
 
-# ── 스피너 ────────────────────────────────────────────────────────
-import threading
-
-_SPINNER_FRAMES = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏']
-
-class _Spinner:
-    def __init__(self):
-        self._stop  = threading.Event()
-        self._thread = None
-        self.active  = False
-
-    def start(self):
-        if self.active:
-            return
-        self.active = True
-        self._stop.clear()
-        sys.stdout.write(f'\x1b[36m⠋\x1b[0m\n')
-        sys.stdout.flush()
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
-
-    def _run(self):
-        i = 1
-        while not self._stop.wait(0.08):
-            frame = _SPINNER_FRAMES[i % len(_SPINNER_FRAMES)]
-            sys.stdout.write(f'\x1b[1A\r\x1b[K\x1b[36m{frame}\x1b[0m\n')
-            sys.stdout.flush()
-            i += 1
-
-    def stop(self):
-        if not self.active:
-            return
-        self._stop.set()
-        if self._thread:
-            self._thread.join(timeout=0.3)
-        sys.stdout.write('\x1b[1A\r\x1b[K')
-        sys.stdout.flush()
-        self.active = False
-
+# ── 스피너 — cli.render._Spinner로 분리 (Phase 3.1-B) ───────────
+from cli.render import _Spinner, _SPINNER_FRAMES  # noqa: E402,F401  re-export
 
 _spinner = _Spinner()
 _token_buf: list[str] = []
@@ -405,34 +305,7 @@ _INSTALLABLE_TOOLS = {
     'search_code': ('search.py', None),
 }
 
-def _infer_tool_purpose(name: str, args: dict) -> str:
-    '''툴 이름과 호출 인자로 추정 기능 설명 생성.'''
-    n = name.lower()
-    # 인자 요약
-    arg_parts = []
-    for k, v in (args or {}).items():
-        v_str = str(v)[:40] + ('...' if len(str(v)) > 40 else '')
-        arg_parts.append(f'{k}={v_str}')
-    args_str = f'  [dim]인자: {", ".join(arg_parts)}[/dim]' if arg_parts else ''
-
-    if 'status' in n or 'info' in n:
-        purpose = '프로젝트/상태 정보를 조회하는 툴'
-    elif 'search' in n or 'find' in n or 'query' in n:
-        purpose = '검색/탐색을 수행하는 툴'
-    elif 'read' in n or 'get' in n or 'fetch' in n or 'load' in n:
-        purpose = '데이터를 읽어오는 툴'
-    elif 'write' in n or 'save' in n or 'store' in n or 'create' in n:
-        purpose = '데이터를 저장/생성하는 툴'
-    elif 'run' in n or 'exec' in n or 'execute' in n:
-        purpose = '명령/코드를 실행하는 툴'
-    elif 'test' in n or 'check' in n or 'lint' in n or 'valid' in n:
-        purpose = '검증/테스트를 수행하는 툴'
-    elif 'acknowledge' in n or 'confirm' in n or 'respond' in n or 'reply' in n:
-        purpose = '대화 응답용 (실제 기능 없음 — 모델이 잘못 호출한 것일 수 있음)'
-    else:
-        purpose = '기능 미상 — 이름으로 유추 불가'
-
-    return purpose, args_str
+from cli.render import _infer_tool_purpose  # noqa: E402,F401  Phase 3.1-B 분리
 
 
 def _suggest_unknown_tools(items: list[tuple[str, dict]]):
