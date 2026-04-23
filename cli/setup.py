@@ -124,13 +124,15 @@ def _ensure_csi_u_mode() -> None:
 _BAR_WIDTH = 10  # ctx progress bar 셀 수
 
 
-def _build_status_bar(session_msgs: list) -> HTML:
+def _build_status_bar(session_msgs: list, working_dir: str, turns: int) -> HTML:
     '''prompt_toolkit bottom_toolbar.
 
-    레이아웃 (역상 배경 제거, 레이블 생략, 공백 호흡):
-        {model}      {mode}      {▰▰▱▱▱▱▱▱▱▱} {pct}%
+    레이아웃:
+        {short_path}    {model}    turn {N}    {mode}    {▰▰▱▱…} {pct}%
 
+    - 경로: dim (입력창에서 빠진 현재 위치)
     - 모델: cyan (정체성)
+    - turn: dim (입력창에서 빠진 턴 카운터)
     - 모드: 위험도 색 — suggest=blue / auto-edit=green / full-auto=red
     - 진행바: dim(빈 셀) + ctx 색(채움 셀), 셀 수 _BAR_WIDTH
     - %: 80%↑ yellow, 95%↑ red — 압축 타이밍 신호
@@ -158,10 +160,12 @@ def _build_status_bar(session_msgs: list) -> HTML:
         'full-auto': 'ansired',
     }.get(mode, 'ansibrightblack')
 
-    # 세그먼트는 공백 4칸으로 분리 — 점/파이프 구분자보다 깔끔.
-    # pct 는 오른쪽 정렬 3칸으로 흔들림 없이 고정.
+    short = _short_dir(working_dir)
+
     return HTML(
-        f'  <ansicyan>{config.MODEL}</ansicyan>'
+        f'  <ansibrightblack>{short}</ansibrightblack>'
+        f'    <ansicyan>{config.MODEL}</ansicyan>'
+        f'    <ansibrightblack>turn {turns}</ansibrightblack>'
         f'    <{mode_color}>{mode}</{mode_color}>'
         f'    <{ctx_color}>{bar_filled}</{ctx_color}><ansibrightblack>{bar_empty}</ansibrightblack>'
         f' <{ctx_color}>{pct:>3}%</{ctx_color}>'
@@ -170,20 +174,24 @@ def _build_status_bar(session_msgs: list) -> HTML:
 
 def get_input(turns: int, working_dir: str, session_msgs: list | None = None) -> str:
     _ensure_csi_u_mode()
-    short = _short_dir(working_dir)
     slash_completer.working_dir = working_dir  # arg 자동완성이 현재 dir 기준 동작
-    toolbar = _build_status_bar(session_msgs) if session_msgs is not None else None
+    toolbar = (
+        _build_status_bar(session_msgs, working_dir, turns)
+        if session_msgs is not None else None
+    )
+    # Claude Code 스타일: 입력 영역 위쪽 구분선 (하단은 bottom_toolbar 가 담당).
+    width = max(10, console.size.width)
+    console.print(f'[dim]{"─" * width}[/dim]')
     return pt_prompt(
-        HTML(f'<ansibrightblack>{short}</ansibrightblack> '
-             f'<ansicyan><b>❯</b></ansicyan> '
-             f'<ansibrightblack>[{turns}]</ansibrightblack> '),
+        HTML('<ansicyan><b>❯</b></ansicyan> '),
         completer=slash_completer,
         style=PT_STYLE,
         complete_while_typing=True,
         bottom_toolbar=toolbar,
         multiline=True,
         key_bindings=_INPUT_KB,
-        prompt_continuation=lambda width, line_number, wrap_count: '',
+        # 연속 줄은 첫 줄의 "❯ " 폭(2칸)에 맞춰 공백 두 칸으로 들여쓰기
+        prompt_continuation=lambda width, line_number, wrap_count: '  ',
     )
 
 
