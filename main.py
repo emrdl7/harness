@@ -8,25 +8,18 @@ import re as _re
 from datetime import datetime
 
 from rich.prompt import Confirm
-from rich.live import Live
-from rich.spinner import Spinner
 from rich.table import Table
 from rich.syntax import Syntax
 from rich import box
 
-from prompt_toolkit import prompt as pt_prompt
-from prompt_toolkit.formatted_text import HTML
-
 import agent
 import config
 import profile as prof
-import context
 import harness_core
 import session as sess
 from session.logger import read_recent
 from session.compactor import needs_compaction, compact
 from tools.improve import list_backups, restore_backup, HARNESS_DIR
-from tools.mcp import StdioMCPClient
 from tools import register_mcp_tools
 import evolution
 from tools.claude_cli import ask as claude_ask, is_available as claude_available
@@ -50,23 +43,14 @@ from cli.render import (
     SlashCompleter,
 )
 
-slash_completer = SlashCompleter()
-
-
 from cli.render import _short_dir  # noqa: E402  Phase 3.1-B 분리 — 호환 re-export
 
-
-def get_input(turns: int, working_dir: str) -> str:
-    short = _short_dir(working_dir)
-    slash_completer.working_dir = working_dir  # arg 자동완성이 현재 dir 기준 동작
-    return pt_prompt(
-        HTML(f'<ansibrightblack>{short}</ansibrightblack> '
-             f'<ansicyan><b>❯</b></ansicyan> '
-             f'<ansibrightblack>[{turns}]</ansibrightblack> '),
-        completer=slash_completer,
-        style=PT_STYLE,
-        complete_while_typing=True,
-    )
+# ── 부팅/세팅 헬퍼 — cli.setup으로 분리 (Phase 3.1-E) ────────────
+# main.* 호환 re-export (tests/test_handle_slash.py는 main.get_context_snippets를 monkeypatch).
+from cli.setup import (
+    slash_completer,
+    get_input,
+)
 
 
 # ── 스피너 — cli.render._Spinner로 분리 (Phase 3.1-B) ───────────
@@ -227,114 +211,15 @@ def _response_footer():
     console.print()
 
 
-# ── 유틸 ──────────────────────────────────────────────────────────
-def do_index(working_dir: str):
-    with Live(
-        Spinner('dots', text='[dim]인덱싱 중...[/dim]'),
-        console=console,
-        refresh_per_second=10,
-        transient=True,
-    ):
-        result = context.index_directory(working_dir)
-    console.print(
-        f'  [tool.ok]✓[/tool.ok] 인덱싱 완료  '
-        f'[bold]{result["indexed"]}[/bold]개 청크  '
-        f'[dim](건너뜀 {result["skipped"]}개)[/dim]\n'
-    )
-
-
-def get_context_snippets(query: str, working_dir: str, profile: dict) -> str:
-    if not context.is_indexed(working_dir):
-        return ''
-    chunks = context.search(query, working_dir)
-    if not chunks:
-        return ''
-    extra = []
-    for cf in profile.get('context_files', []):
-        fpath = os.path.join(working_dir, cf)
-        if os.path.exists(fpath):
-            try:
-                with open(fpath, encoding='utf-8') as f:
-                    extra.append(f'// {cf}\n{f.read()[:2000]}')
-            except Exception:
-                pass
-    return context.format_context(chunks) + ('\n' + '\n'.join(extra) if extra else '')
-
-
-def _auto_sync(working_dir: str):
-    if not context.is_indexed(working_dir):
-        py_count = sum(1 for _, _, fs in os.walk(working_dir) for f in fs if f.endswith('.py'))
-        if py_count > 3:
-            do_index(working_dir)
-    else:
-        result = context.sync_index(working_dir)
-        changed = result['added'] + result['changed'] + result['removed']
-        if changed:
-            console.print(
-                f'  [dim]sync[/dim]  '
-                f'[tool.ok]+{result["added"]}[/tool.ok] '
-                f'[warn]~{result["changed"]}[/warn] '
-                f'[tool.fail]-{result["removed"]}[/tool.fail]\n'
-            )
-
-
-_BANNER_LINES = [
-    r"   / /_  ____ ________  ___  __________",
-    r"  / __ \/ __ `/ ___/ __ \/ _ \/ ___/ ___/",
-    r" / / / / /_/ / /  / / / /  __(__  |__  )",
-    r"/_/ /_/\__,_/_/  /_/ /_/\___/____/____/",
-]
-
-_JABWORKS = r"  ┬  ┌─┐┌┐  ┬ ┌┐┌┌─┐┬─┐┬┌─┌─┐"
-
-# 위→아래 그라데이션: 짙은 파랑 → 하늘색
-_GRAD = [
-    '\x1b[38;2;41;98;163m',
-    '\x1b[38;2;62;133;200m',
-    '\x1b[38;2;88;165;225m',
-    '\x1b[38;2;120;196;245m',
-]
-_B = '\x1b[1m'   # bold
-_R = '\x1b[0m'   # reset
-_D = '\x1b[2m'   # dim
-_C = '\x1b[36m'  # cyan
-
-
-def print_banner():
-    console.out('', highlight=False)
-    for i, line in enumerate(_BANNER_LINES):
-        color = _GRAD[min(i, len(_GRAD) - 1)]
-        console.out(f'{_B}{color}  {line}{_R}', highlight=False)
-
-    # jabworks 태그 — 배너 오른쪽 끝에 정렬
-    banner_width = max(len(l) for l in _BANNER_LINES) + 2
-    tag = 'by jabworks'
-    pad = max(0, banner_width - len(tag))
-    console.out(f'{" " * pad}{_D}{tag}{_R}', highlight=False)
-    console.out(
-        f'\n  {_C}local AI coding agent{_R}  '
-        f'{_D}·  {config.MODEL}{_R}\n',
-        highlight=False,
-    )
-
-
-def print_welcome(working_dir: str):
-    indexed = context.is_indexed(working_dir)
-    idx_badge = '[tool.ok]indexed[/tool.ok]' if indexed else '[warn]not indexed[/warn]'
-    claude_badge = (
-        '[tool.ok]claude ✓[/tool.ok]' if claude_available()
-        else '[dim]claude ✗[/dim]'
-    )
-    short = _short_dir(working_dir)
-
-    console.print(
-        f'  [bold cyan]{config.MODEL}[/bold cyan]'
-        f'[dim]  ·  {short}  ·  [/dim]'
-        f'{idx_badge}[dim]  ·  [/dim]{claude_badge}'
-    )
-    console.print(
-        '  [dim]/ 명령어  ·  @claude 질문  ·  /help 도움말[/dim]\n'
-    )
+# ── 인덱싱 / 배너 / 환영 — cli.setup으로 분리 (Phase 3.1-E) ──────
+# main.* 호환 re-export. 새 코드는 cli.setup에서 직접 import 권장.
+from cli.setup import (  # noqa: E402
+    do_index,
+    get_context_snippets,
+    _auto_sync,
+    print_banner,
+    print_welcome,
+)
 
 
 # ── 자연어 의도 매처 — cli.intent로 분리 (Phase 3.1-A) ───────────
@@ -803,47 +688,8 @@ from cli.render import _DIR_ICON, _FILE_ICONS, _print_help  # noqa: E402,F401
 
 
 # ── 메인 ──────────────────────────────────────────────────────────
-def _start_mcp_servers(profile: dict) -> dict:
-    '''profile의 mcp_servers 목록에서 클라이언트를 시작하고 반환.'''
-    clients: dict[str, StdioMCPClient] = {}
-    for srv in profile.get('mcp_servers') or []:
-        name = srv.get('name', '')
-        cmd = srv.get('command')
-        if not name or not cmd:
-            console.print(f'  [warn]⚠[/warn] MCP 서버 설정 오류: name/command 필수 — {srv}')
-            continue
-        if isinstance(cmd, str):
-            cmd = cmd.split()
-        env = srv.get('env') or {}
-        client = StdioMCPClient(name, cmd, env)
-        try:
-            ok = client.start()
-        except RuntimeError as e:
-            console.print(f'  [tool.fail]✗[/tool.fail] MCP [{name}] 시작 실패: {e}')
-            continue
-        if ok:
-            clients[name] = client
-            tool_count = len(client.tools)
-            console.print(f'  [tool.ok]✓[/tool.ok] MCP [{name}] 연결됨 — 툴 {tool_count}개')
-        else:
-            console.print(f'  [tool.fail]✗[/tool.fail] MCP [{name}] 초기화 실패')
-    return clients
-
-
-def _ctx_status(session_msgs: list) -> str:
-    '''ctx 토큰 상태 문자열 반환. 예: "ctx: 8k/32k (25%)"'''
-    used = sum(len(m.get('content') or '') for m in session_msgs) // 4
-    total = config.CONTEXT_WINDOW
-    pct = int(used / total * 100) if total else 0
-    used_k = f'{used // 1000}k' if used >= 1000 else str(used)
-    total_k = f'{total // 1000}k' if total >= 1000 else str(total)
-    if pct >= 95:
-        color = 'red'
-    elif pct >= 80:
-        color = 'yellow'
-    else:
-        color = 'dim'
-    return f'[{color}]ctx: {used_k}/{total_k} ({pct}%)[/{color}]'
+# MCP 부팅 / ctx 상태 문자열 — cli.setup으로 분리 (Phase 3.1-E)
+from cli.setup import _start_mcp_servers, _ctx_status  # noqa: E402,F401
 
 
 def main():
