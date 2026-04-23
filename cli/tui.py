@@ -251,6 +251,12 @@ class HarnessApp(App):
         # 스트리밍 중인 미완성 라인 (assistant 토큰)
         self._stream_buf = ''
         self._stream_lock = threading.Lock()
+        # 턴 시작 시 리셋되는 assistant 헤더 on-demand 출력 플래그
+        self._assistant_header_printed = False
+        # 툴 실행 시작 시각 — _on_tool_tui 에서 elapsed 계산
+        self._tool_start_ts = 0.0
+        # 미등록 툴 수집 — turn 끝에 _suggest_unknown_tools_tui 호출
+        self._unknown_tools: list[tuple[str, dict]] = []
 
         # TUI 모드 전환용 원본 백업 (exit 시 복원)
         self._orig_cb = {}
@@ -392,7 +398,14 @@ class HarnessApp(App):
             remaining = self._stream_buf
             self._stream_buf = ''
         if remaining:
-            self._rl_write(Text(remaining))
+            # assistant 헤더가 아직이면 여기서라도 찍고 잔여 라인 flush
+            if not self._assistant_header_printed:
+                self._rl_write(Text.assemble(
+                    ('● ', 'bold'),
+                    (config.MODEL, 'bold orange3'),
+                ))
+                self._assistant_header_printed = True
+            self._rl_write(Text('  ' + remaining))
 
     # ── 상태 ─────────────────────────────────────────────────────
     def _prompt_label(self) -> str:
@@ -573,6 +586,8 @@ class HarnessApp(App):
 
     def _run_agent_thread(self, user_input: str, plan_mode: bool = False):
         self._set_running(True)
+        self._assistant_header_printed = False
+        self._unknown_tools.clear()
         self._output(Text())
         try:
             snippets = get_context_snippets(user_input, self.working_dir, self.profile)
@@ -587,6 +602,7 @@ class HarnessApp(App):
                 on_tool=self._on_tool_tui,
                 on_thought=self._on_thought_tui,
                 on_thought_end=self._on_thought_end_tui,
+                on_unknown_tool=self._on_unknown_tool_tui,
                 confirm_write=self._confirm_write if self.profile.get('confirm_writes', True) else None,
                 confirm_bash=self._confirm_bash if self.profile.get('confirm_bash', True) else None,
                 hooks=self.profile.get('hooks', {}),
@@ -597,6 +613,7 @@ class HarnessApp(App):
             self.call_from_thread(self._flush_stream)
         except RuntimeError:
             pass
+        self._suggest_unknown_tools_tui()
         self._output(Text())
         self._set_running(False)
 
@@ -636,6 +653,8 @@ class HarnessApp(App):
     # ── handle_slash DI 콜백들 ────────────────────────────────────
     def _run_agent_for_core(self, user_input, *, plan_mode=False, context_snippets=''):
         '''harness_core.dispatch → /plan / /cplan 실행 시 에이전트 호출.'''
+        self._assistant_header_printed = False
+        self._unknown_tools.clear()
         self._output(Text())
         try:
             _, self.session_msgs = agent.run(
@@ -649,6 +668,7 @@ class HarnessApp(App):
                 on_tool=self._on_tool_tui,
                 on_thought=self._on_thought_tui,
                 on_thought_end=self._on_thought_end_tui,
+                on_unknown_tool=self._on_unknown_tool_tui,
                 confirm_write=self._confirm_write if self.profile.get('confirm_writes', True) else None,
                 confirm_bash=self._confirm_bash if self.profile.get('confirm_bash', True) else None,
                 hooks=self.profile.get('hooks', {}),
@@ -659,6 +679,7 @@ class HarnessApp(App):
             self.call_from_thread(self._flush_stream)
         except RuntimeError:
             pass
+        self._suggest_unknown_tools_tui()
         self._output(Text())
 
     def _run_agent_ephemeral(self, user_input, *, system_prompt, working_dir, profile):
@@ -711,9 +732,8 @@ class HarnessApp(App):
     def _on_token_tui(self, token: str):
         '''토큰을 버퍼에 모으고 줄바꿈을 만날 때마다 RichLog 에 append.
 
-        이전 버전은 _stream_buf 를 별도 Static(#stream-line, 하단) 에 갱신
-        했는데 줄바꿈 시 완성 라인이 RichLog(상단)로 "순간이동"하는 시각
-        점프가 발생. RichLog 에만 라인 단위로 쓰면 연속된 흐름이 된다.
+        첫 완성 라인 직전에 `● 모델명` 헤더를 한 번 출력, 이후 각 라인에
+        2칸 들여쓰기 — REPL _flush_tokens 와 동일한 스타일.
         '''
         def _write():
             with self._stream_lock:
@@ -723,18 +743,29 @@ class HarnessApp(App):
                 lines = self._stream_buf.split('\n')
                 complete = lines[:-1]
                 self._stream_buf = lines[-1]
+            if not self._assistant_header_printed:
+                self._rl_write(Text.assemble(
+                    ('● ', 'bold'),
+                    (config.MODEL, 'bold orange3'),
+                ))
+                self._assistant_header_printed = True
             for line in complete:
-                self._rl_write(Text(line))
+                self._rl_write(Text('  ' + line))
         try:
             self.call_from_thread(_write)
         except RuntimeError:
-            pass
+            try:
+                _write()
+            except Exception:
+                pass
 
     def _on_tool_tui(self, name: str, args: dict, result):
+        import time as _time
         from cli.render import _tool_meta_for, _tool_result_hint
         label, style, arg_fn = _tool_meta_for(name)
         arg_str = arg_fn(args)
         if result is None:
+            self._tool_start_ts = _time.time()
             self._output(Text.assemble(
                 ('\n  ● ', 'bold'),
                 (label, style),
@@ -743,12 +774,15 @@ class HarnessApp(App):
                 ('\n', ''),
             ))
         else:
+            elapsed = _time.time() - self._tool_start_ts
+            elapsed_str = f' · {elapsed:.1f}s' if elapsed > 0.5 else ''
             hint = _tool_result_hint(name, result)
             if result.get('ok'):
                 self._output(Text.assemble(
                     ('  ⎿  ', 'dim'),
                     ('✓ ', 'green'),
                     (hint, 'dim'),
+                    (elapsed_str, 'dim'),
                     ('\n', ''),
                 ))
             else:
@@ -756,6 +790,7 @@ class HarnessApp(App):
                     ('  ⎿  ', 'dim'),
                     ('✗ ', 'bold red'),
                     (hint, 'bold red'),
+                    (elapsed_str, 'dim'),
                     ('\n', ''),
                 ))
 
@@ -802,11 +837,80 @@ class HarnessApp(App):
         return self._confirm_result
 
     def _confirm_write(self, path: str, content: str = None) -> bool:
-        # diff 미리보기는 MVP에서 생략 (향후 dialog로). 현재는 y/n만.
+        # diff 미리보기 — REPL cli.callbacks.confirm_write 와 동등.
+        # 60줄 까지 +/- 색 분리, 이상은 생략 안내.
+        if content is not None:
+            try:
+                import difflib as _dl
+                if os.path.exists(path):
+                    with open(path, encoding='utf-8', errors='replace') as f:
+                        old_lines = f.readlines()
+                    label = path
+                else:
+                    old_lines = []
+                    label = f'{path} (새 파일)'
+                new_lines = [l if l.endswith('\n') else l + '\n' for l in content.splitlines()]
+                diff = list(_dl.unified_diff(old_lines, new_lines, fromfile=label, tofile=label, lineterm=''))
+                if diff:
+                    for line in diff[:60]:
+                        if line.startswith('+++') or line.startswith('---'):
+                            self._output(Text(f'  {line}', style='dim'))
+                        elif line.startswith('+'):
+                            self._output(Text(f'  {line}', style='green'))
+                        elif line.startswith('-'):
+                            self._output(Text(f'  {line}', style='red'))
+                        elif line.startswith('@@'):
+                            self._output(Text(f'  {line}', style='cyan'))
+                        else:
+                            self._output(Text(f'  {line}', style='dim'))
+                    if len(diff) > 60:
+                        self._output(Text(f'  ... (이하 {len(diff) - 60}줄 생략)', style='dim'))
+                else:
+                    self._output(Text('  (변경 없음)', style='dim'))
+            except Exception:
+                pass
         return self._ask_yes_no(f'Write {path}', default=False)
 
     def _confirm_bash(self, command: str) -> bool:
         return self._ask_yes_no(f'Run {command[:80]}', default=False)
+
+    # ── 미등록 툴 ─────────────────────────────────────────────────
+    def _on_unknown_tool_tui(self, name: str, args: dict = None):
+        if not any(n == name for n, _ in self._unknown_tools):
+            self._unknown_tools.append((name, args or {}))
+
+    def _suggest_unknown_tools_tui(self):
+        if not self._unknown_tools:
+            return
+        from cli.callbacks import _INSTALLABLE_TOOLS
+        from cli.render import _infer_tool_purpose
+        for name, args in self._unknown_tools:
+            info = _INSTALLABLE_TOOLS.get(name)
+            if info:
+                module_file, pkg = info
+                pkg_note = f'  (pip install {pkg})' if pkg else ''
+                self._output(Text.assemble(
+                    ('\n  ● ', 'bold'),
+                    ('미등록 툴: ', 'yellow'),
+                    (name, 'bold'),
+                    (pkg_note, 'dim'),
+                    ('\n    ', ''),
+                    (f'tools/{module_file} 에 구현 후 tools/__init__.py 에 등록', 'dim'),
+                    ('\n', ''),
+                ))
+            else:
+                purpose, args_str = _infer_tool_purpose(name, args)
+                self._output(Text.assemble(
+                    ('\n  ● ', 'bold'),
+                    ('미등록 툴 감지: ', 'yellow'),
+                    (name, 'bold'),
+                    ('\n    추정: ', ''),
+                    (purpose, 'dim'),
+                    ('\n    추가: ', ''),
+                    (f'tools/{name}.py 구현 → tools/__init__.py 등록', 'dim'),
+                    ('\n', ''),
+                ))
+        self._unknown_tools.clear()
 
     # ── 액션 ──────────────────────────────────────────────────────
     def action_request_quit(self):
