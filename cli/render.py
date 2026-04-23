@@ -43,7 +43,48 @@ THEME = Theme({
     'warn':         'yellow',
     'claude.label': 'bold blue',
 })
-console = Console(theme=THEME, highlight=False)
+class _ConsoleProxy:
+    '''Rich Console 대체 가능 래퍼 — getattr/setattr 를 현재 target 으로 프록시.
+
+    기본 target 은 stdout Console. `cli.app.run_app` 이 풀스크린 모드에 진입
+    할 때 StringIO 기반 Console 을 push → agent 출력이 앱 내부 output Window
+    로 라우팅. 종료 시 pop 으로 복구. 기존 `from cli.render import console`
+    사용처는 모두 그대로 동작.
+    '''
+    __slots__ = ('_stack',)
+    _own = frozenset({'_stack', 'push', 'pop', 'target'})
+
+    def __init__(self, initial):
+        object.__setattr__(self, '_stack', [initial])
+
+    def push(self, target) -> None:
+        self._stack.append(target)
+
+    def pop(self) -> None:
+        if len(self._stack) > 1:
+            self._stack.pop()
+
+    @property
+    def target(self):
+        return self._stack[-1]
+
+    def __getattr__(self, name):
+        return getattr(self._stack[-1], name)
+
+    def __setattr__(self, name, value):
+        if name in self._own:
+            object.__setattr__(self, name, value)
+        else:
+            setattr(self._stack[-1], name, value)
+
+    def __delattr__(self, name):
+        if name in self._own:
+            object.__delattr__(self, name)
+        else:
+            delattr(self._stack[-1], name)
+
+
+console = _ConsoleProxy(Console(theme=THEME, highlight=False))
 
 
 # ── 도구 메타데이터 ─────────────────────────────────────────────
@@ -141,18 +182,18 @@ _SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇'
 
 
 def _pt_app_running() -> bool:
-    '''prompt_toolkit Application 이 지금 돌고 있는지.
-
-    long-running Application(`cli.app.run_app`) 경로에서는 하단 layout 이
-    live 로 매 tick 재그려진다. 이 상태에서 `_Spinner` 가 sys.stdout 에
-    직접 ANSI escape 를 찍으면 cursor-up 으로 live 영역을 침범해 깜빡임 /
-    레이아웃 손상 유발. 진행 상태는 Application 상태바에서 대체 표시.
-    '''
+    '''prompt_toolkit Application 이 지금 돌고 있는지.'''
     try:
         from prompt_toolkit.application.current import get_app_or_none
         return get_app_or_none() is not None
     except Exception:
         return False
+
+
+# cli.app.run_app (Rich.Live 기반) 이 활성일 때는 live region 이 자체
+# 스피너를 그리므로, 기존 `_Spinner` (stdout 에 ANSI escape 직접) 는
+# 비활성화해 충돌 / 프레임마다 새 줄 찍히는 현상을 방지.
+_spinner_disabled = False
 
 
 class _Spinner:
@@ -164,8 +205,9 @@ class _Spinner:
     def start(self):
         if self.active:
             return
-        if _pt_app_running():
-            # Application 모드에서는 no-op — live 영역과 충돌 회피
+        if _pt_app_running() or _spinner_disabled:
+            # prompt_toolkit Application 또는 Rich.Live 가 활성 — live 영역과
+            # 충돌을 피하기 위해 no-op.
             return
         self.active = True
         self._stop.clear()

@@ -39,6 +39,7 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
 
 import config
+from cli import render as _render_mod
 from cli.render import PT_STYLE, console, _short_dir
 from cli.setup import slash_completer
 
@@ -144,6 +145,10 @@ def run_app(
     tick_thread = threading.Thread(target=_spin_tick, daemon=True)
     tick_thread.start()
 
+    # 기존 cli.render._Spinner (stdout 에 ANSI escape 직접) 는 Rich.Live
+    # region 을 덮어 매 프레임 새 줄이 찍히는 현상을 유발하므로 비활성화.
+    _render_mod._spinner_disabled = True
+
     try:
         with Live(
             _render(),
@@ -211,3 +216,4 @@ def run_app(
                     break
     finally:
         spin_state['stop_thread'] = True
+        _render_mod._spinner_disabled = False
