@@ -64,9 +64,11 @@ from tools import register_mcp_tools
 
 
 # ── CSS ───────────────────────────────────────────────────────────
+# 모든 영역 배경을 transparent 로 두어 터미널 기본 배경이 그대로 비치게 함.
+# scrollbar 색은 대비용 최소 dim 값만 유지.
 CSS = '''
 Screen {
-    background: #0d0d0d;
+    background: transparent;
     layout: vertical;
 }
 
@@ -74,13 +76,12 @@ Screen {
     height: 1fr;
     padding: 0 2;
     scrollbar-size: 1 1;
-    scrollbar-color: #333333 #0d0d0d;
-    background: #0d0d0d;
+    background: transparent;
 }
 
 #status-bar {
     height: 1;
-    background: #0d0d0d;
+    background: transparent;
     color: #555555;
     padding: 0 3;
 }
@@ -89,14 +90,14 @@ Screen {
     height: auto;
     min-height: 4;
     max-height: 16;
-    background: #0d0d0d;
+    background: transparent;
     layout: vertical;
     padding: 1 1 1 1;
 }
 
 #prompt-label {
     height: 1;
-    background: #0d0d0d;
+    background: transparent;
     color: #00aaff;
     text-style: bold;
     padding: 0 2;
@@ -107,31 +108,28 @@ Screen {
     height: auto;
     min-height: 1;
     max-height: 12;
-    background: #0d0d0d;
+    background: transparent;
     border: none;
     padding: 0 2;
-    color: #e0e0e0;
     scrollbar-size: 0 0;
 }
 
 #input-box:focus {
     border: none;
-    background: #0d0d0d;
+    background: transparent;
 }
 
-/* TextArea 내부 레이어 배경 통일 — cursor-line 하이라이트 제거. */
+/* TextArea 내부 레이어도 투명 — cursor-line 강조/gutter 구분 모두 제거. */
 TextArea#input-box > .text-area--cursor-line {
-    background: #0d0d0d;
+    background: transparent;
 }
 
 TextArea#input-box > .text-area--gutter {
-    background: #0d0d0d;
-    color: #0d0d0d;
+    background: transparent;
 }
 
 TextArea#input-box > .text-area--cursor-gutter {
-    background: #0d0d0d;
-    color: #0d0d0d;
+    background: transparent;
 }
 '''
 
