@@ -24,9 +24,10 @@ import sys
 import threading
 
 from textual.app import App, ComposeResult
-from textual.widgets import RichLog, Input, Static
+from textual.widgets import RichLog, TextArea, Static
 from textual.containers import Vertical
 from textual.binding import Binding
+from textual.message import Message
 from textual import on
 
 from rich.rule import Rule
@@ -93,7 +94,9 @@ Screen {
 }
 
 #input-container {
-    height: 5;
+    height: auto;
+    min-height: 3;
+    max-height: 14;
     background: #111111;
     border-top: solid #1e3a5f;
     layout: vertical;
@@ -108,18 +111,54 @@ Screen {
 }
 
 #input-box {
-    height: 3;
-    background: transparent;
+    height: auto;
+    min-height: 1;
+    max-height: 12;
+    background: #111111;
     border: none;
-    padding: 1 2;
+    padding: 0 2;
     color: #e0e0e0;
+    scrollbar-size: 0 0;
 }
 
 #input-box:focus {
     border: none;
-    background: transparent;
+    background: #111111;
 }
 '''
+
+
+# ── 입력 이벤트 + TextArea 커스텀 ─────────────────────────────────
+class InputSubmitted(Message):
+    '''_InputArea 가 Enter 로 submit 될 때 발송.'''
+    def __init__(self, text: str):
+        self.text = text
+        super().__init__()
+
+
+class _InputArea(TextArea):
+    '''Textual Input 은 CJK wide char 커서 위치 계산 버그가 있음.
+    TextArea 는 렌더 파이프라인이 달라 한글/CJK 정상 처리.
+
+    바인딩:
+    - Enter: submit (기본 newline 동작 override)
+    - Shift+Enter: 줄바꿈 (multi-line 입력)
+    - Ctrl+J: 줄바꿈 (OS 환경에 따라 Shift+Enter 가 막힐 때 대안)
+    '''
+    BINDINGS = [
+        Binding('enter', 'submit_input', 'Submit', show=False, priority=True),
+        Binding('shift+enter', 'newline', 'Newline', show=False),
+        Binding('ctrl+j', 'newline', 'Newline', show=False),
+    ]
+
+    def action_submit_input(self) -> None:
+        text = self.text
+        self.text = ''
+        self.post_message(InputSubmitted(text))
+
+    def action_newline(self) -> None:
+        # 현재 커서 위치에 개행 삽입
+        self.insert('\n')
 
 
 # ── TUI 스트림 — rich Console.file 을 가로채 RichLog로 흘림 ───────
@@ -218,7 +257,7 @@ class HarnessApp(App):
         yield Static('', id='status-bar')
         with Vertical(id='input-container'):
             yield Static(self._prompt_label(), id='prompt-label')
-            yield Input(placeholder='입력... (/ 명령어, @claude 질문)', id='input-box')
+            yield _InputArea(id='input-box', show_line_numbers=False, soft_wrap=True)
 
     def on_mount(self):
         self._install_redirects()
@@ -365,7 +404,7 @@ class HarnessApp(App):
 
     def _focus_input(self):
         try:
-            self.query_one('#input-box', Input).focus()
+            self.query_one('#input-box', _InputArea).focus()
         except Exception:
             pass
 
@@ -404,11 +443,10 @@ class HarnessApp(App):
         self.call_from_thread(self._update_status)
 
     # ── 입력 처리 ─────────────────────────────────────────────────
-    @on(Input.Submitted, '#input-box')
-    def handle_input(self, event: Input.Submitted):
-        text = event.value.strip()
-        inp = self.query_one('#input-box', Input)
-        inp.value = ''
+    @on(InputSubmitted)
+    def handle_input(self, event: InputSubmitted):
+        text = event.text.strip()
+        # _InputArea.action_submit_input 이 이미 text 를 비움
         if not text:
             return
 
@@ -483,11 +521,12 @@ class HarnessApp(App):
         def _upd():
             self._agent_running = running
             try:
-                inp = self.query_one('#input-box', Input)
-                inp.placeholder = '처리 중...' if running else '입력... (/ 명령어, @claude 질문)'
+                inp = self.query_one('#input-box', _InputArea)
                 inp.disabled = running
             except Exception:
                 pass
+            # TextArea 에는 placeholder 가 없어 prompt-label 을 힌트용으로 전환
+            self._set_prompt_hint('처리 중...' if running else None)
             if not running:
                 self.call_after_refresh(self._focus_input)
             self._refresh_prompt()
@@ -495,6 +534,16 @@ class HarnessApp(App):
         try:
             self.call_from_thread(_upd)
         except RuntimeError:
+            pass
+
+    def _set_prompt_hint(self, hint: str | None):
+        '''prompt-label 영역에 임시 힌트 표시. None 이면 기본 디렉토리 라벨.'''
+        try:
+            if hint is None:
+                self.query_one('#prompt-label', Static).update(self._prompt_label())
+            else:
+                self.query_one('#prompt-label', Static).update(f' {hint}')
+        except Exception:
             pass
 
     def _run_agent_thread(self, user_input: str, plan_mode: bool = False):
@@ -712,9 +761,9 @@ class HarnessApp(App):
                 (f'  → y/n (기본 {"y" if default else "n"})', 'dim'),
                 ('\n', ''),
             ))
+            self._set_prompt_hint(f'{prompt} (y/n)')
             try:
-                inp = self.query_one('#input-box', Input)
-                inp.placeholder = f'{prompt} (y/n)'
+                inp = self.query_one('#input-box', _InputArea)
                 inp.disabled = False
                 self.call_after_refresh(self._focus_input)
             except Exception:
