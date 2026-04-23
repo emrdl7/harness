@@ -35,9 +35,43 @@ from cli.render import (
 slash_completer = SlashCompleter()
 
 
-def get_input(turns: int, working_dir: str) -> str:
+def _build_status_bar(session_msgs: list) -> HTML:
+    '''prompt_toolkit bottom_toolbar — model · ctx% · approval_mode.
+
+    색상 의미:
+    - ctx: 80%↑ yellow, 95%↑ red
+    - mode: suggest=blue(읽기만), auto-edit=green(안전 기본), full-auto=red(위험)
+    '''
+    used = sum(len(m.get('content') or '') for m in session_msgs) // 4
+    total = config.CONTEXT_WINDOW
+    pct = int(used / total * 100) if total else 0
+
+    if pct >= 95:
+        ctx_color = 'ansired'
+    elif pct >= 80:
+        ctx_color = 'ansiyellow'
+    else:
+        ctx_color = 'ansigreen'
+
+    mode = config.APPROVAL_MODE
+    mode_color = {
+        'suggest':   'ansiblue',
+        'auto-edit': 'ansigreen',
+        'full-auto': 'ansired',
+    }.get(mode, 'ansibrightblack')
+
+    sep = '<ansibrightblack>  ·  </ansibrightblack>'
+    return HTML(
+        f'  <ansibrightblack>model</ansibrightblack> <ansicyan>{config.MODEL}</ansicyan>'
+        f'{sep}<ansibrightblack>ctx</ansibrightblack> <{ctx_color}>{pct}%</{ctx_color}>'
+        f'{sep}<ansibrightblack>mode</ansibrightblack> <{mode_color}>{mode}</{mode_color}>'
+    )
+
+
+def get_input(turns: int, working_dir: str, session_msgs: list | None = None) -> str:
     short = _short_dir(working_dir)
     slash_completer.working_dir = working_dir  # arg 자동완성이 현재 dir 기준 동작
+    toolbar = _build_status_bar(session_msgs) if session_msgs is not None else None
     return pt_prompt(
         HTML(f'<ansibrightblack>{short}</ansibrightblack> '
              f'<ansicyan><b>❯</b></ansicyan> '
@@ -45,6 +79,7 @@ def get_input(turns: int, working_dir: str) -> str:
         completer=slash_completer,
         style=PT_STYLE,
         complete_while_typing=True,
+        bottom_toolbar=toolbar,
     )
 
 

@@ -344,7 +344,7 @@ def main():
     while True:
         try:
             turns = len([m for m in session_msgs if m['role'] == 'user'])
-            user_input = get_input(turns, working_dir).strip()
+            user_input = get_input(turns, working_dir, session_msgs=session_msgs).strip()
 
             if not user_input:
                 continue
