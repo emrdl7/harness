@@ -164,6 +164,11 @@ def run_app(
         if not input_area.text and _running['task'] is None:
             event.app.exit()
 
+    @kb.add('c-l')
+    def _redraw(event):
+        '''수동 전체 redraw — resize 후 레이아웃 깨짐 복구용 safety net.'''
+        _on_winch()
+
     # FloatContainer 로 입력창 위에 자동완성 popup (CompletionsMenu) 을 띄운다.
     # xcursor/ycursor=True 로 커서 위치 근처에 popup 이 뜨고, complete_while_typing
     # 을 켜뒀으므로 `/` 입력 즉시 슬래시 카탈로그 드롭다운이 보인다.
@@ -190,33 +195,20 @@ def run_app(
         refresh_interval=0.1,
     )
 
-    # Resize 누적 방지 — asyncio polling 으로 직접 감지.
+    # Resize 누적 방지 — visible screen 전체 클리어 + renderer 초기화.
     #
-    # 왜 SIGWINCH signal 대신 polling?
-    #  · signal.signal 은 prompt_toolkit 의 asyncio 경로에 덮여 호출 안 됨.
-    #  · loop.add_signal_handler 도 prompt_toolkit 기본 핸들러와 충돌.
-    #  · shutil.get_terminal_size 를 주기(100ms) 폴링 → 확실히 감지.
-    #
-    # 왜 창 "줄일" 때만 누적?
-    #  · Window(char='─') 이 old 폭(예 100)에서 100개를 그리면 new 폭(80)
-    #    에서 soft-wrap 되어 terminal 상 2줄 사용. prompt_toolkit 은 이걸
-    #    논리적 1줄로 기억해 cursor_up(1) 만 하므로 위 1줄이 stale 로 남음.
-    #  · 폭 넓힐 때는 wrap 이 없어 누적 없음.
-    #
-    # 처리: cursor_up(50) → cursor_backward → erase_down → _last_screen=None
-    #       → CPR 요청 → invalidate. 50 줄은 live 영역(≤ max 13) + 누적분
-    #       여유. scrollback 일부는 빈 줄이 되지만 terminal buffer 에는
-    #       원본 보존이라 위로 스크롤 시 복구.
-    _WINCH_CLEAR_ROWS = 50
-
+    # 기존 cursor_up + erase_down 방식이 어떤 이유로든 실제 terminal 에
+    # 반영 안 되는 환경이 있음 (polling/signal 경로 모두 무효). 따라서
+    # 더 공격적으로 `\x1b[2J` (ED mode 2 = visible screen 전체 지움) +
+    # `\x1b[H` (cursor home) 을 raw write 로 쏜다. ED 2 는 xterm/iTerm2/
+    # VS Code terminal 등 대부분에서 scrollback buffer 는 건드리지 않으므로
+    # 위로 스크롤하면 과거 출력은 그대로 유지.
     def _on_winch():
         try:
             if not app.is_running:
                 return
             out = app.output
-            out.cursor_up(_WINCH_CLEAR_ROWS)
-            out.cursor_backward(10_000)
-            out.erase_down()
+            out.write_raw('\x1b[2J\x1b[H')
             out.flush()
             try:
                 app.renderer._last_screen = None
