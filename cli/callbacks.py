@@ -83,14 +83,48 @@ def on_tool(name: str, args: dict, result):
         hint       = _tool_result_hint(name, result)
         elapsed_str = f' [dim]{elapsed:.1f}s[/dim]' if elapsed > 0.5 else ''
         if result.get('ok'):
-            console.print(
-                f'[dim]└ {hint}[/dim]{elapsed_str}'
-            )
+            # write_file / edit_file + 승인 단계에 저장된 stats 가 있으면
+            # Claude Code 스타일 요약(+N 추가 -M 삭제 + 샘플 3줄)으로 대체.
+            if (name in ('write_file', 'edit_file')
+                    and _last_write_stats
+                    and _last_write_stats.get('path') == args.get('path')):
+                _emit_write_stats_hint(elapsed_str)
+                _last_write_stats.clear()
+            else:
+                console.print(
+                    f'[dim]└ {hint}[/dim]{elapsed_str}'
+                )
         else:
             console.print(
                 f'[dim]└ [/dim][tool.fail]{hint}[/tool.fail]'
             )
         _spinner.start()
+
+
+def _emit_write_stats_hint(elapsed_str: str) -> None:
+    '''Claude Code 스타일 Write 요약: "└ +N 추가  -M 삭제" + 샘플 라인(최대 3).'''
+    from rich.text import Text
+
+    s = _last_write_stats or {}
+    added = s.get('added', 0)
+    removed = s.get('removed', 0)
+    samples = s.get('samples', [])
+
+    console.print(
+        f'[dim]└[/dim] [bold green]+{added}[/bold green] [dim]추가[/dim]  '
+        f'[bold red]-{removed}[/bold red] [dim]삭제[/dim]{elapsed_str}'
+    )
+    for ln_no, kind, content in samples[:3]:
+        marker_style = 'bold green' if kind == '+' else 'bold red'
+        bg_style     = 'on #0a2a0a' if kind == '+' else 'on #3a0f0f'
+        t = Text(no_wrap=True)
+        t.append('    ', style='')
+        t.append(f'{ln_no:>4} ', style='dim #4a6a8a')
+        t.append(f'{kind} ', style=marker_style)
+        t.append(content[:120].ljust(120), style=bg_style)
+        console.print(t)
+    if len(samples) > 3:
+        console.print(f'    [dim]... 외 {len(samples) - 3}줄[/dim]')
 
 
 _last_write_stats: dict = {}  # on_tool 에서 "+N 추가 -M 삭제" 요약에 재사용
