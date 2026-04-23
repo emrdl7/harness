@@ -87,11 +87,18 @@ TOOL_DEFINITIONS = [
     },
     {
         'name': 'list_files',
-        'description': '글로브 패턴으로 파일 목록을 가져온다. 예: list_files(pattern="src/**/*.py")',
+        'description': (
+            '글로브 패턴으로 파일 목록을 가져온다. pattern 인자 필수 — 빈 호출 금지. '
+            '디렉토리 전체 나열은 pattern="*", 재귀 검색은 pattern="**/*.py" 같은 식으로. '
+            '예: list_files(pattern="*.html"), list_files(pattern="src/**/*.ts")'
+        ),
         'parameters': {
             'type': 'object',
             'properties': {
-                'pattern': {'type': 'string', 'description': '글로브 패턴. 예: **/*.py, src/**/*.ts'},
+                'pattern': {
+                    'type': 'string',
+                    'description': '글로브 패턴(필수). 예: *, *.py, src/**/*.ts. 빈 문자열 금지.',
+                },
             },
             'required': ['pattern'],
         },

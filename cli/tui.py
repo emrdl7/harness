@@ -154,6 +154,33 @@ TextArea#input-box > .text-area--cursor-gutter {
 SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 
 
+# ── 파일 확장자 → pygments lexer 이름 (rich.syntax 용) ────────────
+_LEXER_BY_EXT = {
+    '.py': 'python', '.pyi': 'python',
+    '.js': 'javascript', '.mjs': 'javascript', '.jsx': 'jsx',
+    '.ts': 'typescript', '.tsx': 'tsx',
+    '.html': 'html', '.htm': 'html',
+    '.css': 'css', '.scss': 'scss', '.sass': 'sass',
+    '.json': 'json', '.jsonc': 'json',
+    '.toml': 'toml', '.yaml': 'yaml', '.yml': 'yaml',
+    '.md': 'markdown', '.markdown': 'markdown',
+    '.sh': 'bash', '.bash': 'bash', '.zsh': 'bash',
+    '.go': 'go', '.rs': 'rust', '.rb': 'ruby',
+    '.sql': 'sql', '.xml': 'xml',
+    '.c': 'c', '.h': 'c', '.cpp': 'cpp', '.hpp': 'cpp',
+    '.java': 'java', '.kt': 'kotlin',
+    '.swift': 'swift', '.dart': 'dart',
+    '.lua': 'lua', '.php': 'php',
+    '.dockerfile': 'dockerfile',
+}
+
+
+def _lexer_for_path(path: str) -> str:
+    '''확장자에서 pygments lexer 이름 추출. 모르면 text.'''
+    ext = os.path.splitext(path.lower())[1]
+    return _LEXER_BY_EXT.get(ext, 'text')
+
+
 # ── 입력 이벤트 + TextArea 커스텀 ─────────────────────────────────
 class InputSubmitted(Message):
     '''_InputArea 가 Enter 로 submit 될 때 발송.'''
@@ -944,36 +971,50 @@ class HarnessApp(App):
         return self._confirm_result
 
     def _confirm_write(self, path: str, content: str = None) -> bool:
-        # diff 미리보기 — REPL cli.callbacks.confirm_write 와 동등.
-        # 60줄 까지 +/- 색 분리, 이상은 생략 안내.
+        '''Claude Code 스타일 diff 미리보기 — Panel 안에 Syntax(diff) 렌더.
+
+        pygments `diff` lexer 가 +/-/@@ 를 각각 green/red/cyan 으로 자동 하이라이트.
+        새 파일은 diff 대신 내용 자체를 확장자 기반 syntax 로 그대로 보여줌.
+        '''
         if content is not None:
             try:
-                import difflib as _dl
-                if os.path.exists(path):
+                from rich.syntax import Syntax
+                from rich.panel import Panel
+                existing = os.path.exists(path)
+                if existing:
                     with open(path, encoding='utf-8', errors='replace') as f:
                         old_lines = f.readlines()
-                    label = path
+                    title = f'[bold #5ab6ff]{path}[/bold #5ab6ff]'
                 else:
                     old_lines = []
-                    label = f'{path} (새 파일)'
-                new_lines = [l if l.endswith('\n') else l + '\n' for l in content.splitlines()]
-                diff = list(_dl.unified_diff(old_lines, new_lines, fromfile=label, tofile=label, lineterm=''))
-                if diff:
-                    for line in diff[:60]:
-                        if line.startswith('+++') or line.startswith('---'):
-                            self._output(Text(f'  {line}', style='dim'))
-                        elif line.startswith('+'):
-                            self._output(Text(f'  {line}', style='green'))
-                        elif line.startswith('-'):
-                            self._output(Text(f'  {line}', style='red'))
-                        elif line.startswith('@@'):
-                            self._output(Text(f'  {line}', style='cyan'))
-                        else:
-                            self._output(Text(f'  {line}', style='dim'))
-                    if len(diff) > 60:
-                        self._output(Text(f'  ... (이하 {len(diff) - 60}줄 생략)', style='dim'))
+                    title = f'[bold #5ab6ff]{path}[/bold #5ab6ff] [dim](새 파일)[/dim]'
+
+                if existing:
+                    # 기존 파일 수정 → unified diff
+                    import difflib as _dl
+                    new_lines = [l if l.endswith('\n') else l + '\n' for l in content.splitlines()]
+                    diff = list(_dl.unified_diff(old_lines, new_lines, fromfile=path, tofile=path, lineterm=''))
+                    if not diff:
+                        self._output(Panel('[dim](변경 없음)[/dim]', title=title, border_style='#1a3a5a', padding=(0, 1)))
+                    else:
+                        shown = diff[:60]
+                        body = Syntax('\n'.join(shown), 'diff', theme='ansi_dark',
+                                      line_numbers=False, word_wrap=False, background_color='default')
+                        subtitle = (f'[dim]... 외 {len(diff) - 60}줄[/dim]'
+                                    if len(diff) > 60 else None)
+                        self._output(Panel(body, title=title, subtitle=subtitle,
+                                            border_style='#1a3a5a', padding=(0, 1)))
                 else:
-                    self._output(Text('  (변경 없음)', style='dim'))
+                    # 새 파일 → 확장자 기반 syntax 그대로
+                    lexer = _lexer_for_path(path)
+                    shown_content = '\n'.join(content.splitlines()[:60])
+                    body = Syntax(shown_content, lexer, theme='ansi_dark',
+                                  line_numbers=True, word_wrap=False, background_color='default')
+                    total_lines = len(content.splitlines())
+                    subtitle = (f'[dim]... 외 {total_lines - 60}줄[/dim]'
+                                if total_lines > 60 else None)
+                    self._output(Panel(body, title=title, subtitle=subtitle,
+                                        border_style='#1a3a5a', padding=(0, 1)))
             except Exception:
                 pass
         return self._ask_yes_no(f'Write {path}', default=False)
