@@ -213,11 +213,16 @@ class _TUIStream:
             if at_bottom:
                 rl.scroll_end(animate=False)
 
+        # call_from_thread 는 "다른 스레드" 에서 메인 루프에 위임할 때만 유효.
+        # on_mount / 이벤트 핸들러 등 이미 루프 스레드에서 호출되면 RuntimeError.
+        # 그 경우 바로 실행. 앱 종료 중 이라면 rl 이 None 이라 noop.
         try:
             self.app.call_from_thread(_write)
         except RuntimeError:
-            # 앱 종료 진행 중 — 조용히 버림
-            pass
+            try:
+                _write()
+            except Exception:
+                pass
 
 
 # ── Textual App ───────────────────────────────────────────────────
@@ -367,14 +372,18 @@ class HarnessApp(App):
             rl.scroll_end(animate=False)
 
     def _output(self, *args):
-        '''스레드에서 호출되는 출력. 메인 루프로 위임.'''
+        '''스레드 또는 메인 루프 어느 쪽에서 호출되든 RichLog 에 출력.'''
         def _write():
             for a in args:
                 self._rl_write(a)
         try:
             self.call_from_thread(_write)
         except RuntimeError:
-            pass
+            # 이미 루프 스레드 — 직접 호출
+            try:
+                _write()
+            except Exception:
+                pass
 
     def _flush_stream(self):
         with self._stream_lock:
