@@ -46,8 +46,8 @@
 
 ### 🟠 잔여 미해결 항목 요약 (2026-04-23 기준)
 
-- §1 Bugs: **3건** — 1.4(M, /commit+/push double-run), 1.10(H, run_command shell-quoting — sticky-deny로 부분 완화), 1.12(M, spinner vs Live)
-- §2 Security: **2건** — 2.8(L, manual YAML), 2.10(M, per-conn HARNESS_CWD)
+- §1 Bugs: **2건** — 1.10(H, run_command shell-quoting — sticky-deny로 부분 완화), 1.12(M, spinner vs Live)
+- §2 Security: **1건** — 2.8(L, manual YAML)
 - §3 Architecture: ~11건 (3.2/3.3 닫힘) — 3.1(H, main.py 1666줄)이 가장 큼
 - §4 Performance: 5건 (전부 L/M)
 
@@ -72,9 +72,10 @@
 - **Suggestion:** Change server signature to `def confirm_write(path: str, content: str = None)` and forward the diff to the UI so the server matches the CLI behavior added in `main.py:285`.
 - **Fix applied:** `harness_server.py:71` signature is now `def confirm_write(path: str, content: str | None = None)`. Content is currently unused (not forwarded to UI) — future enhancement: show content/diff preview in WS confirm message.
 
-### 1.4 `/commit` intent + `/push` intent double-runs when user says "커밋하고 푸시" (Medium)
-- **Location:** `main.py:1611-1633`
-- **Description:** `_is_push_intent("커밋하고 푸시")` is True AND `_is_commit_intent(...)` is True. The push-branch already runs `/commit` then `/push` (line 1615-1621) and `continue`s. But the trigger word `"커밋하고 푸시"` is in both `_PUSH_TRIGGERS` and implicitly hit by `_is_commit_intent` via `'커밋해'` substring matching → double-commit attempt risk if user phrases hit both. The early `continue` saves it for most cases, but the order matters: push is evaluated before commit, so it currently works. Fragile — any reorder breaks it.
+### 1.4 ~~`/commit` intent + `/push` intent double-runs when user says "커밋하고 푸시"~~ ✅ FIXED 2026-04-23
+- **Location:** `main.py:_is_commit_intent` 가드
+- **Description (당시):** `_is_push_intent`/`_is_commit_intent`가 둘 다 True를 반환할 수 있어 dispatch 순서 fragility — push가 commit을 먼저 처리하지 않으면 commit 두 번 실행 위험.
+- **Fix applied:** `_is_commit_intent`에서 `_is_push_intent(text)`이면 즉시 False 반환. push 분기가 commit 부분을 항상 같이 처리하므로 dispatch 순서에 무관. 단위 테스트 12건(`tests/test_main_intent.py`).
 - **Suggestion:** Make intent detection mutually exclusive with a single classifier returning `'commit_push' | 'push' | 'pull' | 'commit' | None`.
 
 ### 1.5 ~~`_parse_text_tool_calls` JSON regex cannot handle nested braces~~ ✅ FIXED 2026-04-23
@@ -225,14 +226,11 @@
 - **Description:** Sessions contain user prompts and tool outputs, potentially including API keys echoed into `run_command`, read file contents, etc. Default umask is 0022 → world-readable on multi-user systems.
 - **Suggestion:** `os.chmod(path, 0o600)` after write; `os.makedirs(SESSION_DIR, mode=0o700, exist_ok=True)` (note: `mode` only applies to newly created dirs).
 
-### 2.10 `harness_server.py` loads per-connection `HARNESS_CWD` from server-side env (Medium — 관찰 노트)
-**재평가 2026-04-23:** 각 Session 객체는 개별 cwd를 유지하고 `/cd`로 분기하므로 _실제_ 격리는 유지됨.
-문제는 "서버 재시작 후 첫 연결들이 같은 기본 cwd에서 출발"이라는 UX 혼선 뿐. 집 머신 + 외부 2인
-시나리오에서는 각자 `/cd`로 자기 프로젝트로 이동하므로 실질 위험 없음. BB-2 공유 세션 착수 시 함께
-재설계 예정(`set_cwd` 초기 메시지 도입).
-- **Location:** `harness_server.py:41`
-- **Description:** `self.working_dir = os.environ.get('HARNESS_CWD') or os.getcwd()`. Every WS client lands in the same server-side directory. Multi-client usage is not isolated; one client's `/cd` can leak into another's view (it's per-`Session` object, so `/cd` itself is scoped — but all clients start at the same cwd the server was launched from). Confusing for shared deployments.
-- **Suggestion:** Require the client to send an initial `set_cwd` message; reject if it resolves outside an allowed root.
+### 2.10 ~~`harness_server.py` loads per-connection `HARNESS_CWD` from server-side env~~ ✅ RESOLVED 2026-04-23 (BB-2로 자연 해결)
+**경위:** BB-2(Phase 1~4) 도입으로 `Session`이 `Room.state` 단위로 묶이고, 같은 `--room`으로 들어온 멤버는 `/cd`/working_dir을 공유한다. `_solo_<UUID>` 룸은 매 연결 격리. 결과적으로 "공유는 의도된 공유, 솔로는 격리"가 되어 원래 우려한 "leak/혼선"은 더 이상 의미 없음.
+- **Location (당시):** `harness_server.py:41`
+- **Description (당시):** 모든 WS가 서버 기본 cwd에서 시작 → multi-client 혼선.
+- **Resolution:** BB-2 룸 단위 격리(`_get_or_create_room`, `Room.state`)로 자연 해결. 추가 `set_cwd` 프로토콜은 불요. 룸 외부 root 제한이 추가로 필요하면 별도 phase에서.
 
 ---
 

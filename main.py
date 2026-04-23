@@ -609,14 +609,20 @@ _PULL_TRIGGERS = [
 ]
 
 
-def _is_commit_intent(text: str) -> bool:
-    lower = text.lower()
-    return any(t in lower for t in _COMMIT_TRIGGERS)
-
-
 def _is_push_intent(text: str) -> bool:
     lower = text.lower()
     return any(t in lower for t in _PUSH_TRIGGERS)
+
+
+def _is_commit_intent(text: str) -> bool:
+    '''CONCERNS §1.4: push 의도와 겹치면 False — push 분기가 commit 부분을
+    같이 처리하므로, 여기서 True를 반환하면 dispatch 순서에 따라 commit이
+    두 번 실행될 fragility가 생긴다. push 우선 분류로 명시 차단.
+    '''
+    if _is_push_intent(text):
+        return False
+    lower = text.lower()
+    return any(t in lower for t in _COMMIT_TRIGGERS)
 
 
 def _is_pull_intent(text: str) -> bool:
