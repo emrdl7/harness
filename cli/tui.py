@@ -206,12 +206,12 @@ def _summarize_diff(diff: list, path: str) -> dict:
         if d.startswith('+'):
             added += 1
             if len(samples) < 6:
-                samples.append((new_ln, '+', d[1:]))
+                samples.append((new_ln, '+', d[1:].rstrip('\n')))
             new_ln += 1
         elif d.startswith('-'):
             removed += 1
             if len(samples) < 6:
-                samples.append((old_ln, '-', d[1:]))
+                samples.append((old_ln, '-', d[1:].rstrip('\n')))
             old_ln += 1
         else:
             old_ln += 1
@@ -260,7 +260,7 @@ def _render_diff_body(diff: list, max_lines: int = 60):
             count += 1
             continue
         if line.startswith('+') and not line.startswith('+++'):
-            content = line[1:]
+            content = line[1:].rstrip('\n')
             t = Text(no_wrap=True)
             t.append(f'{new_ln:>4} ', style=LN_STYLE)
             t.append('+ ', style=MARKER_ADD)
@@ -268,7 +268,7 @@ def _render_diff_body(diff: list, max_lines: int = 60):
             rendered.append(t)
             new_ln += 1
         elif line.startswith('-') and not line.startswith('---'):
-            content = line[1:]
+            content = line[1:].rstrip('\n')
             t = Text(no_wrap=True)
             t.append(f'{old_ln:>4} ', style=LN_STYLE)
             t.append('- ', style=MARKER_DEL)
@@ -277,7 +277,7 @@ def _render_diff_body(diff: list, max_lines: int = 60):
             old_ln += 1
         else:
             # 컨텍스트 (앞에 공백 또는 없음)
-            content = line[1:] if line.startswith(' ') else line
+            content = (line[1:] if line.startswith(' ') else line).rstrip('\n')
             t = Text(no_wrap=True)
             t.append(f'{new_ln:>4} ', style=LN_STYLE)
             t.append('  ', style='')
