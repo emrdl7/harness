@@ -87,11 +87,11 @@ Screen {
 
 #input-container {
     height: auto;
-    min-height: 3;
-    max-height: 14;
+    min-height: 13;
+    max-height: 26;
     background: #0d0d0d;
     layout: vertical;
-    padding: 10 1 1 1;
+    padding: 1 1 1 1;
 }
 
 #prompt-label {
@@ -100,7 +100,7 @@ Screen {
     color: #00aaff;
     text-style: bold;
     padding: 0 2;
-    margin-bottom: 0;
+    margin-bottom: 10;
 }
 
 #input-box {
