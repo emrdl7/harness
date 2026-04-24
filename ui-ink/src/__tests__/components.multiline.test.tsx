@@ -97,6 +97,77 @@ describe('MultilineInput', () => {
     expect(onSubmit).not.toHaveBeenCalled()
     unmount()
   })
+
+  it('Ctrl+J 는 개행만 하고 onSubmit 호출 안 함 (INPT-02)', async () => {
+    // Ctrl+J = '\x0a' — Ink useInput 에서 key.ctrl && input==='j' 로 파싱됨
+    const onSubmit = vi.fn()
+    const {stdin, unmount} = render(<MultilineInput onSubmit={onSubmit} />)
+    stdin.write('hello')
+    await flush()
+    stdin.write('\x0a')  // Ctrl+J
+    await flush()
+    expect(onSubmit).not.toHaveBeenCalled()
+    // buffer 에 줄바꿈이 삽입되었음을 store 로 확인
+    expect(useInputStore.getState().buffer).toBe('hello\n')
+    unmount()
+  })
+
+  it('Ctrl+K 뒤 삭제 — 텍스트 입력 후 Ctrl+K → 커서 이후 텍스트 제거 (INPT-04)', async () => {
+    const onSubmit = vi.fn()
+    const {stdin, unmount} = render(<MultilineInput onSubmit={onSubmit} />)
+    stdin.write('hello')
+    await flush()
+    // Ctrl+A 로 줄 처음으로 이동
+    stdin.write('\x01')
+    await flush()
+    // Ctrl+K — 커서 이후(전체) 삭제
+    stdin.write('\x0b')
+    await flush()
+    expect(useInputStore.getState().buffer).toBe('')
+    expect(onSubmit).not.toHaveBeenCalled()
+    unmount()
+  })
+
+  it('Ctrl+W 단어 삭제 — 단어 뒤에서 Ctrl+W → 단어 제거 (INPT-04)', async () => {
+    const onSubmit = vi.fn()
+    const {stdin, unmount} = render(<MultilineInput onSubmit={onSubmit} />)
+    stdin.write('hello world')
+    await flush()
+    // Ctrl+W — 커서 직전 단어('world') 삭제
+    stdin.write('\x17')
+    await flush()
+    // 'hello ' 또는 'hello' 가 남아야 함 (deleteWordBefore 구현에 따라)
+    const buf = useInputStore.getState().buffer
+    expect(buf).toContain('hello')
+    expect(buf).not.toContain('world')
+    expect(onSubmit).not.toHaveBeenCalled()
+    unmount()
+  })
+
+  it('Ctrl+A 줄 처음 이동 후 문자 삽입 — 크래시 없음 (INPT-04)', async () => {
+    const {stdin, lastFrame, unmount} = render(<MultilineInput onSubmit={vi.fn()} />)
+    stdin.write('hello')
+    await flush()
+    stdin.write('\x01')  // Ctrl+A — 줄 처음으로 이동
+    await flush()
+    // 추가 입력이 처음에 삽입됨 — 크래시 없어야 함
+    stdin.write('X')
+    await flush()
+    expect(() => lastFrame()).not.toThrow()
+    // 'X'가 'hello' 앞에 삽입됨
+    expect(useInputStore.getState().buffer).toBe('Xhello')
+    unmount()
+  })
+
+  it('빈 히스토리에서 ↑ 키 입력 시 크래시 없음 (INPT-03)', async () => {
+    // 히스토리가 비어 있을 때 ↑ 를 눌러도 크래시가 발생하지 않아야 함
+    useInputStore.setState({buffer: '', history: [], historyIndex: -1, slashOpen: false})
+    const {stdin, lastFrame, unmount} = render(<MultilineInput onSubmit={vi.fn()} />)
+    stdin.write('\x1b[A')  // ↑ 화살표
+    await flush()
+    expect(() => lastFrame()).not.toThrow()
+    unmount()
+  })
 })
 
 describe('SlashPopup', () => {

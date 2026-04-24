@@ -31,4 +31,15 @@ describe('isInteractiveTTY', () => {
     const fakeTTYWrongType = {isTTY: true, setRawMode: 'not-a-function'} as unknown as NodeJS.ReadStream
     expect(isInteractiveTTY(fakeTTYWrongType)).toBe(false)
   })
+
+  it('stdin.isTTY = false 시 REPL 모드 진입 안 함 — one-shot 경로 (FND-12)', () => {
+    // isInteractiveTTY(stdin) === false 이면 index.tsx 가 one-shot 경로로 분기
+    // 즉, REPL 루프 대신 단일 실행 후 종료
+    // 이 테스트는 해당 분기 판단 함수의 결과가 false 임을 검증
+    const nonTTYStdin = {isTTY: false} as unknown as NodeJS.ReadStream
+    expect(isInteractiveTTY(nonTTYStdin)).toBe(false)
+    // isTTY 가 없는 경우도 동일 (CI 파이프라인 등)
+    const pipedStdin = {} as unknown as NodeJS.ReadStream
+    expect(isInteractiveTTY(pipedStdin)).toBe(false)
+  })
 })
