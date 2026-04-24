@@ -89,7 +89,14 @@ Plans:
 5. Presence 세그먼트 `🟢 2명 [alice·me]` + join/leave 시 system 메시지 1줄 `<Static>` append + 사용자 색 해시 (토큰 기반 deterministic) 가 StatusBar 와 author prefix `[alice]` 에 일관 적용.
 6. `ws://127.0.0.1` 로컬 시나리오와 `ws://external-host` 원격 시나리오가 동일한 통합 테스트 시퀀스에서 green (로컬-원격 동등성 — REM-06).
 
-**Plans**: TBD
+**Plans**: 6 plans
+Plans:
+- [ ] 03-01-PLAN.md — 서버 PEXT-01~03 (Room event_id ring buffer + agent_start per-subscriber + confirm_write old_content)
+- [ ] 03-02-PLAN.md — 서버 PEXT-04~05 (resume_from delta replay + cancel asyncio 중단)
+- [ ] 03-03-PLAN.md — 클라이언트 protocol 타입 + store 확장 + dispatch 배선
+- [ ] 03-04-PLAN.md — 신규 컴포넌트 (PresenceSegment · ReconnectOverlay · ObserverOverlay · userColor)
+- [ ] 03-05-PLAN.md — HarnessClient jitter backoff + one-shot.ts + index.tsx argv 파싱
+- [ ] 03-06-PLAN.md — App.tsx 치환 우선순위 + StatusBar/Message 배선 + 수동 검증
 **UI hint**: yes
 
 ---
@@ -164,7 +171,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Foundation | 3/3 | Complete | 2026-04-23 |
 | 2. Core UX | 5/5 | Complete | 2026-04-24 |
-| 3. Remote Room + Session Control | 0/0 | Not started | - |
+| 3. Remote Room + Session Control | 0/6 | In progress | - |
 | 4. Testing + Docs + External Beta | 0/0 | Not started | - |
 | 5. Legacy Deletion + Milestone Closure | 0/0 | Not started | - |
 
