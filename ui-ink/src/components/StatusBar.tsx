@@ -1,5 +1,6 @@
 // StatusBar — path / model / mode / turn / ctx% / room 6 세그먼트 (STAT-01, STAT-02)
 // 좁은 폭에서는 우선순위 순으로 세그먼트 드롭 (room → ctx% → turn → mode → model → path)
+// RND-09: ctxTokens 변경 시 StatusBar 본체 리렌더 방지를 위한 CtxMeter 격리 서브컴포넌트
 import React from 'react'
 import {Box, Text} from 'ink'
 import Spinner from 'ink-spinner'
@@ -19,6 +20,9 @@ interface Segment {
   priority: number    // 낮을수록 먼저 드롭
 }
 
+// ctx% 계산 기준 — 임시 기준 32768 (Wave 2 이후 모델별 정밀화)
+const MAX_CTX = 32768
+
 // path 축약 — 홈은 ~, 절대경로는 마지막 2 세그먼트만
 function shortenPath(p: string): string {
   if (!p) return ''
@@ -34,9 +38,19 @@ function shortenPath(p: string): string {
   return out
 }
 
+// RND-09: ctxTokens 만 격리 구독 — StatusBar 본체 리렌더 방지
+// ctxTokens 변경 시 CtxMeter 서브트리만 리렌더됨
+function CtxMeter() {
+  const {ctxTokens} = useStatusStore(useShallow((s) => ({ctxTokens: s.ctxTokens})))
+  if (typeof ctxTokens !== 'number') return null
+  const pct = Math.min(100, Math.round((ctxTokens / MAX_CTX) * 100))
+  return <Text color={theme.muted}>ctx {pct}%</Text>
+}
+
 // D-01 최하단 — busy spinner 좌측, 세그먼트들 우측 흐름
 export const StatusBar: React.FC<StatusBarProps> = ({columns}) => {
-  const {connected, busy, workingDir, model, mode, turns, ctxTokens} = useStatusStore(
+  // StatusBar 본체에서 ctxTokens 제거 — CtxMeter 서브컴포넌트로 이관 (RND-09)
+  const {connected, busy, workingDir, model, mode, turns} = useStatusStore(
     useShallow((s) => ({
       connected: s.connected,
       busy: s.busy,
@@ -44,15 +58,15 @@ export const StatusBar: React.FC<StatusBarProps> = ({columns}) => {
       model: s.model,
       mode: s.mode,
       turns: s.turns,
-      ctxTokens: s.ctxTokens,
     })),
   )
   const roomName = useRoomStore(useShallow((s) => s.roomName))
 
-  // ctx% = ctxTokens / 32768 (임시 기준 — Wave 2 에서 모델별 정밀화)
-  const CTX_CAP = 32768
-  const ctxPct = typeof ctxTokens === 'number'
-    ? Math.min(100, Math.round((ctxTokens / CTX_CAP) * 100))
+  // ctxTokens 현재 값은 렌더 길이 계산용으로만 읽기 (CtxMeter 구독과 별개)
+  // 레이아웃 계산에 필요하므로 store 에서 직접 getState() 로 읽음 — 구독 없음
+  const ctxTokensCurrent = useStatusStore.getState().ctxTokens
+  const ctxPct = typeof ctxTokensCurrent === 'number'
+    ? Math.min(100, Math.round((ctxTokensCurrent / MAX_CTX) * 100))
     : undefined
 
   // 세그먼트 정의 — priority 낮은 것부터 좁은 폭에서 드롭됨
@@ -98,11 +112,12 @@ export const StatusBar: React.FC<StatusBarProps> = ({columns}) => {
     })
   }
 
+  // ctx 세그먼트 — CtxMeter 서브컴포넌트를 렌더 (RND-09 격리)
   if (ctxPct !== undefined) {
     const ctxText = `ctx ${ctxPct}%`
     segments.push({
       key: 'ctx',
-      render: () => <Text color={theme.muted}>{ctxText}</Text>,
+      render: () => <CtxMeter />,
       textLen: ctxText.length,
       priority: 40,
     })
