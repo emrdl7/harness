@@ -17,6 +17,7 @@ import {ConfirmDialog} from './components/ConfirmDialog.js'
 import {ReconnectOverlay} from './components/ReconnectOverlay.js'
 import {ObserverOverlay} from './components/ObserverOverlay.js'
 import {SetupWizard} from './components/SetupWizard.js'
+import {NickPrompt} from './components/NickPrompt.js'
 
 // env var 우선 → config 파일 fallback
 function resolveConfig(): HarnessConfig | null {
@@ -107,7 +108,7 @@ export const App: React.FC = () => {
   // InputArea 의 onSubmit — WS 전송 + 메시지 표시
   const handleSubmit = useCallback((text: string) => {
     // DIFF-02: room 모드에서만 meta.author 추가 (Message.tsx author prefix 표시용)
-    const author = cfg?.room ? (cfg.token || 'me') : undefined
+    const author = cfg?.room ? (cfg.nick || 'me') : undefined
     useMessagesStore.getState().appendUserMessage(text, {author})
     const client = clientRef.current
     if (client) {
@@ -139,6 +140,11 @@ export const App: React.FC = () => {
   // 최초 실행 — config 없으면 SetupWizard 표시
   if (!cfg) {
     return <SetupWizard onDone={setCfg} />
+  }
+
+  // 룸 모드 + 닉네임 미설정 — NickPrompt 표시
+  if (cfg.room && !cfg.nick) {
+    return <NickPrompt cfg={cfg} onDone={setCfg} />
   }
 
   // D-01 레이아웃: [MessageList(Static + active)] → [Divider] → [inputArea] → [Divider] → [StatusBar]

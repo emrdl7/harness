@@ -10,6 +10,7 @@ export interface HarnessConfig {
   url: string
   token: string
   room?: string
+  nick?: string
 }
 
 export function loadConfig(): HarnessConfig | null {
