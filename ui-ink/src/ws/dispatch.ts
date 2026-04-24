@@ -7,6 +7,12 @@ import {useStatusStore} from '../store/status.js'
 import {useRoomStore} from '../store/room.js'
 import {useConfirmStore} from '../store/confirm.js'
 
+let _exit: (() => void) | null = null
+
+export function bindExit(fn: (() => void) | null): void {
+  _exit = fn
+}
+
 export function dispatch(msg: ServerMsg): void {
   const messages = useMessagesStore.getState()
   const status = useStatusStore.getState()
@@ -155,6 +161,10 @@ export function dispatch(msg: ServerMsg): void {
           messages.appendSystemMessage(text)
           break
         }
+        case 'exit':
+        case 'quit':
+          _exit?.()
+          break
         default:
           messages.appendSystemMessage(`/${cmd} 완료`)
       }

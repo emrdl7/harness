@@ -8,6 +8,7 @@ import {useInputStore} from './store/input.js'
 import {useConfirmStore, bindConfirmClient} from './store/confirm.js'
 import {useRoomStore} from './store/room.js'
 import {HarnessClient} from './ws/client.js'
+import {bindExit} from './ws/dispatch.js'
 import {loadConfig, type HarnessConfig} from './config.js'
 import {MessageList} from './components/MessageList.js'
 import {StatusBar} from './components/StatusBar.js'
@@ -73,8 +74,21 @@ export const App: React.FC = () => {
     }
   }, [cfg])
 
-  // history 파일 hydration — 마운트 시 1회
+  // bindExit 등록 — /exit /quit slash_result 에서 호출됨
   useEffect(() => {
+    bindExit(exit)
+    return () => bindExit(null)
+  }, [exit])
+
+  // 시작 배너 + history hydration — 마운트 시 1회
+  useEffect(() => {
+    useMessagesStore.getState().appendSystemMessage(
+      '   / /_  ____ ________  ___  __________\n' +
+      '  / __ \\/ __ `/ ___/ __ \\/ _ \\/ ___/ ___/\n' +
+      ' / / / / /_/ / /  / / / /  __(__  |__  )\n' +
+      '/_/ /_/\\__,_/_/  /_/ /_/\\___/____/____/\n' +
+      '  jabworks · harness v1.0'
+    )
     const {hydrate} = useInputStore.getState()
     if (hydrate) hydrate()
   }, [])
