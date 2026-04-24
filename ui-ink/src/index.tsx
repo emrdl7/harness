@@ -41,18 +41,53 @@ process.on('SIGTERM', () => cleanup(0))
 // SIGINT: cleanup() 후 exit — Ink 핸들러보다 먼저 등록해 터미널 상태 복원 (FND-13)
 process.on('SIGINT',  () => cleanup(0))
 
-if (!isInteractive) {
-  // One-shot 경로 (FND-12) — Phase 3 에서 실제 WS 연결 + stdout 출력으로 확장
-  const query = process.argv[2]
-  if (query) {
-    // eslint-disable-next-line no-restricted-syntax
-    process.stdout.write(`[one-shot] ${query}\n`)
-  } else {
-    process.stderr.write('[harness] non-TTY 환경. HARNESS_URL / HARNESS_TOKEN 으로 연결하세요.\n')
-  }
-  process.exit(0)
-}
+// async IIFE — one-shot 동적 import + await 지원 (SES-01/02/03)
+;(async () => {
+  if (!isInteractive) {
+    // SES-01/02/03: argv 파싱
+    const resumeIdx = process.argv.indexOf('--resume')
+    const resumeId = resumeIdx > -1 ? process.argv[resumeIdx + 1] : undefined
+    const roomIdx = process.argv.indexOf('--room')
+    const roomName = roomIdx > -1 ? process.argv[roomIdx + 1] : process.env['HARNESS_ROOM']
 
-// Ink render — patchConsole: false (FND-14)
-// alternate screen 비활성: 별도 옵션 없이 기본 Ink 는 inline 렌더
-render(<App />, {patchConsole: false})
+    // query: '--' 접두사가 아니고 --room/--resume의 값이 아닌 첫 번째 인자
+    const skipIndices = new Set<number>()
+    if (roomIdx > -1) { skipIndices.add(roomIdx); skipIndices.add(roomIdx + 1) }
+    if (resumeIdx > -1) { skipIndices.add(resumeIdx); skipIndices.add(resumeIdx + 1) }
+    const query = process.argv.slice(2).find(
+      (a, i) => !a.startsWith('--') && !skipIndices.has(i + 2),
+    )
+
+    const url = process.env['HARNESS_URL']
+    const token = process.env['HARNESS_TOKEN']
+    if (!url || !token) {
+      process.stderr.write('[harness] HARNESS_URL / HARNESS_TOKEN 필요\n')
+      process.exit(1)
+    }
+
+    if (query && !resumeId) {
+      // SES-01/SES-03: one-shot (--room 조합 가능)
+      const {runOneShot} = await import('./one-shot.js')
+      await runOneShot({
+        url,
+        token,
+        room: roomName,
+        query,
+        ansi: process.stdout.isTTY === true,
+      })
+      process.exit(0)
+    } else if (resumeId) {
+      // SES-02: --resume <id> — 세션 로드 후 REPL 모드 진입
+      // ConnectOptions.resumeSession 필드를 통해 App.tsx에 전달
+      process.env['HARNESS_RESUME_SESSION'] = resumeId
+      // isInteractive를 우회하여 아래 render 블록으로 진행 (REPL 모드)
+    } else {
+      process.stderr.write('[harness] non-TTY 환경. HARNESS_URL / HARNESS_TOKEN 으로 연결하세요.\n')
+      process.exit(0)
+    }
+  }
+
+  // Ink render — patchConsole: false (FND-14)
+  // alternate screen 비활성: 별도 옵션 없이 기본 Ink 는 inline 렌더
+  render(<App />, {patchConsole: false})
+})()
