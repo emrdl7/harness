@@ -233,6 +233,10 @@ async def run_agent(ws, room: 'Room', user_input: str, plan_mode: bool = False,
     loop = asyncio.get_event_loop()
 
     def on_token(token: str):
+        # B2: _cancel_requested 플래그 체크 — executor 스레드 조기 종료
+        # GIL로 bool 읽기는 안전. return으로 스트리밍 중단 (이미 broadcast된 토큰은 취소 불가)
+        if room._cancel_requested:
+            return
         asyncio.run_coroutine_threadsafe(
             broadcast(room, type='token', text=token), loop
         )
@@ -670,10 +674,25 @@ def _spawn_input_task(room: 'Room', coro):
 
     asyncio.create_task만으로는 GC될 위험 — 명시적으로 set에 저장하고
     done 콜백으로 자동 discard.
+
+    PEXT-05 (B2): task가 시작 전에 cancel()되면 코루틴이 한 번도 실행되지 않아
+    _handle_input finally 블록이 실행되지 않는다. done callback에서 cancelled
+    상태를 감지해 busy/active_input_from/_cancel_requested를 안전하게 정리.
     '''
     task = asyncio.create_task(coro)
     room.input_tasks.add(task)
-    task.add_done_callback(room.input_tasks.discard)
+
+    def _on_done(t):
+        # set에서 제거
+        room.input_tasks.discard(t)
+        # task가 start 전에 cancel된 경우 코루틴 finally가 실행되지 않으므로
+        # 여기서 busy/active_input_from/_cancel_requested를 강제 정리
+        if t.cancelled():
+            room.busy = False
+            room.active_input_from = None
+            room._cancel_requested = False
+
+    task.add_done_callback(_on_done)
     return task
 
 
@@ -691,11 +710,15 @@ async def _handle_input(ws, room: 'Room', text: str):
         else:
             await run_agent(ws, room, text)
             await broadcast_state(room)
+    except asyncio.CancelledError:
+        # PEXT-05: 정상 취소 경로 — busy/active_input_from/cancel_flag는 finally에서 정리
+        pass
     except Exception as e:
         await broadcast(room, type='error', text=f'입력 처리 오류: {e}')
     finally:
         room.busy = False
         room.active_input_from = None
+        room._cancel_requested = False  # B2: 다음 실행을 위해 리셋
 
 
 async def _handle_cplan_execute(ws, room: 'Room', task: str):
@@ -766,6 +789,18 @@ async def _dispatch_loop(ws, room: 'Room', queue: asyncio.Queue):
             state._confirm_bash_result = msg.get('result', False)
             if state._confirm_bash_event:
                 state._confirm_bash_event.set()
+
+        elif t == 'cancel':
+            # PEXT-05: 입력 주체(active_input_from)만 취소 가능 — confirm_write_response와 동일한 DQ2 가드 (T-03-02-02)
+            if ws is not room.active_input_from:
+                continue
+            # B2: executor 스레드 조기 종료를 위한 플래그 설정
+            room._cancel_requested = True
+            # input_tasks에서 살아있는 task를 cancel (done() 체크로 안전 처리 — T-03-02-03)
+            for task in list(room.input_tasks):
+                if not task.done():
+                    task.cancel()
+            await broadcast(room, type='agent_cancelled')
 
         elif t == 'ping':
             await send(ws, type='pong')

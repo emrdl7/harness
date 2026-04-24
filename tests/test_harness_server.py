@@ -911,7 +911,12 @@ class TestCancelTask:
         assert room._cancel_requested is True
 
     def test_cancelled_error_clears_busy(self, isolated_rooms):
-        '''_handle_input()에서 CancelledError 발생 시 finally에서 busy=False, active_input_from=None.'''
+        '''task cancel 시 _spawn_input_task done callback이 busy=False, active_input_from=None을 정리한다.
+
+        asyncio에서 task.cancel()을 첫 await 이전에 호출하면 코루틴이 한 번도
+        실행되지 않아 finally가 동작하지 않는다. _spawn_input_task의 on_done
+        callback이 cancelled() 상태를 감지해 room 상태를 정리해야 한다.
+        '''
         room = srv._get_or_create_room('r')
         ws = _FakeWS()
         room.subscribers.add(ws)
@@ -919,12 +924,9 @@ class TestCancelTask:
         room.active_input_from = ws
 
         async def _go():
-            # _handle_input이 CancelledError를 발생시키는 상황 시뮬레이션
-            # (task.cancel() 후 await 지점에서 CancelledError 발생)
-            task = asyncio.create_task(srv._handle_input(ws, room, 'test'))
-            room.input_tasks.add(task)
-            task.add_done_callback(room.input_tasks.discard)
-            # 즉시 취소
+            # _spawn_input_task를 통해 task 생성 — done callback 포함
+            task = srv._spawn_input_task(room, srv._handle_input(ws, room, 'test'))
+            # 즉시 취소 (await 이전이므로 코루틴 미실행 → done callback이 정리 담당)
             task.cancel()
             try:
                 await task
