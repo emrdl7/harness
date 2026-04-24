@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: ready_to_plan
-last_updated: "2026-04-24T06:24:35.644Z"
+status: planning
+last_updated: "2026-04-24T17:30:00.000Z"
 progress:
   total_phases: 5
-  completed_phases: 1
-  total_plans: 6
-  completed_plans: 8
-  percent: 20
+  completed_phases: 2
+  total_plans: 11
+  completed_plans: 14
+  percent: 40
 ---
 
 # harness — ui-ink Milestone State
@@ -22,20 +22,20 @@ progress:
 
 **See:** `.planning/PROJECT.md` (milestone 정의 · Validated · Active · Out of Scope · Key Decisions · Constraints)
 **Core Value:** "ui-ink 가 harness 의 기본이자 유일한 UI. 로컬과 원격이 동일한 경험을 갖고, 그 경험은 Claude Code 수준이다."
-**Current focus:** Phase --phase — 03
+**Current focus:** Phase 04 — Testing + Docs + External Beta
 
 ---
 
 ## Current Position
 
-Phase: --phase (03) — EXECUTING
-Plan: 1 of --name
+Phase: 04 — READY TO EXECUTE
+Plan: Not started (5/5 planned)
 
 - **Phase:** 4
 - **Plan:** Not started
-- **Status:** Ready to plan
-- **Progress:** `[████████░░] Phase 1~2 완료 (2/5 phases)`
-- **Next action:** `/gsd-execute-phase 3` 실행 → Phase 3 (Remote Room + Session Control) 6개 플랜 실행
+- **Status:** Ready to execute
+- **Progress:** `[████████░░] Phase 1~3 완료 (3/5 phases)`
+- **Next action:** `/gsd-execute-phase 4` 실행 → Phase 4 (Testing + Docs + External Beta) 5개 플랜 실행
 
 ---
 
@@ -45,8 +45,8 @@ Plan: 1 of --name
 |---|------|--------|-------|
 | 1 | Foundation | Complete | 3/3 |
 | 2 | Core UX | Complete | 5/5 |
-| 3 | Remote Room + Session Control | Ready to execute | 6/6 planned |
-| 4 | Testing + Docs + External Beta | Not started | 0/0 |
+| 3 | Remote Room + Session Control | Complete | 6/6 |
+| 4 | Testing + Docs + External Beta | Ready to execute | 5/5 planned |
 | 5 | Legacy Deletion + Milestone Closure | Not started | 0/0 |
 
 ---
@@ -122,9 +122,20 @@ Plan: 1 of --name
 - 03-05 (Wave 3): HarnessClient jitter backoff (WSR-01~03) + one-shot.ts + index.tsx argv (SES-01~03)
 - 03-06 (Wave 4, 수동 체크포인트): App.tsx 치환 우선순위 배선 + StatusBar/Message/DiffPreview + SC-1~SC-7 수동 검증
 
+### Last session summary (2026-04-24 — Phase 4 Planning)
+
+- `/gsd-plan-phase 4 --skip-ui` 실행 → Phase 4 플랜 5개 생성 완료. 검증 통과 (0 blocker, 0 warning).
+- Research 스킵 (Phase 1~3에서 패턴 확립, CONTEXT.md에 상세 방향 기술됨)
+- 패턴 매퍼 실행: ws-backoff.test.ts → integration.*.test.ts analog, protocol.ts → PROTOCOL.md analog 확인
+- 04-01 (Wave 1): Fake WS 서버 통합 테스트 — agent 턴 · **CR-01 자동 발견** · room busy · 3인 동시 재접속 · reconnect delta · REM-06 (TST-02)
+- 04-02 (Wave 1, 병렬): CI matrix — ubuntu+macOS × bun+Node22 (TST-04)
+- 04-03 (Wave 2): 단위 테스트 보완 + 회귀 스냅샷 4종 (TST-01, TST-03)
+- 04-04 (Wave 3): 문서 3종 — CLIENT_SETUP.md 재작성 + PROTOCOL.md 신규 + RELEASE_NOTES.md (TST-06, TST-07, TST-09)
+- 04-05 (Wave 3, checkpoint): CR-01 서버 수정 + PITFALLS 17항목 체크리스트 (TST-05, TST-08)
+
 ### Next session should
 
-1. Phase 3 실행: `/gsd-execute-phase 3` (Wave 1 — 03-01, 03-02 병렬 시작)
+1. Phase 4 실행: `/gsd-execute-phase 4` (Wave 1 — 04-01, 04-02 병렬 시작)
 
 ---
 
