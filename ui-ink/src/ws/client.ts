@@ -6,6 +6,7 @@ import {dispatch} from './dispatch.js'
 import {useStatusStore} from '../store/status.js'
 import {useMessagesStore} from '../store/messages.js'
 import type {ClientMsg} from '../protocol.js'
+import {bindConfirmClient} from '../store/confirm.js'
 
 export interface ConnectOptions {
   url: string
@@ -32,6 +33,8 @@ export class HarnessClient {
 
     this.ws.on('open', () => {
       useStatusStore.getState().setConnected(true)
+      // confirm 응답 전송용 client 바인딩 (CNF-03)
+      bindConfirmClient(this)
       // heartbeat
       this.pingInterval = setInterval(() => {
         this.send({type: 'ping'})
@@ -64,6 +67,8 @@ export class HarnessClient {
     this._clearPing()
     this.ws?.close()
     this.ws = null
+    // confirm 바인딩 해제
+    bindConfirmClient(null)
   }
 
   private _clearPing(): void {
