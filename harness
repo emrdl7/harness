@@ -1,2 +1,2 @@
-#!/bin/bash
-exec bash "$(dirname "$0")/run.sh" "$@"
+#!/usr/bin/env bash
+exec /Users/johyeonchang/.bun/bin/harness "$@"

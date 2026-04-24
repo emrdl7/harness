@@ -106,9 +106,9 @@ export const App: React.FC = () => {
 
   // InputArea 의 onSubmit — WS 전송 + 메시지 표시
   const handleSubmit = useCallback((text: string) => {
-    // DIFF-02: room 모드에서 meta.author 추가 (Message.tsx author prefix 표시용)
-    const myToken = cfg?.token ?? ''
-    useMessagesStore.getState().appendUserMessage(text, {author: myToken || 'me'})
+    // DIFF-02: room 모드에서만 meta.author 추가 (Message.tsx author prefix 표시용)
+    const author = cfg?.room ? (cfg.token || 'me') : undefined
+    useMessagesStore.getState().appendUserMessage(text, {author})
     const client = clientRef.current
     if (client) {
       client.send({type: 'input', text})
