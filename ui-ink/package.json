@@ -8,7 +8,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --max-warnings=0",
     "test": "vitest run",
-    "ci:no-escape": "bash scripts/ci-no-escape.sh"
+    "ci:no-escape": "bash scripts/ci-no-escape.sh",
+    "guard": "bash scripts/guard-forbidden.sh",
+    "ci": "bun run typecheck && bun run test && bun run guard"
   },
   "engines": {
     "bun": ">=1.2.19",
