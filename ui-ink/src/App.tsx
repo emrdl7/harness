@@ -86,19 +86,12 @@ export const App: React.FC = () => {
     if (hydrate) hydrate()
   }, [])
 
-  // RND-04: resize 강제 clear — ED2+ED3+Home escape (Python 경험: ED3 필수)
-  // SIGWINCH 시 Ink 가 재렌더하지만, ED3(scrollback clear)까지 발행해야 stale line 잔재가 사라짐
+  // RND-04: resize 시 Ink 재렌더 트리거 — 스크롤백 clear 제거 (tmux 탭 전환 시 화면 소멸 방지)
   const [_resizeCount, setResizeCount] = useState(0)
   useEffect(() => {
-    const handleResize = () => {
-      // ED2(\x1b[2J 화면 클리어) + ED3(\x1b[3J scrollback 클리어) + Home(\x1b[H 커서 원점)
-      stdout.write('\x1b[2J\x1b[3J\x1b[H')
-      setResizeCount((c) => c + 1)  // Ink 재렌더 trigger 용 더미 state
-    }
+    const handleResize = () => setResizeCount((c) => c + 1)
     stdout.on('resize', handleResize)
-    return () => {
-      stdout.off('resize', handleResize)
-    }
+    return () => { stdout.off('resize', handleResize) }
   }, [stdout])
 
   // D-07/D-08: Ctrl+C (busy → cancel, idle × 2 → exit) / Ctrl+D (idle → exit)
