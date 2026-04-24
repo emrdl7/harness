@@ -62,7 +62,8 @@ export function dispatch(msg: ServerMsg): void {
       break
 
     case 'room_joined':
-      room.setRoom(msg.room, msg.members)
+      // msg.members는 optional — 없으면 빈 배열 (Pitfall H 수정, Plan 03-02에서 서버가 [] 전송)
+      room.setRoom(msg.room, msg.members ?? [])
       break
 
     case 'room_member_joined':
