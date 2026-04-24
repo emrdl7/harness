@@ -120,7 +120,7 @@ Plans:
 Plans:
 - [x] 04-01-PLAN.md — Fake WS 서버 통합 테스트 6종 (agent 턴·confirm CR-01·room busy·reconnect delta·one-shot·3인 동시 재접속)
 - [x] 04-02-PLAN.md — CI matrix (.github/workflows/ci.yml — ubuntu+macOS × bun+Node22 + Python pytest)
-- [ ] 04-03-PLAN.md — 단위 테스트 보완 (MultilineInput 키 시퀀스·TTY 가드) + 회귀 스냅샷 4종
+- [x] 04-03-PLAN.md — 단위 테스트 보완 (MultilineInput 키 시퀀스·TTY 가드) + 회귀 스냅샷 4종
 - [ ] 04-04-PLAN.md — 문서 3종 (CLIENT_SETUP.md 재작성 + PROTOCOL.md 신규 + RELEASE_NOTES.md)
 - [ ] 04-05-PLAN.md — CR-01 수정 (harness_server.py) + PITFALLS 17항목 체크리스트 + 수동 검증 checkpoint
 **UI hint**: yes
