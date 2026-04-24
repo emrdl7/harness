@@ -19,7 +19,7 @@
 ## Phases
 
 - [x] **Phase 1: Foundation** — 의존성 bump · 프로토콜 정합성 복구 · 하드닝 · 스모크. 모든 후속 phase 의 물리적 전제. (completed 2026-04-23)
-- [ ] **Phase 2: Core UX** — 스트리밍 렌더 · 멀티라인 입력 · 슬래시 popup · Tool/Status 렌더 · Confirm 다이얼로그. Claude Code 급 로컬 UX 완성.
+- [ ] **Phase 2: Core UX** — 스트리밍 렌더 · 멀티라인 입력 · 슬래시 popup · Tool/Status 렌더 · Confirm 다이얼로그. Claude Code 급 로컬 UX 완성. *(Plans A~E 자동 태스크 완료, E-5 수동 검증 대기 중)*
 - [ ] **Phase 3: Remote Room + Session Control** — 멤버 presence · 관전 모드 · 재연결 delta · one-shot/resume · 서버 WS 프로토콜 확장 5건 집결.
 - [ ] **Phase 4: Testing + Docs + External Beta** — 통합 테스트 · 회귀 스냅샷 · CI matrix · PROTOCOL.md/CLIENT_SETUP.md · 외부 2인 beta 라운드. Legacy 삭제 전 품질 게이트.
 - [ ] **Phase 5: Legacy Deletion + Milestone Closure** — Python UI 잔재 전수 삭제 · PROJECT.md Evolution 업데이트 · milestone 종료.
@@ -163,7 +163,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 3/0 | Complete    | 2026-04-23 |
-| 2. Core UX | 0/0 | Not started | - |
+| 2. Core UX | 5/5 (E-5 수동 검증 대기) | checkpoint:human-verify | - |
 | 3. Remote Room + Session Control | 0/0 | Not started | - |
 | 4. Testing + Docs + External Beta | 0/0 | Not started | - |
 | 5. Legacy Deletion + Milestone Closure | 0/0 | Not started | - |
