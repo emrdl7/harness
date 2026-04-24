@@ -1,9 +1,12 @@
 // 단일 Message 기본 렌더 — role 별 prefix + 색상 (RND-10, RND-11)
 // cli-highlight 코드 펜스 하이라이트 통합 (RND-06, Task E-1)
+// DIFF-02: room 모드에서 user 메시지에 [author] prefix 표시
 import React from 'react'
 import {Box, Text} from 'ink'
 import {highlight} from 'cli-highlight'
 import type {Message as MessageType} from '../store/messages.js'
+import {useRoomStore} from '../store/room.js'
+import {userColor} from '../utils/userColor.js'
 import {theme} from '../theme.js'
 
 interface MessageProps {
@@ -80,6 +83,12 @@ function splitByCodeFence(content: string): ContentSegment[] {
 export const Message: React.FC<MessageProps> = ({message}) => {
   const color = theme.role[message.role]
   const prefix = PREFIX[message.role]
+  // DIFF-02: room 모드에서 user 메시지에 [author] prefix 조건부 표시
+  // solo 모드(roomName='')일 때는 미표시 — Phase 2 동작 유지
+  const roomName = useRoomStore((s) => s.roomName)
+  const authorLabel = roomName && message.role === 'user'
+    ? (typeof message.meta?.['author'] === 'string' ? message.meta['author'] : 'me')
+    : null
 
   // 코드 펜스가 있는지 빠른 체크 — 없으면 파싱 생략
   const hasCodeFence = message.content.includes('```')
@@ -90,6 +99,12 @@ export const Message: React.FC<MessageProps> = ({message}) => {
   return (
     <Box marginBottom={0} flexDirection='column'>
       <Box>
+        {authorLabel && (
+          <>
+            <Text color={userColor(authorLabel)} bold>{`[${authorLabel}]`}</Text>
+            <Text>{' '}</Text>
+          </>
+        )}
         <Text color={color} bold={message.role !== 'system'}>{prefix}</Text>
         {segments.map((seg, idx) => {
           // React key — id + 인덱스 조합으로 고유성 보장 (index 단독 금지 준수)

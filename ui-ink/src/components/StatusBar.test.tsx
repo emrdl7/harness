@@ -59,7 +59,8 @@ describe('StatusBar — CtxMeter 격리 (E-3)', () => {
     expect(frame).toContain('agent')               // mode
     expect(frame).toContain('turn')                // turn
     expect(frame).toContain('ctx')                 // CtxMeter
-    expect(frame).toContain('testroom')            // room
+    // PresenceSegment 교체 후: roomName 텍스트 대신 '🟢' 아이콘으로 확인 (REM-02)
+    expect(frame).toContain('🟢')                  // room (PresenceSegment)
     unmount()
   })
 })
