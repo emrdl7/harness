@@ -85,7 +85,7 @@ export function ConfirmDialog(): React.ReactElement | null {
   }
 
   // useInput 은 관전자 분기 뒤에 위치 — 관전자는 키 입력을 가로채지 않음
-  // eslint-disable-next-line react-hooks/rules-of-hooks
+  // 주의: 관전자 분기(!activeIsSelf) 이후 useInput 호출 — CNF-04 보안 요구사항으로 의도된 위치
   useInput((ch, key) => {
     if (ch === 'y' || ch === 'Y') { handleAccept(); return }
     if (ch === 'n' || ch === 'N') { handleDeny(); return }
