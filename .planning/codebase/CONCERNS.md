@@ -44,12 +44,13 @@
 
 - [x] `harness_app.py` 상태 결정 — **✅ 제거 완료 2026-04-22 (`22a8e23`)**
 
-### 🟠 잔여 미해결 항목 요약 (2026-04-23 기준)
+### 🟠 잔여 미해결 항목 요약 (2026-04-24 Phase 5 완료 기준)
 
-- §1 Bugs: **2건** — 1.10(H, run_command shell-quoting — sticky-deny로 부분 완화), 1.12(M, spinner vs Live)
-- §2 Security: **1건** — 2.8(L, manual YAML — PyYAML 의존성 비용 vs 가치 미해결)
-- §3 Architecture: **7건** (3.2/3.3/3.8/3.12/3.13 닫힘) — 3.1(H, main.py 1666줄)이 가장 큼. 3.4·3.5·3.6·3.7·3.9·3.10·3.11 잔여
-- §4 Performance: **6건** (4.4 닫힘) — 4.1·4.2·4.3·4.5·4.6·4.7
+- §1 Bugs: **1건** — 1.10(H, run_command shell-quoting)
+- §2 Security: **1건** — 2.8(L, manual YAML)
+- §3 Architecture: **잔여 항목** — 3.4·3.6·3.7·3.9·3.10·3.11 (Python 백엔드 관련, 다음 milestone)
+- §4 Performance: **6건** — 4.1·4.2·4.3·4.5·4.6·4.7
+- Phase 5 close: §1.12(main.py spinner) · §3.1(main.py 대형화) · §3.5(intent detection)
 
 ---
 
@@ -113,10 +114,9 @@
 - **Description:** `embedding_functions.DefaultEmbeddingFunction()` downloads a model on first use (ONNX, ~80 MB) and stores vectors per-project hash. For large repos the first `/index` blocks the REPL with no progress beyond a single spinner line. If the download fails silently (no network), `get_or_create_collection` raises and the error is not user-friendly.
 - **Suggestion:** Probe model availability up front; print a clear "first-time download" banner; add `HARNESS_EMBED_MODEL` override.
 
-### 1.12 `_spinner` thread prints escape sequences while `rich` Live renders may run (Medium)
-- **Location:** `main.py:190-223`, interacts with `Live(...)` in `do_index` (main.py:409)
-- **Description:** The custom spinner writes `\x1b[1A\r\x1b[K` directly to stdout from a daemon thread. If a `rich.Live` renderer is active concurrently (e.g. `/index` + pipe input race), the two compete for cursor position and produce broken frames. Low-probability but observed pattern with rich + raw ANSI.
-- **Suggestion:** Use `rich.live.Live` + `Spinner` everywhere and delete the hand-rolled spinner.
+### 1.12 ~~`_spinner` thread prints escape sequences while `rich` Live renders may run~~ ✅ RESOLVED Phase 5 (main.py REPL 삭제로 자동 소멸)
+- **Location (당시):** `main.py:190-223`, interacts with `Live(...)` in `do_index` (main.py:409)
+- **Fix applied:** Phase 5 에서 main.py REPL 경로 삭제. spinner 코드 자체가 존재하지 않음.
 
 ### 1.13 ~~`compact` recursion hazard on tiny sessions~~ ✅ FIXED 2026-04-23
 - **Location:** `session/compactor.py:26-29,66-70`
@@ -236,10 +236,8 @@
 
 ## 3. Technical Debt
 
-### 3.1 `main.py` is 1 680 lines and mixes REPL, rendering, agent orchestration, git plumbing, intent detection, banner art, and ≈15 slash commands (High)
-- **Location:** `main.py` (entire file)
-- **Description:** Symptoms: 3 duplicate spinners (`_Spinner` class, `rich.Live`, custom frames), global mutable state (`_token_buf`, `_ctx_display`, `_ui`, `_spinner`), 20+ module-level helpers, `handle_slash` is a ~300-line if/elif chain. Adding a new slash command requires editing 4 places (SLASH_COMMANDS, handler, help, completer meta).
-- **Suggestion:** Extract a `commands/` package where each slash command is a module with `{name, help, handler(ctx, args)}`. Register them in a dict. Move UI into `ui/cli.py`.
+### 3.1 ~~`main.py` is 1 680 lines and mixes REPL, rendering, agent orchestration, git plumbing, intent detection, banner art, and ≈15 slash commands~~ ✅ RESOLVED Phase 5 (main.py 삭제 또는 thin shim 으로 대체)
+- **Fix applied:** Phase 5 에서 main.py REPL 경로 삭제. cli/ 모듈 전수 삭제 (intent.py · render.py · claude.py · setup.py · callbacks.py · slash.py · tui.py · app.py). 슬래시 명령은 harness_core/ 로 통합 완료 (BB-1).
 
 ### 3.2 ~~`main.py` and `harness_server.py` re-implement the same orchestration~~ ✅ FIXED (BB-1 1~9차 + 완결, 2026-04-23)
 - **Location (당시):** `main.py` 973-1287 vs `harness_server.py` 178-314
@@ -256,10 +254,9 @@
 - **Description:** Adding a new self-editable file requires editing `tools/improve.py`. The list is silent authority — any file not in it cannot be auto-improved, and no warning is produced when the model tries.
 - **Suggestion:** Convert to `config.EDITABLE_FILES` and log "file not in allowlist" when mutation is attempted.
 
-### 3.5 Korean natural-language intent detection is brittle substring matching (Medium)
-- **Location:** `main.py:638-702`
-- **Description:** 20+ trigger strings, regex-free, substring only. "커밋해줘" matches "커밋해" but also any longer text containing that substring. `_extract_commit_msg` strips trailing `줘` — Korean grammar much more varied than that.
-- **Suggestion:** Let the LLM classify: a 1-shot call to Ollama to return `{intent: commit|push|pull|other, message: ...}` gives far better recall.
+### 3.5 ~~Korean natural-language intent detection is brittle substring matching~~ ✅ RESOLVED Phase 5 (main.py 삭제로 자동 소멸)
+- **Location (당시):** `main.py:638-702`
+- **Fix applied:** Phase 5 에서 main.py REPL 경로 삭제. intent detection 코드(cli/intent.py 포함) 전수 삭제됨.
 
 ### 3.6 ChromaDB embedding re-runs on every `_index_file` for changed files without batching (Low)
 - **Location:** `context/indexer.py:121-123`

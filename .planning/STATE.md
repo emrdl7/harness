@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-last_updated: "2026-04-24T12:00:00.000Z"
+status: complete
+last_updated: "2026-04-24T12:21:30.000Z"
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 22
-  completed_plans: 19
-  percent: 86
+  completed_plans: 22
+  percent: 100
 ---
 
 # harness — ui-ink Milestone State
@@ -28,13 +28,13 @@ progress:
 
 ## Current Position
 
-Phase: 05 — PLANNED · READY TO EXECUTE
+Phase: 05 — COMPLETE
 
 - **Phase:** 5
-- **Plan:** 05-01 (Wave 1)
-- **Status:** Plans 생성 완료, 실행 대기
-- **Progress:** `[█████████████░] Phase 1~4 완료, Phase 5 계획 완료 (4/5 phases 실행 완료)`
-- **Next action:** `/gsd-execute-phase 5` 실행 → Phase 5 (Legacy Deletion + Milestone Closure) 실행
+- **Plan:** Complete (3/3)
+- **Status:** Milestone v1.0 완료
+- **Progress:** `[██████████████] 5/5 phases 완료 (100%)`
+- **Next action:** 다음 milestone 계획 시 `/gsd-new-project` 또는 `/gsd-discuss-phase` 실행
 
 ---
 
@@ -46,7 +46,7 @@ Phase: 05 — PLANNED · READY TO EXECUTE
 | 2 | Core UX | Complete | 5/5 |
 | 3 | Remote Room + Session Control | Complete | 6/6 |
 | 4 | Testing + Docs + External Beta | Complete | 5/5 |
-| 5 | Legacy Deletion + Milestone Closure | Planned | 0/3 |
+| 5 | Legacy Deletion + Milestone Closure | Complete | 3/3 |
 
 ---
 
@@ -63,12 +63,12 @@ Phase: 05 — PLANNED · READY TO EXECUTE
 
 ### Key Decisions (from PROJECT.md)
 
-- UI 스택 = Node + Ink + Zustand + bun + TypeScript (Python 재현 불가 검증됨) — Pending
-- Legacy Python UI 전부 삭제 (Phase 5) — Pending
-- ui-ink = 로컬 + 원격 공통 UI — Pending
-- WS 프로토콜 확장은 같은 milestone 에서 자유롭게 (Phase 3 집결) — Pending
-- `harness_server.py` = 유일한 백엔드 경계 — Pending
-- Python 백엔드 유지 (UI 만 교체) — Pending
+- UI 스택 = Node + Ink + Zustand + bun + TypeScript (Python 재현 불가 검증됨) — ✓ Validated
+- Legacy Python UI 전부 삭제 (Phase 5) — ✓ Validated
+- ui-ink = 로컬 + 원격 공통 UI — ✓ Validated
+- WS 프로토콜 확장은 같은 milestone 에서 자유롭게 (Phase 3 집결) — ✓ Validated
+- `harness_server.py` = 유일한 백엔드 경계 — ✓ Validated
+- Python 백엔드 유지 (UI 만 교체) — ✓ Validated
 
 ### Background Issues (CONCERNS 잔여, 이번 milestone 범위)
 
@@ -78,9 +78,9 @@ Phase: 05 — PLANNED · READY TO EXECUTE
 
 ### Todos
 
-- [ ] 05-01-PLAN.md 실행 — cli/ 삭제 + ui/index.js 삭제 + main.py 정리 (Wave 1)
-- [ ] 05-02-PLAN.md 실행 — pytest + vitest 회귀 검증 (Wave 2)
-- [ ] 05-03-PLAN.md 실행 — PROJECT.md Evolution + CONCERNS close + milestone 종료 (Wave 3)
+- [x] 05-01-PLAN.md 실행 — cli/ 삭제 + ui/index.js 삭제 + main.py 정리 (Wave 1)
+- [x] 05-02-PLAN.md 실행 — pytest + vitest 회귀 검증 (Wave 2)
+- [x] 05-03-PLAN.md 실행 — PROJECT.md Evolution + CONCERNS close + milestone 종료 (Wave 3)
 
 ### Blockers
 

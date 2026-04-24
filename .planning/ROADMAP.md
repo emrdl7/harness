@@ -22,7 +22,7 @@
 - [x] **Phase 2: Core UX** — 스트리밍 렌더 · 멀티라인 입력 · 슬래시 popup · Tool/Status 렌더 · Confirm 다이얼로그. Claude Code 급 로컬 UX 완성. (completed 2026-04-24)
 - [x] **Phase 3: Remote Room + Session Control** — 멤버 presence · 관전 모드 · 재연결 delta · one-shot/resume · 서버 WS 프로토콜 확장 5건 집결. (completed 2026-04-24)
 - [x] **Phase 4: Testing + Docs + External Beta** — 통합 테스트 · 회귀 스냅샷 · CI matrix · PROTOCOL.md/CLIENT_SETUP.md · 외부 2인 beta 라운드. Legacy 삭제 전 품질 게이트. (completed 2026-04-24)
-- [ ] **Phase 5: Legacy Deletion + Milestone Closure** — Python UI 잔재 전수 삭제 · PROJECT.md Evolution 업데이트 · milestone 종료.
+- [x] **Phase 5: Legacy Deletion + Milestone Closure** — Python UI 잔재 전수 삭제 · PROJECT.md Evolution 업데이트 · milestone 종료. (completed 2026-04-24)
 
 ---
 
@@ -144,9 +144,9 @@ Plans:
 
 **Plans**: 3 plans
 Plans:
-- [ ] 05-01-PLAN.md — Legacy cli/ + ui/index.js + main.py REPL 경로 삭제 (LEG-01~03)
-- [ ] 05-02-PLAN.md — pytest + vitest 회귀 검증 + 환경 위생 grep (LEG-04~05)
-- [ ] 05-03-PLAN.md — PROJECT.md Evolution + CONCERNS close + ROADMAP/STATE milestone 종료 (LEG-06~08)
+- [x] 05-01-PLAN.md — Legacy cli/ + ui/index.js + main.py REPL 경로 삭제 (LEG-01~03)
+- [x] 05-02-PLAN.md — pytest + vitest 회귀 검증 + 환경 위생 grep (LEG-04~05)
+- [x] 05-03-PLAN.md — PROJECT.md Evolution + CONCERNS close + ROADMAP/STATE milestone 종료 (LEG-06~08)
 **UI hint**: yes
 
 ---
@@ -183,7 +183,7 @@ Plans:
 | 2. Core UX | 5/5 | Complete | 2026-04-24 |
 | 3. Remote Room + Session Control | 6/6 | Complete | 2026-04-24 |
 | 4. Testing + Docs + External Beta | 5/5 | Complete | 2026-04-24 |
-| 5. Legacy Deletion + Milestone Closure | 0/3 | In progress | - |
+| 5. Legacy Deletion + Milestone Closure | 3/3 | Complete | 2026-04-24 |
 
 ---
 
@@ -198,4 +198,4 @@ Phase 1 과 Phase 5 는 research-phase 스킵 가능 (STACK.md + PITFALLS.md 에
 
 ---
 
-*Last updated: 2026-04-24 via /gsd-plan-phase 5*
+*Last updated: 2026-04-24 — milestone v1.0 완료 (Phase 5 3/3 plans)*
