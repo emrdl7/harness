@@ -23,8 +23,17 @@ import {NickPrompt} from './components/NickPrompt.js'
 function resolveConfig(): HarnessConfig | null {
   const url = process.env['HARNESS_URL']
   const token = process.env['HARNESS_TOKEN']
-  if (url && token) return {url, token, room: process.env['HARNESS_ROOM']}
-  return loadConfig()
+  const room = process.env['HARNESS_ROOM']
+  const nick = process.env['HARNESS_NICK']
+  if (url && token) return {url, token, room, nick}
+  const fileCfg = loadConfig()
+  if (!fileCfg) return null
+  // argv --room / --nick 이 env var 로 들어오면 config 파일 값 덮어씀
+  return {
+    ...fileCfg,
+    ...(room ? {room} : {}),
+    ...(nick ? {nick} : {}),
+  }
 }
 
 export const App: React.FC = () => {

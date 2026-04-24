@@ -98,6 +98,16 @@ process.on('SIGINT',  () => cleanup(0))
     }
   }
 
+  // interactive 모드 argv 파싱 — --room, --nick
+  const iRoomIdx = process.argv.indexOf('--room')
+  if (iRoomIdx > -1 && process.argv[iRoomIdx + 1]) {
+    process.env['HARNESS_ROOM'] = process.argv[iRoomIdx + 1]
+  }
+  const iNickIdx = process.argv.indexOf('--nick')
+  if (iNickIdx > -1 && process.argv[iNickIdx + 1]) {
+    process.env['HARNESS_NICK'] = process.argv[iNickIdx + 1]
+  }
+
   // Ink render — patchConsole: false (FND-14)
   // alternate screen 비활성: 별도 옵션 없이 기본 Ink 는 inline 렌더
   render(<App />, {patchConsole: false})
