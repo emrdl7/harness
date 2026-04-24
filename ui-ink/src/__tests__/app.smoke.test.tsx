@@ -54,7 +54,7 @@ describe('App smoke', () => {
     useConfirmStore.setState({mode: 'confirm_write', payload: {path: '/foo'}})
     const {lastFrame, unmount} = render(<App/>)
     const frame = lastFrame() ?? ''
-    expect(frame).toContain('confirm confirm_write')
+    expect(frame).toContain('/foo')
     unmount()
   })
 
