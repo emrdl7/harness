@@ -1,4 +1,4 @@
-// MultilineInput — ink-text-input 미사용, useInput 기반 자체 구현
+// MultilineInput — useInput 기반 자체 구현 (INPT-01: 서드파티 텍스트 입력 컴포넌트 불사용)
 // INPT-01: 자체 구현
 // INPT-02: Enter 제출, Shift+Enter·Ctrl+J 개행
 // INPT-03: ↑↓ history (store 위임)
