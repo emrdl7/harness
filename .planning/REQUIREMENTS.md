@@ -124,14 +124,14 @@
 
 ### LEG — Legacy Deletion (Phase 5 — TST 모두 green 이후에만)
 
-- [ ] **LEG-01**: `ui/index.js` 삭제
-- [ ] **LEG-02**: `main.py` REPL 경로 + `cli/intent.py · cli/render.py · cli/claude.py · cli/setup.py · cli/callbacks.py · cli/slash.py` 삭제
-- [ ] **LEG-03**: `cli/tui.py` · `cli/app.py` · 기타 Python UI 실험 잔재 제거
-- [ ] **LEG-04**: `main.py` 가 필요하다면 `harness_server.py` 서버 엔트리만 래핑하는 thin shim 으로 축소. 그렇지 않으면 삭제
-- [ ] **LEG-05**: `.planning/codebase/CONCERNS.md` §1.12(spinner vs Live) · §3 Architecture 잔여 중 Python REPL 관련 항목 close 처리
-- [ ] **LEG-06**: PROJECT.md Evolution — Active → Validated 이동, Key Decisions 의 Outcome 확정
-- [ ] **LEG-07**: 최종 회귀 — pytest 199 + vitest 전 테스트 green · `grep -rn "prompt_toolkit" .` 빈 결과
-- [ ] **LEG-08**: milestone closure 섹션 PROJECT.md 에 추가
+- [x] **LEG-01**: `ui/index.js` 삭제
+- [x] **LEG-02**: `main.py` REPL 경로 + `cli/intent.py · cli/render.py · cli/claude.py · cli/setup.py · cli/callbacks.py · cli/slash.py` 삭제
+- [x] **LEG-03**: `cli/tui.py` · `cli/app.py` · 기타 Python UI 실험 잔재 제거
+- [x] **LEG-04**: `main.py` 가 필요하다면 `harness_server.py` 서버 엔트리만 래핑하는 thin shim 으로 축소. 그렇지 않으면 삭제
+- [x] **LEG-05**: `.planning/codebase/CONCERNS.md` §1.12(spinner vs Live) · §3 Architecture 잔여 중 Python REPL 관련 항목 close 처리
+- [x] **LEG-06**: PROJECT.md Evolution — Active → Validated 이동, Key Decisions 의 Outcome 확정
+- [x] **LEG-07**: 최종 회귀 — pytest 199 + vitest 전 테스트 green · `grep -rn "prompt_toolkit" .` 빈 결과
+- [x] **LEG-08**: milestone closure 섹션 PROJECT.md 에 추가
 
 ---
 
@@ -255,14 +255,14 @@
 | TST-07 | Phase 4 | TBD | Pending |
 | TST-08 | Phase 4 | TBD | Pending |
 | TST-09 | Phase 4 | TBD | Pending |
-| LEG-01 | Phase 5 | TBD | Pending |
-| LEG-02 | Phase 5 | TBD | Pending |
-| LEG-03 | Phase 5 | TBD | Pending |
-| LEG-04 | Phase 5 | TBD | Pending |
-| LEG-05 | Phase 5 | TBD | Pending |
-| LEG-06 | Phase 5 | TBD | Pending |
-| LEG-07 | Phase 5 | TBD | Pending |
-| LEG-08 | Phase 5 | TBD | Pending |
+| LEG-01 | Phase 5 | 05-01 | Completed |
+| LEG-02 | Phase 5 | 05-01 | Completed |
+| LEG-03 | Phase 5 | 05-01 | Completed |
+| LEG-04 | Phase 5 | 05-02 | Completed |
+| LEG-05 | Phase 5 | 05-02 | Completed |
+| LEG-06 | Phase 5 | 05-03 | Completed |
+| LEG-07 | Phase 5 | 05-02 | Completed |
+| LEG-08 | Phase 5 | 05-03 | Completed |
 
 **Coverage:** 85/85 v1 REQ-ID (100%) · duplicates: 0 · orphans: 0
 
