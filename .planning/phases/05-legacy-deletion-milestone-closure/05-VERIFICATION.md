@@ -1,19 +1,14 @@
 ---
 phase: 05-legacy-deletion-milestone-closure
 verified: 2026-04-24T12:35:00Z
-status: gaps_found
-score: 9/10 must-haves verified
+status: passed
+score: 10/10 must-haves verified
 overrides_applied: 0
 gaps:
   - truth: "REQUIREMENTS.md LEG-01~08 체크박스 및 Traceability 표 미업데이트"
-    status: failed
-    reason: "REQUIREMENTS.md의 LEG-01~08 항목이 [ ] (미완료)로 남아있고 Traceability 표의 Status 열도 'Pending'으로 남아있다. 실제 코드베이스에서 LEG-01~08은 모두 달성되었으나 REQUIREMENTS.md 문서 자체가 반영되지 않았다."
-    artifacts:
-      - path: ".planning/REQUIREMENTS.md"
-        issue: "LEG-01~08 체크박스가 '[ ]'로 남아있음 (FND-01~16은 '[x]'로 업데이트됨). Traceability 표의 LEG-01~08 Status 열이 'Pending'으로 남아있음."
-    missing:
-      - "REQUIREMENTS.md LEG-01~08 체크박스를 '[x]'로 업데이트"
-      - "Traceability 표의 LEG-01~08 Status를 'Completed'로 업데이트, Plan 열을 '05-01~03'으로 채움"
+    status: resolved
+    resolved_at: "2026-04-24"
+    resolution: "docs(05): REQUIREMENTS.md LEG-01~08 체크박스 [x] 처리 + Traceability Completed 처리 (commit 5839867)"
 ---
 
 # Phase 5: Legacy Deletion + Milestone Closure 검증 보고서
