@@ -13,6 +13,12 @@ export function dispatch(msg: ServerMsg): void {
   const room = useRoomStore.getState()
   const confirm = useConfirmStore.getState()
 
+  // PEXT-03: event_id 추적 — 모든 이벤트에 적용 (서버가 broadcast() 경유 메시지에 자동 부여)
+  const rawMsg = msg as unknown as {event_id?: unknown}
+  if ('event_id' in msg && typeof rawMsg.event_id === 'number') {
+    room.setLastEventId(rawMsg.event_id)
+  }
+
   switch (msg.type) {
     case 'token':
       messages.appendToken(msg.text)
@@ -29,11 +35,21 @@ export function dispatch(msg: ServerMsg): void {
     case 'agent_start':
       messages.agentStart()
       status.setBusy(true)
+      // PEXT-01: from_self 필드로 관전 모드 판정 (undefined → true = 구버전 호환)
+      room.setActiveIsSelf(msg.from_self ?? true)
       break
 
     case 'agent_end':
       messages.agentEnd()
       status.setBusy(false)
+      break
+
+    case 'agent_cancelled':
+      // PEXT-05: 에이전트 실행 취소 알림 처리
+      messages.agentEnd()
+      status.setBusy(false)
+      room.setActiveIsSelf(true)
+      messages.appendSystemMessage('에이전트 실행이 취소되었습니다')
       break
 
     case 'error':
@@ -46,7 +62,8 @@ export function dispatch(msg: ServerMsg): void {
       break
 
     case 'confirm_write':
-      confirm.setConfirm('confirm_write', {path: msg.path})
+      // PEXT-02: old_content 전달 (diff 기반 UX용)
+      confirm.setConfirm('confirm_write', {path: msg.path, oldContent: msg.old_content})
       break
 
     case 'confirm_bash':
@@ -62,17 +79,20 @@ export function dispatch(msg: ServerMsg): void {
       break
 
     case 'room_joined':
-      room.setRoom(msg.room, msg.members)
+      // msg.members는 optional — 없으면 빈 배열 (Pitfall H 수정, Plan 03-02에서 서버가 [] 전송)
+      room.setRoom(msg.room, msg.members ?? [])
       break
 
     case 'room_member_joined':
       room.addMember(msg.user)
-      messages.appendSystemMessage(`[${msg.user}] 님이 참가했습니다`)
+      // REM-05: UI-SPEC 포맷 교정 (B4: msg.user = token_hash[:8] 값)
+      messages.appendSystemMessage(`↗ ${msg.user} 님이 참여했습니다`)
       break
 
     case 'room_member_left':
       room.removeMember(msg.user)
-      messages.appendSystemMessage(`[${msg.user}] 님이 나갔습니다`)
+      // REM-05: UI-SPEC 포맷 교정
+      messages.appendSystemMessage(`↘ ${msg.user} 님이 나갔습니다`)
       break
 
     case 'room_busy':
@@ -80,6 +100,15 @@ export function dispatch(msg: ServerMsg): void {
       break
 
     case 'state':
+      status.setState({
+        working_dir: msg.working_dir,
+        model: msg.model,
+        mode: msg.mode,
+        turns: msg.turns,
+        ctx_tokens: msg.ctx_tokens,
+      })
+      break
+
     case 'state_snapshot':
       status.setState({
         working_dir: msg.working_dir,
@@ -88,6 +117,10 @@ export function dispatch(msg: ServerMsg): void {
         turns: msg.turns,
         ctx_tokens: msg.ctx_tokens,
       })
+      // REM-03: 과거 turn 히스토리 일괄 로드 (Static key remount 트리거)
+      if (msg.messages && Array.isArray(msg.messages)) {
+        messages.loadSnapshot(msg.messages)
+      }
       break
 
     case 'slash_result': {

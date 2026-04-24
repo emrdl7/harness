@@ -13,7 +13,8 @@ export interface Message {
 interface MessagesState {
   completedMessages: Message[]    // <Static> 전용 append-only — agent_end 시에만 push
   activeMessage: Message | null   // 스트리밍 중 assistant — 일반 트리에만 렌더
-  appendUserMessage: (content: string) => void
+  snapshotKey: number             // Phase 3: Static key remount 트리거 (REM-03)
+  appendUserMessage: (content: string, meta?: Record<string, unknown>) => void
   agentStart: () => void
   appendToken: (text: string) => void    // activeMessage in-place 업데이트 (NOT completedMessages push)
   agentEnd: () => void
@@ -21,15 +22,17 @@ interface MessagesState {
   appendToolEnd: (name: string, result: string) => void
   appendSystemMessage: (content: string) => void
   clearMessages: () => void
+  loadSnapshot: (rawMessages: unknown[]) => void  // Phase 3: state_snapshot 히스토리 로드 (REM-03)
 }
 
 export const useMessagesStore = create<MessagesState>((set) => ({
   completedMessages: [],
   activeMessage: null,
+  snapshotKey: 0,
 
-  appendUserMessage: (content) => set((s) => ({
+  appendUserMessage: (content, meta?) => set((s) => ({
     completedMessages: [...s.completedMessages, {
-      id: crypto.randomUUID(), role: 'user', content,
+      id: crypto.randomUUID(), role: 'user', content, meta,
     }],
   })),
 
@@ -105,4 +108,26 @@ export const useMessagesStore = create<MessagesState>((set) => ({
   })),
 
   clearMessages: () => set({completedMessages: [], activeMessage: null}),
+
+  // Phase 3: state_snapshot 히스토리 일괄 로드 (REM-03)
+  // T-03-03-01: rawMessages 악성 데이터 방어 — object만 허용, role 화이트리스트, content string 강제
+  loadSnapshot: (rawMessages) => set((s) => {
+    const parsed: Message[] = rawMessages
+      .filter((m): m is Record<string, unknown> => typeof m === 'object' && m !== null)
+      .map((m) => ({
+        id: crypto.randomUUID(),
+        role: (['user', 'assistant', 'tool', 'system'].includes(String(m['role']))
+          ? m['role'] as Message['role']
+          : 'system'),
+        content: typeof m['content'] === 'string' ? m['content'] : JSON.stringify(m),
+        meta: typeof m['meta'] === 'object' && m['meta'] !== null
+          ? m['meta'] as Record<string, unknown>
+          : undefined,
+      }))
+    return {
+      snapshotKey: s.snapshotKey + 1,  // Static key remount 트리거
+      completedMessages: parsed,
+      activeMessage: null,
+    }
+  }),
 }))
