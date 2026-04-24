@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: planning
-last_updated: "2026-04-23T22:53:18.343Z"
+status: executing
+last_updated: "2026-04-24T00:10:05.398Z"
 progress:
   total_phases: 5
   completed_phases: 0
@@ -22,17 +22,17 @@ progress:
 
 **See:** `.planning/PROJECT.md` (milestone 정의 · Validated · Active · Out of Scope · Key Decisions · Constraints)
 **Core Value:** "ui-ink 가 harness 의 기본이자 유일한 UI. 로컬과 원격이 동일한 경험을 갖고, 그 경험은 Claude Code 수준이다."
-**Current focus:** Phase 1 (Foundation — Upgrade · Protocol Fix · Hardening · Smoke)
+**Current focus:** Phase 2 (Core UX — MultilineInput · SlashPopup · ConfirmDialog · ToolCard · StatusBar · 스트리밍 렌더)
 
 ---
 
 ## Current Position
 
 - **Phase:** 2
-- **Plan:** Not started
-- **Status:** Ready to plan
+- **Plan:** Not started (5 plans ready)
+- **Status:** Ready to execute
 - **Progress:** `[░░░░░░░░░░] 0% (0/5 phases complete)`
-- **Next action:** Wave 2 Plan C 완료 후 verify
+- **Next action:** `/gsd-execute-phase 2` — Wave 1 (Plan A + B 병렬) → Wave 2 (C + D 병렬) → Wave 3 (E)
 
 ---
 
@@ -40,8 +40,8 @@ progress:
 
 | # | Name | Status | Plans |
 |---|------|--------|-------|
-| 1 | Foundation | Ready to execute | 3/3 |
-| 2 | Core UX | Not started | 0/0 |
+| 1 | Foundation | Complete | 3/3 |
+| 2 | Core UX | Ready to execute | 5/5 |
 | 3 | Remote Room + Session Control | Not started | 0/0 |
 | 4 | Testing + Docs + External Beta | Not started | 0/0 |
 | 5 | Legacy Deletion + Milestone Closure | Not started | 0/0 |
