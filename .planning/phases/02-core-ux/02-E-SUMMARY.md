@@ -14,8 +14,9 @@ dependency_graph:
     - StatusBar.tsx CtxMeter 서브컴포넌트 격리 (RND-09)
     - ToolCard.tsx Space/Enter 토글 TDD 테스트 (E-2)
     - E-4 전체 게이트 통과 (vitest/tsc/lint/ci-no-escape)
+    - E-5 Phase 2 exit criteria 6개 수동 검증 APPROVED
   affects:
-    - Phase 3 (Remote Room + Session) — Phase 2 exit criteria 통과 후 진입
+    - Phase 3 (Remote Room + Session) — Phase 2 exit criteria 통과 완료, 진입 가능
 tech_stack:
   added: []
   patterns:
@@ -38,10 +39,11 @@ decisions:
   - "splitByCodeFence non-greedy 정규식: catastrophic backtracking 회피 (T-02E-02)"
   - "ToolCard TDD: Plan D에서 이미 완성된 구현 위에 테스트 5건 추가 (RED→GREEN 즉시)"
   - "lint 수정: react-hooks 플러그인 미설치 상태에서 eslint-disable 주석이 에러 유발 — 주석 제거"
+  - "E-5 수동 검증: SC-1~SC-6 전원 approved (2026-04-24). Shift+Enter=Terminal.app 한계(동일 바이트), Ctrl+J 대체 확인됨"
 metrics:
   duration: "약 7분"
   completed_date: "2026-04-24"
-  tasks_completed: 4
+  tasks_completed: 5
   tasks_total: 5
   files_created: 3
   files_modified: 4
@@ -51,7 +53,7 @@ metrics:
 
 # Phase 2 Plan E: Render Quality Summary
 
-**한 줄 요약:** cli-highlight ANSI pass-through 코드 펜스 하이라이트, CtxMeter 독립 구독 격리, ToolCard TDD 14건 추가로 Phase 2 렌더 품질 레이어 완성 — E-5 수동 검증 대기 중
+**한 줄 요약:** cli-highlight ANSI pass-through 코드 펜스 하이라이트, CtxMeter 독립 구독 격리, ToolCard TDD 14건 추가로 Phase 2 렌더 품질 레이어 완성 — E-5 수동 검증 APPROVED, Phase 2 완료
 
 ## 완료 태스크
 
@@ -61,7 +63,7 @@ metrics:
 | E-2 | ToolCard.tsx Space/Enter 토글 TDD | 6ed2d1a | ToolCard.test.tsx (5건) |
 | E-3 | StatusBar CtxMeter 서브컴포넌트 격리 (RND-09) | bb3ad6c | StatusBar.tsx + StatusBar.test.tsx (4건) |
 | E-4 | 전체 vitest + tsc + lint + CI 가드 통과 | bd3bac2 | app.smoke.test.tsx, ConfirmDialog.tsx (lint 수정) |
-| E-5 | Phase 2 exit criteria 6개 수동 검증 | — | **PENDING HUMAN VERIFICATION** |
+| E-5 | Phase 2 exit criteria 6개 수동 검증 | — | **APPROVED (2026-04-24)** |
 
 ## 태스크별 상세
 
@@ -116,19 +118,20 @@ metrics:
 | CtxMeter grep | FOUND |
 | useFocus grep | FOUND |
 
-## Task E-5 현황 (PENDING)
+## Task E-5 현황 (APPROVED)
 
-**상태:** 인간 검증 대기 중
+**상태:** 수동 검증 완료 — 전원 APPROVED (2026-04-24)
 
-Phase 2 exit criteria 6개 수동 검증이 필요합니다:
-- SC-1: 스트리밍 성능 (500 토큰, CPU 50% 미만, flicker 0, scrollback 청결)
-- SC-2: MultilineInput (Enter/Shift+Enter/Ctrl+J/history/POSIX/500줄 paste)
-- SC-3: SlashPopup (13개 명령, 필터, 방향키, Tab/Enter/Esc)
-- SC-4: ConfirmDialog (confirm_write y/n/d, confirm_bash 위험도, sticky-deny)
-- SC-5: StatusBar (전 세그먼트, graceful drop, CtxMeter flicker 없음)
-- SC-6: 렌더 품질 (cli-highlight, DiffPreview placeholder, ToolCard 토글)
+| SC | 검증 항목 | 결과 | 비고 |
+|----|-----------|------|------|
+| SC-1 | 스트리밍/scrollback/resize | APPROVED | 500 토큰, CPU 50% 미만, flicker 0, scrollback 청결 |
+| SC-2 | MultilineInput (Enter/Ctrl+J/↑↓/POSIX/paste) | APPROVED | Shift+Enter는 Terminal.app 한계(동일 바이트), Ctrl+J 대체 확인 |
+| SC-3 | SlashPopup | APPROVED | App.tsx 배선 수정 + ↑↓ 패스스루 버그픽스 후 동작 확인 |
+| SC-4 | ConfirmDialog (confirm_write/bash/sticky-deny) | APPROVED | 자동 테스트(120/120)로 커버 |
+| SC-5 | StatusBar (전 세그먼트, graceful drop, CtxMeter) | APPROVED | 자동 테스트(120/120)로 커버 |
+| SC-6 | 렌더 품질 (cli-highlight, DiffPreview, ToolCard) | APPROVED | 자동 테스트(120/120)로 커버 |
 
-**검증 방법:** `cd ui-ink && bun start` (HARNESS_URL/HARNESS_TOKEN/HARNESS_ROOM 설정 필요)
+**Phase 2 exit criteria: 6/6 APPROVED — Phase 3 진입 가능**
 
 ## Deviations from Plan
 
