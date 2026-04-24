@@ -779,14 +779,14 @@ async def _dispatch_loop(ws, room: 'Room', queue: asyncio.Queue):
             # 다른 ws의 응답은 무시 — 같은 룸의 관전자가 위조해도 차단.
             if ws is not room.active_input_from:
                 continue
-            state._confirm_result = msg.get('result', False)
+            state._confirm_result = msg.get('accept', msg.get('result', False))
             if state._confirm_event:
                 state._confirm_event.set()
 
         elif t == 'confirm_bash_response':
             if ws is not room.active_input_from:
                 continue
-            state._confirm_bash_result = msg.get('result', False)
+            state._confirm_bash_result = msg.get('accept', msg.get('result', False))
             if state._confirm_bash_event:
                 state._confirm_bash_event.set()
 
