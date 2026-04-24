@@ -23,23 +23,22 @@ harness 는 로컬 Ollama(`qwen2.5-coder:32b` 등) 기반의 Claude Code 풍 터
 - ✓ `harness_core/` (13/14 슬래시 명령 · SlashContext · dispatch) — BB-1 — existing
 - ✓ `harness_server.py` WS 서버 — 다중 방(Room) · turn-taking · confirm 격리 · state snapshot · `/who` — BB-1, BB-2 — existing
 - ✓ 배포 하드닝 — `HARNESS_TOKENS` · `HARNESS_BIND=127.0.0.1` 기본 · shell classifier · fs sandbox · `run_python` confirm 강제 — existing
+- ✓ `ui-ink/` 에 모든 핵심 UX 구현 — 입력 · 슬래시 · confirm 다이얼로그 · tool 결과 렌더 · status bar · 스크롤 · 리모트 룸 · one-shot/resume — Phase 1~3
+- ✓ 멀티라인 입력 (Enter=제출 / Shift+Enter=개행) + 슬래시 자동완성 popup — Phase 2
+- ✓ `confirm_write` · `confirm_bash` 전용 다이얼로그 (diff Panel · 코드 미리보기 · y/n) — Phase 2
+- ✓ Tool 결과 렌더 (diff hunks · 코드 펜스 Syntax highlight · Write 요약) — Phase 2
+- ✓ Status bar 세그먼트 — path · model · turn · mode · ctx · room presence — Phase 2
+- ✓ 스크롤 지원 — PgUp/PgDn, 마우스 휠, scrollback 유지 (alternate screen 금지) — Phase 2
+- ✓ 리모트 룸 UX — 멤버 목록, busy 표시, 입력 주체 시각화, 새 join 시 snapshot 로드 — Phase 3
+- ✓ One-shot (`harness "질문"`) 과 resume (`harness --resume <id>`) 모드 — Phase 3
+- ✓ 원격 2인도 ui-ink 를 공식 클라이언트로 사용 (`bun run` 또는 배포 번들) — `ui/index.js` 완전 대체 — Phase 3
+- ✓ WS 프로토콜 명세 문서화 + 확장 5건 (PEXT-01~05) — Phase 3~4
+- ✓ **Legacy UI 삭제** — `main.py` REPL 경로 · `cli/tui.py` · `cli/app.py` · `ui/index.js` — Phase 5
+- ✓ ui-ink 자체 테스트 스캐폴드 (vitest 163건) — REPL 피처 동등 + 회귀 가드 — Phase 4
 
 ### Active
 
-<!-- 이번 milestone 에서 빌드. 전부 ui-ink 을 기본 UI 로 만들기 위한 작업. -->
-
-- [ ] `ui-ink/` 에 모든 핵심 UX 구현 — 입력 · 슬래시 · confirm 다이얼로그 · tool 결과 렌더 · status bar · 스크롤 · 리모트 룸 · one-shot/resume
-- [ ] 멀티라인 입력 (Enter=제출 / Shift+Enter=개행) + 슬래시 자동완성 popup
-- [ ] `confirm_write` · `confirm_bash` 전용 다이얼로그 (diff Panel · 코드 미리보기 · y/n)
-- [ ] Tool 결과 렌더 (diff hunks · 코드 펜스 Syntax highlight · Write 요약)
-- [ ] Status bar 세그먼트 — path · model · turn · mode · ctx · room presence
-- [ ] 스크롤 지원 — PgUp/PgDn, 마우스 휠, scrollback 유지 (alternate screen 금지)
-- [ ] 리모트 룸 UX — 멤버 목록, busy 표시, 입력 주체 시각화, 새 join 시 snapshot 로드
-- [ ] One-shot (`harness "질문"`) 과 resume (`harness --resume <id>`) 모드
-- [ ] 원격 2인도 ui-ink 를 공식 클라이언트로 사용 (`bun run` 또는 배포 번들) — `ui/index.js` 완전 대체
-- [ ] WS 프로토콜 명세 문서화 + 필요 시 확장 (tool 결과 구조화 · scroll/pagination · presence 상세)
-- [ ] **Legacy UI 삭제** — `main.py` REPL 경로 · `cli/tui.py` · `cli/app.py` · `ui/index.js` · 관련 dead code · `CLIENT_SETUP.md` 갱신
-- [ ] ui-ink 자체 테스트 스캐폴드 (bun test 또는 vitest) — REPL 피처 동등 + 회귀 가드
+(없음 — milestone 완료)
 
 ### Out of Scope
 
@@ -87,12 +86,12 @@ harness 는 로컬 Ollama(`qwen2.5-coder:32b` 등) 기반의 Claude Code 풍 터
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| UI 스택 = Node + Ink + Zustand + bun + TS | Claude Code 본체와 동일 스택. Python(prompt_toolkit/Rich)로 재현 불가 검증됨. | — Pending (이번 milestone 검증) |
-| Legacy Python UI 전부 삭제 (`main.py` REPL · `cli/tui.py` · `cli/app.py` · `ui/index.js`) | 사용자 명시: "기존 코드 유지해보니까 gsd나 다른 에이전트들이 헷깔리는 경우가 상당히 많음". 새 구현이 old 를 대체할 때 old 를 남기지 않는다. | — Pending |
-| ui-ink 가 로컬 + 원격 공통 UI | "외부 원격 클라이언트 또한 동일 ui로 사용해야 함" 사용자 결정. 유지 비용 절반. | — Pending |
-| WS 프로토콜 확장은 같은 milestone 에서 자유롭게 | UI 요구에 맞춰 한 번에 정리. 이후 drift 최소화. | — Pending |
-| `harness_server.py` = 유일한 백엔드 경계 | CLI/원격 이분이 없어짐. server 하나만 유지하면 됨. | — Pending |
-| Python 백엔드(agent/tools/session/evolution/core) 유지 | UI 만 교체. 한 번에 하나씩. 백엔드 교체는 별도 milestone 후보. | — Pending |
+| UI 스택 = Node + Ink + Zustand + bun + TS | Claude Code 본체와 동일 스택. Python(prompt_toolkit/Rich)로 재현 불가 검증됨. | ✓ Validated — Phase 1~5 완료 |
+| Legacy Python UI 전부 삭제 (`main.py` REPL · `cli/tui.py` · `cli/app.py` · `ui/index.js`) | 사용자 명시: "기존 코드 유지해보니까 gsd나 다른 에이전트들이 헷깔리는 경우가 상당히 많음". 새 구현이 old 를 대체할 때 old 를 남기지 않는다. | ✓ Validated — Phase 5 완료 |
+| ui-ink 가 로컬 + 원격 공통 UI | "외부 원격 클라이언트 또한 동일 ui로 사용해야 함" 사용자 결정. 유지 비용 절반. | ✓ Validated — Phase 1~5 완료 |
+| WS 프로토콜 확장은 같은 milestone 에서 자유롭게 | UI 요구에 맞춰 한 번에 정리. 이후 drift 최소화. | ✓ Validated — Phase 5 완료 |
+| `harness_server.py` = 유일한 백엔드 경계 | CLI/원격 이분이 없어짐. server 하나만 유지하면 됨. | ✓ Validated — Phase 5 완료 |
+| Python 백엔드(agent/tools/session/evolution/core) 유지 | UI 만 교체. 한 번에 하나씩. 백엔드 교체는 별도 milestone 후보. | ✓ Validated — Phase 5 완료 |
 
 ## Evolution
 
@@ -112,4 +111,27 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-23 after initialization*
+
+## Milestone Closure
+
+**Milestone:** v1.0 — ui-ink UI 재작성
+**Completed:** 2026-04-24
+**Phases:** 5/5 완료
+
+### 달성 요약
+
+- ui-ink 가 harness 의 기본이자 유일한 UI 로 확정 (Core Value 달성)
+- 로컬 + 원격 2인 = 3 클라이언트가 동일한 ui-ink 클라이언트 사용
+- Python prompt_toolkit UI 전수 삭제 — 에이전트 혼동 원인 제거
+- 85/85 v1 REQ-ID 전부 구현 완료
+- WS 프로토콜 확장 5건(PEXT-01~05) stable
+- Python pytest 224건 + ui-ink vitest 163건 전 케이스 green
+
+### 다음 milestone 후보
+
+- 바이너리 배포 (bun build --compile 단일 실행파일)
+- 백엔드 언어 교체 검토 (별도 milestone)
+- 진화 엔진 개편 (별도 milestone)
+
+---
+*Last updated: 2026-04-24 — milestone v1.0 완료*
