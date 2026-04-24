@@ -8,12 +8,16 @@ import {useMessagesStore} from '../store/messages.js'
 import {Message} from './Message.js'
 
 export const MessageList: React.FC = () => {
-  const completed = useMessagesStore(useShallow((s) => s.completedMessages))
+  const {completedMessages: completed, snapshotKey} = useMessagesStore(useShallow((s) => ({
+    completedMessages: s.completedMessages,
+    snapshotKey: s.snapshotKey,
+  })))
   const active = useMessagesStore(useShallow((s) => s.activeMessage))
 
   return (
     <Box flexDirection='column'>
-      <Static items={completed}>
+      {/* REM-03: snapshotKey를 Static key로 사용 — snapshot 로드 시 Static 강제 remount */}
+      <Static key={snapshotKey} items={completed}>
         {(m) => <Message key={m.id} message={m}/>}
       </Static>
       {active ? (

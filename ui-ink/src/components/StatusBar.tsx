@@ -7,6 +7,7 @@ import Spinner from 'ink-spinner'
 import {useShallow} from 'zustand/react/shallow'
 import {useStatusStore} from '../store/status.js'
 import {useRoomStore} from '../store/room.js'
+import {PresenceSegment} from './PresenceSegment.js'
 import {theme} from '../theme.js'
 
 interface StatusBarProps {
@@ -124,11 +125,12 @@ export const StatusBar: React.FC<StatusBarProps> = ({columns}) => {
   }
 
   if (roomName) {
-    const roomText = `#${roomName}`
+    // REM-02: room 세그먼트를 PresenceSegment 컴포넌트로 교체
+    // members * ~8자 추정 (동적이므로 고정 추정값 사용)
     segments.push({
       key: 'room',
-      render: () => <Text color={theme.muted}>{roomText}</Text>,
-      textLen: roomText.length,
+      render: () => <PresenceSegment />,
+      textLen: Math.max(roomName.length + 10, 20),
       priority: 30,
     })
   }

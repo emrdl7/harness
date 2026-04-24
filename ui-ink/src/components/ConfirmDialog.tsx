@@ -99,11 +99,15 @@ export function ConfirmDialog(): React.ReactElement | null {
   if (mode === 'confirm_write') {
     const path = (payload['path'] as string) ?? '(경로 없음)'
     const content = payload['content'] as string | undefined
+    // W1: old_content가 있으면 실제 diff, 없으면 신규 파일 표시 (PEXT-02)
+    const oldContent = typeof payload['oldContent'] === 'string'
+      ? payload['oldContent']
+      : undefined
     return (
       <Box flexDirection='column' borderStyle='round' borderColor='yellow' paddingX={1}>
         <Text color='yellow'>파일 쓰기 확인</Text>
         <Text>경로: <Text bold>{path}</Text></Text>
-        {showDiff && <DiffPreview path={path} newContent={content} />}
+        {showDiff && <DiffPreview path={path} newContent={content} oldContent={oldContent} />}
         <Text dimColor>
           <Text color='green'>y</Text> 허용 · <Text color='red'>n</Text> 거부 · <Text color='cyan'>d</Text> 미리보기 · <Text color='gray'>Esc</Text> 취소
         </Text>

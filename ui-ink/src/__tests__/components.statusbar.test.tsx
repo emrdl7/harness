@@ -28,7 +28,8 @@ describe('StatusBar', () => {
     expect(frame).toContain('agent')
     expect(frame).toContain('turn')
     expect(frame).toContain('ctx')
-    expect(frame).toContain('testroom')
+    // PresenceSegment 교체 후: roomName 텍스트 대신 '🟢' 또는 멤버 카운트로 확인
+    expect(frame).toContain('🟢')
     unmount()
   })
 
