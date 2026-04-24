@@ -172,7 +172,7 @@ ui-ink/src/
 │   ├── PresenceSegment.tsx  ← 신규 (REM-02, DIFF-04)
 │   ├── ReconnectOverlay.tsx ← 신규 (WSR-02)
 │   ├── ObserverOverlay.tsx  ← 신규 (REM-04, DIFF-01)
-│   ├── SystemMessage.tsx    ← 신규 또는 Message.tsx 통합 (REM-05)
+│   │   # SystemMessage.tsx 불필요 — Message.tsx role='system' 분기로 충분 (REM-05, W3 RESOLVED)
 │   ├── App.tsx              ← 치환 우선순위 확장 + wsState 구독
 │   ├── StatusBar.tsx        ← PresenceSegment 연결 (REM-02)
 │   ├── Message.tsx          ← author prefix 추가 (DIFF-02)
@@ -902,22 +902,19 @@ await send(ws, type='room_joined',
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **멤버 식별자 공개 범위 (REM-02)**
-   - 현재: 서버가 `subscribers: number` (카운트)만 전송
-   - 필요: 03-UI-SPEC.md는 `[alice·me]` 표시 요구
-   - 옵션 A: 토큰의 SHA-256 앞 8자를 `token_hash`로 전송 (익명성 유지)
-   - 옵션 B: 클라이언트가 입력 시 임의 별명을 `HARNESS_NAME` env var로 등록
-   - Recommendation: A (token_hash) — 서버 코드 최소 변경
+   - ~~현재: 서버가 `subscribers: number` (카운트)만 전송~~
+   - **RESOLVED (Plan 03-02):** `room_member_joined` broadcast에 `user=token_hash[:8]` 필드를 추가한다. `room_joined`에는 `members=[]` 빈 배열을 전송하고, 이후 `room_member_joined` 이벤트로 점진 추가. 옵션 A (token_hash 앞 8자) 채택 — 개인정보 노출 없이 결정론적 식별자 제공.
 
 2. **cancel task 실제 중단 경로 (PEXT-05 A3)**
-   - asyncio task cancel이 executor 스레드를 즉시 중단하지 않음
-   - Recommendation: `Room`에 `_cancel_requested: bool` 플래그 추가. `on_token` 콜백에서 플래그 체크 후 `raise InterruptedError`. 서버 단에서 이를 통해 에이전트 실행 조기 종료.
+   - ~~asyncio task cancel이 executor 스레드를 즉시 중단하지 않음~~
+   - **RESOLVED (Plan 03-02):** `Room._cancel_requested: bool` 플래그를 추가하고, `harness_server.py`의 `on_token` 콜백 내에서 `if room._cancel_requested: return` 형태로 조기 종료를 구현한다. `task.cancel()`은 asyncio `await` 지점에서 `CancelledError`를 일으키지만, executor 스레드(`run_in_executor`)는 플래그 체크로 별도 중단. 두 경로 모두 `finally` 블록에서 `busy=False`로 정리.
 
 3. **one-shot 응답 완성 판정 기준 (SES-01)**
-   - `agent_end` 이벤트로 판정? 아니면 응답 텍스트 완결 판정?
-   - Recommendation: `agent_end` 이벤트 수신 후 exit — 가장 단순하고 신뢰성 있음.
+   - ~~`agent_end` 이벤트로 판정? 아니면 응답 텍스트 완결 판정?~~
+   - **RESOLVED (Plan 03-05):** `agent_end` 이벤트 수신 후 `ws.close() + resolve()` — 가장 단순하고 신뢰성 있음. `one-shot.ts`에 구현됨.
 
 ---
 
