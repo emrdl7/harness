@@ -22,7 +22,7 @@ DEFAULTS = {
     'max_retries':    3,
     'confirm_writes': True,
     'confirm_bash':   True,
-    'auto_index':     True,
+    'auto_index':     False,
     'ignore_dirs':    [],
     'context_files':  [],
     'conventions':    '',

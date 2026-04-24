@@ -876,20 +876,28 @@ async def _run_session(ws):
                             subscribers=len(room.subscribers),
                             user=_token_hash(ws_token) if ws_token else '')
 
-        # 자동 인덱싱 — 룸의 working_dir 기준. 두 번째 join은 is_indexed=True로 자연 스킵.
-        if state.profile.get('auto_index') and not context.is_indexed(state.working_dir):
-            py_count = sum(1 for _, _, fs in os.walk(state.working_dir) for f in fs if f.endswith('.py'))
+        # reader/dispatch를 먼저 시작 — 인덱싱 중에도 WS 메시지를 즉시 처리
+        queue: asyncio.Queue = asyncio.Queue()
+        reader_task = asyncio.create_task(_reader_loop(ws, queue))
+
+        # 자동 인덱싱을 백그라운드 태스크로 분리 — _dispatch_loop를 블로킹하지 않음.
+        # py_count / index_directory 모두 executor에서 실행해 이벤트 루프 비블로킹.
+        async def _bg_autoindex():
+            if not (state.profile.get('auto_index') and not context.is_indexed(state.working_dir)):
+                return
+            loop = asyncio.get_event_loop()
+            py_count = await loop.run_in_executor(
+                None,
+                lambda: sum(1 for _, _, fs in os.walk(state.working_dir) for f in fs if f.endswith('.py'))
+            )
             if py_count > 3:
-                loop = asyncio.get_event_loop()
+                await send(ws, type='info', text='인덱싱 중...')
                 result = await loop.run_in_executor(None, lambda: context.index_directory(state.working_dir))
                 await send(ws, type='info', text=f'인덱싱 완료 {result["indexed"]}개 청크')
                 await send_state(ws, state)
 
-        # reader/dispatch 분리 (Phase 2.5):
-        # reader가 별도 코루틴이라 dispatch가 input 처리에 막혀도 큐는 계속 채워짐.
-        # → confirm_*_response가 즉시 dispatch에 도달해 데드락 회피.
-        queue: asyncio.Queue = asyncio.Queue()
-        reader_task = asyncio.create_task(_reader_loop(ws, queue))
+        asyncio.create_task(_bg_autoindex())
+
         try:
             await _dispatch_loop(ws, room, queue)
         finally:
