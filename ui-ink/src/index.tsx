@@ -108,6 +108,16 @@ process.on('SIGINT',  () => cleanup(0))
     process.env['HARNESS_NICK'] = process.argv[iNickIdx + 1]
   }
 
+  // 배너 — Ink 렌더 전 stdout 직접 출력 (Ink 범위 밖, 스크롤백으로 자연 이동)
+  // eslint-disable-next-line no-restricted-syntax
+  process.stdout.write(
+    '\n   / /_  ____ ________  ___  __________\n' +
+    '  / __ \\/ __ `/ ___/ __ \\/ _ \\/ ___/ ___/\n' +
+    ' / / / / /_/ / /  / / / /  __(__  |__  )\n' +
+    '/_/ /_/\\__,_/_/  /_/ /_/\\___/____/____/\n' +
+    '  jabworks · harness v1.0\n\n'
+  )
+
   // Ink render — patchConsole: false (FND-14)
   // alternate screen 비활성: 별도 옵션 없이 기본 Ink 는 inline 렌더
   render(<App />, {patchConsole: false})

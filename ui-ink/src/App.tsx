@@ -1,6 +1,6 @@
 // App — D-01..D-04 레이아웃 + D-07..D-08 Ctrl+C/D (INPT-07)
 import React, {useCallback, useEffect, useRef, useState} from 'react'
-import {Box, useApp, useInput, useStdout} from 'ink'
+import {Box, Text, useApp, useInput, useStdout} from 'ink'
 import {useShallow} from 'zustand/react/shallow'
 import {useMessagesStore} from './store/messages.js'
 import {useStatusStore} from './store/status.js'
@@ -80,15 +80,8 @@ export const App: React.FC = () => {
     return () => bindExit(null)
   }, [exit])
 
-  // 시작 배너 + history hydration — 마운트 시 1회
+  // history hydration — 마운트 시 1회
   useEffect(() => {
-    useMessagesStore.getState().appendSystemMessage(
-      '   / /_  ____ ________  ___  __________\n' +
-      '  / __ \\/ __ `/ ___/ __ \\/ _ \\/ ___/ ___/\n' +
-      ' / / / / /_/ / /  / / / /  __(__  |__  )\n' +
-      '/_/ /_/\\__,_/_/  /_/ /_/\\___/____/____/\n' +
-      '  jabworks · harness v1.0'
-    )
     const {hydrate} = useInputStore.getState()
     if (hydrate) hydrate()
   }, [])
