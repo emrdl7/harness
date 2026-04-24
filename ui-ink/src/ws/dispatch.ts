@@ -90,10 +90,43 @@ export function dispatch(msg: ServerMsg): void {
       })
       break
 
-    case 'slash_result':
-      // Phase 2 에서 cmd 별 처리 확장 예정 — 현재는 시스템 메시지로 표시
-      messages.appendSystemMessage(`/${msg.cmd} 완료`)
+    case 'slash_result': {
+      const cmd = msg.cmd
+      // cmd 화이트리스트 switch — unknown cmd 는 appendSystemMessage fallback 만 수행 (T-02A-01)
+      switch (cmd) {
+        case 'clear':
+          messages.clearMessages()
+          break
+        case 'cd': {
+          const path = typeof msg['path'] === 'string' ? (msg['path'] as string) : undefined
+          if (path) status.setWorkingDir(path)
+          messages.appendSystemMessage(`cd ${path ?? ''}`)
+          break
+        }
+        case 'model': {
+          const model = typeof msg['model'] === 'string' ? (msg['model'] as string) : undefined
+          if (model) status.setModel(model)
+          messages.appendSystemMessage(`model: ${model ?? ''}`)
+          break
+        }
+        case 'mode': {
+          const mode = typeof msg['mode'] === 'string' ? (msg['mode'] as string) : undefined
+          if (mode) status.setMode(mode)
+          messages.appendSystemMessage(`mode: ${mode ?? ''}`)
+          break
+        }
+        case 'help': {
+          const text = typeof msg['help_text'] === 'string'
+            ? (msg['help_text'] as string)
+            : '/help'
+          messages.appendSystemMessage(text)
+          break
+        }
+        default:
+          messages.appendSystemMessage(`/${cmd} 완료`)
+      }
       break
+    }
 
     case 'quit':
       // Phase 3 의 useApp().exit() 연동 — 현재는 상태 표시만

@@ -17,6 +17,9 @@ interface StatusState {
   setConnected: (v: boolean) => void
   setState: (s: {working_dir?: string; model?: string; mode?: string; turns?: number; ctx_tokens?: number}) => void
   setBusy: (v: boolean) => void
+  setWorkingDir: (working_dir: string) => void
+  setModel: (model: string) => void
+  setMode: (mode: string) => void
 }
 
 export const useStatusStore = create<StatusState>((set) => ({
@@ -36,4 +39,8 @@ export const useStatusStore = create<StatusState>((set) => ({
     ctxTokens: s.ctx_tokens ?? cur.ctxTokens,
   })),
   setBusy: (v) => set({busy: v}),
+  // slash_result cmd 별 개별 setter (A-5)
+  setWorkingDir: (working_dir: string) => set({workingDir: working_dir}),
+  setModel: (model: string) => set({model}),
+  setMode: (mode: string) => set({mode}),
 }))
