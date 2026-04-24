@@ -637,3 +637,60 @@ class TestEventBuffer:
         from collections import deque
         assert isinstance(room.event_buffer, deque)
         assert room.event_buffer.maxlen == 10000
+
+
+# ── PEXT-01: _broadcast_agent_start + from_self ──────────────────
+class TestAgentStartFromSelf:
+    def test_requester_gets_from_self_true(self, isolated_rooms):
+        '''_broadcast_agent_start() 호출 시 requester_ws에는 from_self=True가 전송된다.'''
+        import json
+        room = srv._get_or_create_room('r')
+        requester = _FakeWS()
+        observer = _FakeWS()
+        room.subscribers.update({requester, observer})
+        asyncio.run(srv._broadcast_agent_start(room, requester))
+        # requester 메시지 확인
+        assert len(requester.received) == 1
+        decoded = json.loads(requester.received[0])
+        assert decoded['type'] == 'agent_start'
+        assert decoded['from_self'] is True
+
+    def test_observer_gets_from_self_false(self, isolated_rooms):
+        '''_broadcast_agent_start() 호출 시 requester가 아닌 구독자는 from_self=False를 받는다.'''
+        import json
+        room = srv._get_or_create_room('r')
+        requester = _FakeWS()
+        observer = _FakeWS()
+        room.subscribers.update({requester, observer})
+        asyncio.run(srv._broadcast_agent_start(room, requester))
+        # observer 메시지 확인
+        assert len(observer.received) == 1
+        decoded = json.loads(observer.received[0])
+        assert decoded['type'] == 'agent_start'
+        assert decoded['from_self'] is False
+
+    def test_dead_ws_removed(self, isolated_rooms):
+        '''_broadcast_agent_start() 호출 시 끊긴 ws는 room.subscribers에서 제거된다.'''
+        room = srv._get_or_create_room('r')
+        requester = _FakeWS()
+        dead = _FakeWS(raise_on_send=True)
+        room.subscribers.update({requester, dead})
+        asyncio.run(srv._broadcast_agent_start(room, requester))
+        assert dead not in room.subscribers
+        assert requester in room.subscribers
+
+
+# ── PEXT-02: confirm_write old_content ───────────────────────────
+class TestConfirmWriteOldContent:
+    def test_read_existing_file_returns_content(self, tmp_path):
+        '''_read_existing_file()이 존재하는 파일에서 내용을 반환한다.'''
+        f = tmp_path / 'sample.txt'
+        f.write_text('hello world', encoding='utf-8')
+        result = srv._read_existing_file(str(f))
+        assert result == 'hello world'
+
+    def test_read_existing_file_returns_none_for_missing(self, tmp_path):
+        '''_read_existing_file()이 존재하지 않는 파일에서 None을 반환한다.'''
+        missing = str(tmp_path / 'nonexistent.txt')
+        result = srv._read_existing_file(missing)
+        assert result is None
