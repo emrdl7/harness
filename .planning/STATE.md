@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-04-24T11:30:00.000Z"
+last_updated: "2026-04-24T12:00:00.000Z"
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 19
+  total_plans: 22
   completed_plans: 19
-  percent: 80
+  percent: 86
 ---
 
 # harness — ui-ink Milestone State
@@ -28,13 +28,13 @@ progress:
 
 ## Current Position
 
-Phase: 05 — READY TO PLAN
+Phase: 05 — PLANNED · READY TO EXECUTE
 
 - **Phase:** 5
-- **Plan:** Not started
-- **Status:** Ready to plan
-- **Progress:** `[████████████░░] Phase 1~4 완료 (4/5 phases)`
-- **Next action:** `/gsd-plan-phase 5` 실행 → Phase 5 (Legacy Deletion + Milestone Closure) 계획 수립
+- **Plan:** 05-01 (Wave 1)
+- **Status:** Plans 생성 완료, 실행 대기
+- **Progress:** `[█████████████░] Phase 1~4 완료, Phase 5 계획 완료 (4/5 phases 실행 완료)`
+- **Next action:** `/gsd-execute-phase 5` 실행 → Phase 5 (Legacy Deletion + Milestone Closure) 실행
 
 ---
 
@@ -46,7 +46,7 @@ Phase: 05 — READY TO PLAN
 | 2 | Core UX | Complete | 5/5 |
 | 3 | Remote Room + Session Control | Complete | 6/6 |
 | 4 | Testing + Docs + External Beta | Complete | 5/5 |
-| 5 | Legacy Deletion + Milestone Closure | Ready to plan | 0/0 |
+| 5 | Legacy Deletion + Milestone Closure | Planned | 0/3 |
 
 ---
 
@@ -72,13 +72,15 @@ Phase: 05 — READY TO PLAN
 
 ### Background Issues (CONCERNS 잔여, 이번 milestone 범위)
 
-- §1.12 spinner vs Live (Python REPL) — **Phase 5 legacy 삭제와 함께 자동 소멸**
-- §3 Architecture 잔여 7건 중 Python REPL 관련 — **Phase 5 에서 close 처리**
+- §1.12 spinner vs Live (Python REPL) — **Phase 5 legacy 삭제와 함께 자동 소멸 예정**
+- §3 Architecture 잔여 7건 중 Python REPL 관련 — **Phase 5 에서 close 처리 예정**
 - §1.10 `run_command` shell-quoting — Ink 재작성과 독립, 이번 milestone 제외
 
 ### Todos
 
-(none — roadmap 단계 완료, plan 단계 진입 대기)
+- [ ] 05-01-PLAN.md 실행 — cli/ 삭제 + ui/index.js 삭제 + main.py 정리 (Wave 1)
+- [ ] 05-02-PLAN.md 실행 — pytest + vitest 회귀 검증 (Wave 2)
+- [ ] 05-03-PLAN.md 실행 — PROJECT.md Evolution + CONCERNS close + milestone 종료 (Wave 3)
 
 ### Blockers
 
@@ -138,9 +140,20 @@ Phase: 05 — READY TO PLAN
 - Phase 4 보안 검토 완료: 14/14 위협 closed (T-04-01~14) — 04-SECURITY.md 생성
 - Phase 4 → Complete 전환. ROADMAP.md + STATE.md 업데이트.
 
+### Last session summary (2026-04-24 — Phase 5 Planning)
+
+- `/gsd-plan-phase 5` 실행 → Phase 5 플랜 3개 생성 완료.
+- Wave 구조: Wave 1(05-01 삭제) → Wave 2(05-02 검증) → Wave 3(05-03 문서 종료)
+- 05-01 (Wave 1): cli/ 모듈 7종 + ui/index.js + main.py REPL 경로 삭제 (LEG-01~03)
+- 05-02 (Wave 2): pytest + vitest 회귀 검증 + 환경 위생 grep 5종 (LEG-04~05)
+- 05-03 (Wave 3): PROJECT.md Evolution Validated 이동 + CONCERNS §1.12/§3.1/§3.5 close + ROADMAP/STATE milestone 종료 (LEG-06~08)
+
 ### Next session should
 
-1. Phase 5 계획: `/gsd-plan-phase 5` (Legacy Deletion + Milestone Closure)
+1. Phase 5 실행: `/gsd-execute-phase 5` (Legacy Deletion + Milestone Closure)
+2. Wave 1 (05-01): cli/ 삭제 → ui/index.js 삭제 → main.py 정리
+3. Wave 2 (05-02): pytest 회귀 검증 → vitest 검증 → 환경 위생 grep
+4. Wave 3 (05-03): PROJECT.md Evolution 업데이트 → CONCERNS close → milestone 종료
 
 ---
 

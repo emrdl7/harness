@@ -129,7 +129,7 @@ Plans:
 
 ### Phase 5: Legacy Deletion + Milestone Closure
 
-**Goal**: Phase 4 beta greenlight 이후에만 진입. 사용자 명시 요청 "기존 코드 유지해보니까 gsd나 다른 에이전트들이 헷깔리는 경우가 상당히 많음" 이행 + PROJECT.md Key Decision "Legacy Python UI 전부 삭제" 실행. 이 phase 를 Phase 4 앞으로 당기면 regression 롤백 경로가 사라지므로 절대 역순 불가.
+**Goal**: Phase 4 beta greenlight 이후에만 진입. 사용자 명시 요청 "기존 코드 유지해보니까 gsd나 다른 에이전트들이 헷갈리는 경우가 상당히 많음" 이행 + PROJECT.md Key Decision "Legacy Python UI 전부 삭제" 실행. 이 phase 를 Phase 4 앞으로 당기면 regression 롤백 경로가 사라지므로 절대 역순 불가.
 
 **Depends on**: Phase 4 (beta green + blocker 0)
 
@@ -142,7 +142,11 @@ Plans:
 4. 최종 회귀 라운드 green: Python pytest 199건 + ui-ink vitest 전 테스트.
 5. PROJECT.md Evolution 섹션 업데이트 완료 — Active 의 ui-ink 항목들 → Validated 이동 · Key Decisions Outcome "Pending" → "Validated" 확정 · milestone closure 섹션 추가. `.planning/codebase/CONCERNS.md` §1.12(spinner vs Live) · §3 Architecture 잔여 중 Python REPL 관련 항목 close 처리.
 
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 05-01-PLAN.md — Legacy cli/ + ui/index.js + main.py REPL 경로 삭제 (LEG-01~03)
+- [ ] 05-02-PLAN.md — pytest + vitest 회귀 검증 + 환경 위생 grep (LEG-04~05)
+- [ ] 05-03-PLAN.md — PROJECT.md Evolution + CONCERNS close + ROADMAP/STATE milestone 종료 (LEG-06~08)
 **UI hint**: yes
 
 ---
@@ -179,7 +183,7 @@ Plans:
 | 2. Core UX | 5/5 | Complete | 2026-04-24 |
 | 3. Remote Room + Session Control | 6/6 | Complete | 2026-04-24 |
 | 4. Testing + Docs + External Beta | 5/5 | Complete | 2026-04-24 |
-| 5. Legacy Deletion + Milestone Closure | 0/0 | Not started | - |
+| 5. Legacy Deletion + Milestone Closure | 0/3 | In progress | - |
 
 ---
 
@@ -194,4 +198,4 @@ Phase 1 과 Phase 5 는 research-phase 스킵 가능 (STACK.md + PITFALLS.md 에
 
 ---
 
-*Last updated: 2026-04-24 via /gsd-plan-phase 4*
+*Last updated: 2026-04-24 via /gsd-plan-phase 5*
