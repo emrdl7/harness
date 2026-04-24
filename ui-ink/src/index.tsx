@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 // harness ui-ink 진입점 (FND-12, FND-13, FND-14)
 // TTY 가드, 시그널 핸들러, patchConsole: false
 import React from 'react'
@@ -58,10 +59,20 @@ process.on('SIGINT',  () => cleanup(0))
       (a, i) => !a.startsWith('--') && !skipIndices.has(i + 2),
     )
 
-    const url = process.env['HARNESS_URL']
-    const token = process.env['HARNESS_TOKEN']
+    // env var 우선 → config 파일 fallback
+    let url = process.env['HARNESS_URL']
+    let token = process.env['HARNESS_TOKEN']
     if (!url || !token) {
-      process.stderr.write('[harness] HARNESS_URL / HARNESS_TOKEN 필요\n')
+      const {loadConfig} = await import('./config.js')
+      const fileCfg = loadConfig()
+      if (fileCfg) {
+        url = fileCfg.url
+        token = fileCfg.token
+        if (!roomName && fileCfg.room) process.env['HARNESS_ROOM'] = fileCfg.room
+      }
+    }
+    if (!url || !token) {
+      process.stderr.write('[harness] 연결 정보 없음 — env var(HARNESS_URL/HARNESS_TOKEN) 또는 ~/.harness/config.json 필요\n')
       process.exit(1)
     }
 

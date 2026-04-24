@@ -8,6 +8,7 @@ import {useInputStore} from './store/input.js'
 import {useConfirmStore, bindConfirmClient} from './store/confirm.js'
 import {useRoomStore} from './store/room.js'
 import {HarnessClient} from './ws/client.js'
+import {loadConfig, type HarnessConfig} from './config.js'
 import {MessageList} from './components/MessageList.js'
 import {StatusBar} from './components/StatusBar.js'
 import {Divider} from './components/Divider.js'
@@ -15,10 +16,21 @@ import {InputArea} from './components/InputArea.js'
 import {ConfirmDialog} from './components/ConfirmDialog.js'
 import {ReconnectOverlay} from './components/ReconnectOverlay.js'
 import {ObserverOverlay} from './components/ObserverOverlay.js'
+import {SetupWizard} from './components/SetupWizard.js'
+
+// env var 우선 → config 파일 fallback
+function resolveConfig(): HarnessConfig | null {
+  const url = process.env['HARNESS_URL']
+  const token = process.env['HARNESS_TOKEN']
+  if (url && token) return {url, token, room: process.env['HARNESS_ROOM']}
+  return loadConfig()
+}
 
 export const App: React.FC = () => {
   const {exit} = useApp()
   const {stdout} = useStdout()
+
+  const [cfg, setCfg] = useState<HarnessConfig | null>(resolveConfig)
 
   const {buffer} = useInputStore(useShallow((s) => ({buffer: s.buffer})))
   const busy = useStatusStore(useShallow((s) => s.busy))
@@ -32,15 +44,13 @@ export const App: React.FC = () => {
   const clientRef = useRef<HarnessClient | null>(null)
   const lastCtrlCRef = useRef<number>(0)
 
-  // WS 연결 + confirm store 바인딩
+  // WS 연결 + confirm store 바인딩 — cfg 확정 후 실행
   useEffect(() => {
-    const url = process.env['HARNESS_URL']
-    const token = process.env['HARNESS_TOKEN']
-    if (!url || !token) return
+    if (!cfg) return
     const client = new HarnessClient({
-      url,
-      token,
-      room: process.env['HARNESS_ROOM'],
+      url: cfg.url,
+      token: cfg.token,
+      room: cfg.room ?? process.env['HARNESS_ROOM'],
       resumeSession: process.env['HARNESS_RESUME_SESSION'],  // SES-02: --resume 분기에서 설정
     })
     client.connect()
@@ -51,7 +61,7 @@ export const App: React.FC = () => {
       client.close()
       clientRef.current = null
     }
-  }, [])
+  }, [cfg])
 
   // history 파일 hydration — 마운트 시 1회
   useEffect(() => {
@@ -97,7 +107,7 @@ export const App: React.FC = () => {
   // InputArea 의 onSubmit — WS 전송 + 메시지 표시
   const handleSubmit = useCallback((text: string) => {
     // DIFF-02: room 모드에서 meta.author 추가 (Message.tsx author prefix 표시용)
-    const myToken = process.env['HARNESS_TOKEN'] ?? ''
+    const myToken = cfg?.token ?? ''
     useMessagesStore.getState().appendUserMessage(text, {author: myToken || 'me'})
     const client = clientRef.current
     if (client) {
@@ -124,6 +134,11 @@ export const App: React.FC = () => {
     inputArea = <ObserverOverlay username={activeInputFrom} />
   } else {
     inputArea = <InputArea onSubmit={handleSubmit} disabled={busy} />
+  }
+
+  // 최초 실행 — config 없으면 SetupWizard 표시
+  if (!cfg) {
+    return <SetupWizard onDone={setCfg} />
   }
 
   // D-01 레이아웃: [MessageList(Static + active)] → [Divider] → [inputArea] → [Divider] → [StatusBar]

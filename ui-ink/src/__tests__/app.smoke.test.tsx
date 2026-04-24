@@ -10,6 +10,9 @@ import {useInputStore} from '../store/input.js'
 
 describe('App smoke', () => {
   beforeEach(() => {
+    // 더미 env var — SetupWizard 를 건너뛰고 main 레이아웃 렌더
+    process.env['HARNESS_URL'] = 'ws://localhost:0'
+    process.env['HARNESS_TOKEN'] = 'test-token'
     useMessagesStore.setState({completedMessages: [], activeMessage: null})
     useStatusStore.setState({
       connected: true, busy: false,
@@ -21,11 +24,12 @@ describe('App smoke', () => {
   })
 
   afterEach(() => {
+    delete process.env['HARNESS_URL']
+    delete process.env['HARNESS_TOKEN']
     vi.restoreAllMocks()
   })
 
   it('renders without error (empty state)', () => {
-    delete process.env['HARNESS_URL']
     const {lastFrame, unmount} = render(<App/>)
     expect(lastFrame()).toBeTruthy()
     // 레이아웃 필수 요소 존재
@@ -35,7 +39,6 @@ describe('App smoke', () => {
   })
 
   it('renders completed + active messages', () => {
-    delete process.env['HARNESS_URL']
     useMessagesStore.setState({
       completedMessages: [
         {id: '1', role: 'user', content: 'hello'},
@@ -50,7 +53,6 @@ describe('App smoke', () => {
   })
 
   it('confirm mode shows placeholder instead of input', () => {
-    delete process.env['HARNESS_URL']
     useConfirmStore.setState({mode: 'confirm_write', payload: {path: '/foo'}})
     const {lastFrame, unmount} = render(<App/>)
     const frame = lastFrame() ?? ''
@@ -59,7 +61,6 @@ describe('App smoke', () => {
   })
 
   it('does NOT emit alternate screen or mouse tracking escapes', () => {
-    delete process.env['HARNESS_URL']
     const {lastFrame, unmount} = render(<App/>)
     const frame = lastFrame() ?? ''
     // alternate screen ESC[?104x 및 mouse tracking ESC[?100x 계열 없음 확인

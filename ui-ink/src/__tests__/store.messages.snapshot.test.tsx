@@ -98,7 +98,9 @@ describe('dispatch 확장 (PEXT-01/05, DIFF-03)', () => {
 describe('회귀 스냅샷 (TST-03)', () => {
   // 각 테스트 전 전체 store 초기화 (app.smoke.test.tsx 패턴)
   beforeEach(() => {
-    delete process.env['HARNESS_URL']
+    // 더미 env var — SetupWizard 를 건너뛰고 main 레이아웃 렌더
+    process.env['HARNESS_URL'] = 'ws://localhost:0'
+    process.env['HARNESS_TOKEN'] = 'test-token'
     useMessagesStore.setState({completedMessages: [], activeMessage: null, snapshotKey: 0})
     useStatusStore.setState({
       connected: true, busy: false,

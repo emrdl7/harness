@@ -2,6 +2,10 @@
   "name": "harness-ink",
   "private": true,
   "type": "module",
+  "bin": {
+    "harness": "src/index.tsx",
+    "harness_server": "bin/harness_server"
+  },
   "scripts": {
     "start": "bun run src/index.tsx",
     "dev": "bun run --watch src/index.tsx",

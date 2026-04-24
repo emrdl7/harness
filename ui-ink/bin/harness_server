@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# harness_server 전역 래퍼 — bun link 후 ~/.bun/bin/harness_server 에서 호출됨
+# 심볼릭 링크를 1단계 해석해 harness 루트를 찾는다
+_link="${BASH_SOURCE[0]}"
+_target="$(readlink "$_link" 2>/dev/null)"
+[[ -n "$_target" ]] && _link="$_target"
+HARNESS_ROOT="$(cd "$(dirname "$_link")/../.." && pwd)"
+
+# HARNESS_TOKENS 미설정 시 ~/.harness/config.json 에서 토큰 로드 또는 최초 생성
+if [[ -z "$HARNESS_TOKENS" ]]; then
+  _cfg="$HOME/.harness/config.json"
+  if [[ -f "$_cfg" ]]; then
+    _token="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('token',''))" "$_cfg" 2>/dev/null)"
+  fi
+  if [[ -z "$_token" ]]; then
+    # 최초 실행 — 토큰 생성 후 config 저장
+    _token="$(openssl rand -hex 32)"
+    mkdir -p "$HOME/.harness"
+    python3 - "$_token" "$_cfg" <<'EOF'
+import json, os, sys
+token, path = sys.argv[1], sys.argv[2]
+cfg = {}
+try:
+    with open(path) as f:
+        cfg = json.load(f)
+except Exception:
+    pass
+cfg.update({'url': 'ws://127.0.0.1:7891', 'token': token})
+with open(path, 'w') as f:
+    json.dump(cfg, f, indent=2)
+os.chmod(path, 0o600)
+EOF
+    echo "[harness] 토큰 생성 완료 — ~/.harness/config.json 저장됨"
+  fi
+  export HARNESS_TOKENS="$_token"
+fi
+
+echo "[harness] 접속 토큰: $HARNESS_TOKENS"
+echo ""
+
+# 포트 7891 선점 여부 확인
+_port="${HARNESS_PORT:-7891}"
+_pid="$(lsof -ti :"$_port" -sTCP:LISTEN 2>/dev/null | head -1)"
+if [[ -n "$_pid" ]]; then
+  echo "[harness] 포트 $_port 이미 사용 중 (PID $_pid)"
+  echo "[harness] 기존 서버를 종료하려면: kill $_pid"
+  exit 1
+fi
+
+exec "$HARNESS_ROOT/.venv/bin/python" "$HARNESS_ROOT/harness_server.py" "$@"
