@@ -5,7 +5,9 @@ import json
 import os
 import sys
 import threading
+import time
 import uuid
+from collections import deque
 from dataclasses import dataclass, field
 
 import websockets
@@ -84,7 +86,19 @@ async def broadcast(room: 'Room', **kwargs):
 
     송신 중 깨진 ws는 dead 리스트에 모았다가 마지막에 일괄 discard
     (set 변경 중 순회 회피). subscribers가 비어도 안전.
+
+    PEXT-03: 매 호출마다 event_id를 monotonic하게 부여하고 ring buffer에 기록.
+    60초 초과 항목은 eager cleanup.
     '''
+    # PEXT-03: event_id 부여 + ring buffer 기록
+    room.event_counter += 1
+    kwargs['event_id'] = room.event_counter
+    now = time.monotonic()
+    room.event_buffer.append((room.event_counter, now, dict(kwargs)))
+    # TTL 60초 초과 항목 eager cleanup
+    while room.event_buffer and (now - room.event_buffer[0][1]) > 60:
+        room.event_buffer.popleft()
+
     if not room.subscribers:
         return
     payload = json.dumps(kwargs, ensure_ascii=False)
@@ -131,6 +145,9 @@ class Room:
     # 진행 중인 _handle_input task의 강한 참조 유지 (asyncio.create_task GC 회피).
     # done 콜백으로 자동 discard.
     input_tasks: set = field(default_factory=set)
+    # PEXT-03: monotonic event_id + 60초 ring buffer (maxlen=10000 으로 메모리 고갈 방지)
+    event_counter: int = field(default=0)
+    event_buffer: deque = field(default_factory=lambda: deque(maxlen=10000))
 
 
 ROOMS: dict[str, Room] = {}
