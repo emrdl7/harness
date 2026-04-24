@@ -44,6 +44,7 @@ describe('StatusBar', () => {
       && frame.includes('ctx')
     // 넓은 폭과 달리 일부는 드롭됨 — 전부 다 나오면 안 됨 (또는 나와도 truncation)
     // 핵심: columns 초과 없이 렌더됨 (frame 길이 체크 — ANSI 제거 후 approx)
+    // eslint-disable-next-line no-control-regex
     const stripped = frame.replace(/\x1b\[[0-9;]*m/g, '')
     expect(stripped.length).toBeLessThanOrEqual(120) // 여유있게 상한선
     void hasAll // 참고용

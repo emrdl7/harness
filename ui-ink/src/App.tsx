@@ -15,7 +15,11 @@ export const App: React.FC = () => {
   const {exit} = useApp()
 
   // 슬라이스 선택자 — useShallow 로 필요한 필드만 구독 (FND-06, CLAUDE.md)
-  const messages = useMessagesStore(useShallow((s) => s.messages))
+  // completedMessages + activeMessage 분리 계약 (RND-01, RND-02) — Plan B 에서 전면 교체
+  const {completedMessages, activeMessage} = useMessagesStore(useShallow((s) => ({
+    completedMessages: s.completedMessages,
+    activeMessage: s.activeMessage,
+  })))
   const {buffer, setBuffer, clearBuffer} = useInputStore(useShallow((s) => ({
     buffer: s.buffer,
     setBuffer: s.setBuffer,
@@ -84,9 +88,9 @@ export const App: React.FC = () => {
 
   return (
     <Box flexDirection='column'>
-      {/* 메시지 목록 — id 를 React key 로 사용 (FND-08, CLAUDE.md index key 금지) */}
+      {/* 완결 메시지 목록 — completedMessages (Static 전용, agent_end 후만 추가) */}
       <Box flexDirection='column'>
-        {messages.map((m) => (
+        {completedMessages.map((m) => (
           <Box key={m.id} marginBottom={0}>
             <Text
               color={
@@ -106,6 +110,14 @@ export const App: React.FC = () => {
           </Box>
         ))}
       </Box>
+
+      {/* 스트리밍 중 active 메시지 슬롯 — Plan B 에서 전면 교체 예정 */}
+      {activeMessage && (
+        <Box key={activeMessage.id}>
+          <Text color='yellow' bold>● </Text>
+          <Text wrap='wrap'>{activeMessage.content}</Text>
+        </Box>
+      )}
 
       {/* 구분선 */}
       <Text dimColor>{'─'.repeat(40)}</Text>
