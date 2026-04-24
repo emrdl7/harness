@@ -5,7 +5,9 @@ import json
 import os
 import sys
 import threading
+import time
 import uuid
+from collections import deque
 from dataclasses import dataclass, field
 
 import websockets
@@ -84,13 +86,57 @@ async def broadcast(room: 'Room', **kwargs):
 
     송신 중 깨진 ws는 dead 리스트에 모았다가 마지막에 일괄 discard
     (set 변경 중 순회 회피). subscribers가 비어도 안전.
+
+    PEXT-03: 매 호출마다 event_id를 monotonic하게 부여하고 ring buffer에 기록.
+    60초 초과 항목은 eager cleanup.
     '''
+    # PEXT-03: event_id 부여 + ring buffer 기록
+    room.event_counter += 1
+    kwargs['event_id'] = room.event_counter
+    now = time.monotonic()
+    room.event_buffer.append((room.event_counter, now, dict(kwargs)))
+    # TTL 60초 초과 항목 eager cleanup
+    while room.event_buffer and (now - room.event_buffer[0][1]) > 60:
+        room.event_buffer.popleft()
+
     if not room.subscribers:
         return
     payload = json.dumps(kwargs, ensure_ascii=False)
     dead = []
     for s in list(room.subscribers):
         try:
+            await s.send(payload)
+        except Exception:
+            dead.append(s)
+    for s in dead:
+        room.subscribers.discard(s)
+
+
+def _read_existing_file(path: str) -> str | None:
+    '''PEXT-02: confirm_write 의 old_content 제공용 파일 읽기 헬퍼.
+    파일이 없거나 읽기 실패 시 None 반환 — 신규 파일 쓰기 시 diff 없음.
+    '''
+    try:
+        with open(path, encoding='utf-8') as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+async def _broadcast_agent_start(room: 'Room', requester_ws) -> None:
+    '''PEXT-01: agent_start 는 per-subscriber — from_self 플래그가 구독자마다 다름.
+    broadcast() 와 동일한 dead 처리 패턴 사용.
+    참고: event_id 부여는 broadcast() 경유가 아니므로 별도 counter 증가 없음
+         (agent_start 는 from_self 로 인해 공통 payload 가 불가능).
+    '''
+    dead = []
+    for s in list(room.subscribers):
+        try:
+            # send() 헬퍼는 예외를 삼키므로 dead 감지를 위해 직접 ws.send() 호출
+            payload = json.dumps(
+                {'type': 'agent_start', 'from_self': (s is requester_ws)},
+                ensure_ascii=False,
+            )
             await s.send(payload)
         except Exception:
             dead.append(s)
@@ -131,6 +177,9 @@ class Room:
     # 진행 중인 _handle_input task의 강한 참조 유지 (asyncio.create_task GC 회피).
     # done 콜백으로 자동 discard.
     input_tasks: set = field(default_factory=set)
+    # PEXT-03: monotonic event_id + 60초 ring buffer (maxlen=10000 으로 메모리 고갈 방지)
+    event_counter: int = field(default=0)
+    event_buffer: deque = field(default_factory=lambda: deque(maxlen=10000))
 
 
 ROOMS: dict[str, Room] = {}
@@ -190,7 +239,8 @@ async def run_agent(ws, room: 'Room', user_input: str, plan_mode: bool = False,
         state._confirm_event = event
         state._confirm_result = False
         asyncio.run_coroutine_threadsafe(
-            send(ws, type='confirm_write', path=path), loop
+            send(ws, type='confirm_write', path=path,
+                 old_content=_read_existing_file(path)), loop  # PEXT-02
         )
         # 최대 60초 대기 (스레드에서 asyncio Event를 기다리는 우회)
         future = asyncio.run_coroutine_threadsafe(
@@ -233,7 +283,7 @@ async def run_agent(ws, room: 'Room', user_input: str, plan_mode: bool = False,
         state.compact_count += 1
         await broadcast(room, type='info', text=f'압축 완료 (메시지 {dropped}개 요약)')
 
-    await broadcast(room, type='agent_start')
+    await _broadcast_agent_start(room, ws)  # PEXT-01: per-subscriber from_self 분기
 
     # ephemeral 모드: 별도 임시 세션 + 선택적 working_dir 오버라이드
     is_ephemeral = system_override is not None

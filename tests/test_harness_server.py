@@ -190,7 +190,9 @@ class TestBroadcast:
         asyncio.run(srv.broadcast(room, type='whatever'))  # 예외 안 나면 통과
 
     def test_payload_is_valid_json(self, isolated_rooms):
-        '''broadcast 페이로드는 JSON 직렬화 가능해야 함.'''
+        '''broadcast 페이로드는 JSON 직렬화 가능해야 함.
+        PEXT-03 이후 event_id 필드가 추가되므로 assertSubset 패턴으로 검증.
+        '''
         import json
         room = srv._get_or_create_room('r')
         ws = _FakeWS()
@@ -198,8 +200,10 @@ class TestBroadcast:
         asyncio.run(srv.broadcast(room, type='tool_end', name='write_file',
                                   result={'ok': True, 'path': '/tmp/x'}))
         decoded = json.loads(ws.received[0])
-        assert decoded == {'type': 'tool_end', 'name': 'write_file',
-                           'result': {'ok': True, 'path': '/tmp/x'}}
+        assert decoded['type'] == 'tool_end'
+        assert decoded['name'] == 'write_file'
+        assert decoded['result'] == {'ok': True, 'path': '/tmp/x'}
+        assert 'event_id' in decoded  # PEXT-03 필드 포함 확인
 
 
 class TestBroadcastState:
@@ -579,3 +583,114 @@ class TestRoomLifecycle:
         room2 = srv._get_or_create_room('team')
         assert room2 is room1
         assert room2.state.messages == [{'role': 'user', 'content': 'shared'}]
+
+
+# ── PEXT-03: event_id + ring buffer ─────────────────────────────
+class TestEventBuffer:
+    def test_event_counter_increments(self, isolated_rooms):
+        '''broadcast() 호출마다 room.event_counter가 1씩 증가한다.'''
+        room = srv._get_or_create_room('r')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        assert room.event_counter == 0
+        asyncio.run(srv.broadcast(room, type='token', text='a'))
+        assert room.event_counter == 1
+        asyncio.run(srv.broadcast(room, type='token', text='b'))
+        assert room.event_counter == 2
+
+    def test_ring_buffer_stores_payload(self, isolated_rooms):
+        '''broadcast() 후 room.event_buffer에 (event_id, timestamp, payload_dict) 튜플이 저장된다.'''
+        room = srv._get_or_create_room('r')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        asyncio.run(srv.broadcast(room, type='token', text='hello'))
+        assert len(room.event_buffer) == 1
+        event_id, ts, payload = room.event_buffer[0]
+        assert event_id == 1
+        assert isinstance(ts, float)
+        assert payload['type'] == 'token'
+        assert payload['text'] == 'hello'
+        assert payload['event_id'] == 1
+
+    def test_ttl_cleanup(self, isolated_rooms, monkeypatch):
+        '''60초 이상 된 항목이 다음 broadcast() 호출 시 event_buffer에서 제거된다.'''
+        import time as _time
+        room = srv._get_or_create_room('r')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+
+        # 오래된 항목을 직접 삽입 (현재 - 61초)
+        old_ts = _time.monotonic() - 61
+        room.event_buffer.append((0, old_ts, {'type': 'old'}))
+        assert len(room.event_buffer) == 1
+
+        # 새 broadcast 호출 시 TTL cleanup이 발생해야 함
+        asyncio.run(srv.broadcast(room, type='new', text='fresh'))
+        # 오래된 항목은 제거되고 새 항목만 남아야 함
+        assert len(room.event_buffer) == 1
+        _, _, payload = room.event_buffer[0]
+        assert payload['type'] == 'new'
+
+    def test_maxlen(self, isolated_rooms):
+        '''event_buffer.maxlen이 10000이다.'''
+        room = srv._get_or_create_room('r')
+        from collections import deque
+        assert isinstance(room.event_buffer, deque)
+        assert room.event_buffer.maxlen == 10000
+
+
+# ── PEXT-01: _broadcast_agent_start + from_self ──────────────────
+class TestAgentStartFromSelf:
+    def test_requester_gets_from_self_true(self, isolated_rooms):
+        '''_broadcast_agent_start() 호출 시 requester_ws에는 from_self=True가 전송된다.'''
+        import json
+        room = srv._get_or_create_room('r')
+        requester = _FakeWS()
+        observer = _FakeWS()
+        room.subscribers.update({requester, observer})
+        asyncio.run(srv._broadcast_agent_start(room, requester))
+        # requester 메시지 확인
+        assert len(requester.received) == 1
+        decoded = json.loads(requester.received[0])
+        assert decoded['type'] == 'agent_start'
+        assert decoded['from_self'] is True
+
+    def test_observer_gets_from_self_false(self, isolated_rooms):
+        '''_broadcast_agent_start() 호출 시 requester가 아닌 구독자는 from_self=False를 받는다.'''
+        import json
+        room = srv._get_or_create_room('r')
+        requester = _FakeWS()
+        observer = _FakeWS()
+        room.subscribers.update({requester, observer})
+        asyncio.run(srv._broadcast_agent_start(room, requester))
+        # observer 메시지 확인
+        assert len(observer.received) == 1
+        decoded = json.loads(observer.received[0])
+        assert decoded['type'] == 'agent_start'
+        assert decoded['from_self'] is False
+
+    def test_dead_ws_removed(self, isolated_rooms):
+        '''_broadcast_agent_start() 호출 시 끊긴 ws는 room.subscribers에서 제거된다.'''
+        room = srv._get_or_create_room('r')
+        requester = _FakeWS()
+        dead = _FakeWS(raise_on_send=True)
+        room.subscribers.update({requester, dead})
+        asyncio.run(srv._broadcast_agent_start(room, requester))
+        assert dead not in room.subscribers
+        assert requester in room.subscribers
+
+
+# ── PEXT-02: confirm_write old_content ───────────────────────────
+class TestConfirmWriteOldContent:
+    def test_read_existing_file_returns_content(self, tmp_path):
+        '''_read_existing_file()이 존재하는 파일에서 내용을 반환한다.'''
+        f = tmp_path / 'sample.txt'
+        f.write_text('hello world', encoding='utf-8')
+        result = srv._read_existing_file(str(f))
+        assert result == 'hello world'
+
+    def test_read_existing_file_returns_none_for_missing(self, tmp_path):
+        '''_read_existing_file()이 존재하지 않는 파일에서 None을 반환한다.'''
+        missing = str(tmp_path / 'nonexistent.txt')
+        result = srv._read_existing_file(missing)
+        assert result is None
