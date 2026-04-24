@@ -86,6 +86,16 @@ Phase: 05 — COMPLETE
 
 (none)
 
+## Deferred Items
+
+Items acknowledged and deferred at milestone close on 2026-04-24:
+
+| Category | Item | Status |
+|----------|------|--------|
+| verification | Phase 01: 01-VERIFICATION.md | human_needed — 수동 항목 잔재, Phase 1 Complete 처리됨 |
+| verification | Phase 03: 03-VERIFICATION.md | human_needed — 수동 항목 잔재, Phase 3 Complete 처리됨 |
+| uat | Phase 03: 03-HUMAN-UAT.md SC-2 Presence | deferred — 멀티 터미널 환경 필요, 다음 milestone 검증 |
+
 ---
 
 ## Session Continuity
