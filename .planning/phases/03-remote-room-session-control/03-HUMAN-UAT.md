@@ -22,7 +22,7 @@ result: APPROVED (2026-04-24, automated)
 
 ### 3. CR-01 confirm_write accept/result 필드 불일치
 expected: 클라이언트 accept=true → 서버가 파일 쓰기 허용
-result: [pending — /gsd-code-review-fix 3 으로 수정 필요]
+result: RESOLVED (ccd0e06 — accept 필드 우선 읽기로 수정)
 
 ### 4. SC-2 Presence 세그먼트 (REM-02)
 expected: 두 클라이언트 접속 시 StatusBar에 🟢 2명 표시
@@ -47,8 +47,8 @@ result: [deferred — CR-01 수정 후 검증 필요]
 ## Summary
 
 total: 8
-passed: 2
-issues: 1
+passed: 3
+issues: 0
 pending: 5
 skipped: 0
 blocked: 0

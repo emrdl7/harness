@@ -91,12 +91,12 @@ Plans:
 
 **Plans**: 6 plans
 Plans:
-- [ ] 03-01-PLAN.md — 서버 PEXT-01~03 (Room event_id ring buffer + agent_start per-subscriber + confirm_write old_content)
-- [ ] 03-02-PLAN.md — 서버 PEXT-04~05 (resume_from delta replay + cancel asyncio 중단)
-- [ ] 03-03-PLAN.md — 클라이언트 protocol 타입 + store 확장 + dispatch 배선
-- [ ] 03-04-PLAN.md — 신규 컴포넌트 (PresenceSegment · ReconnectOverlay · ObserverOverlay · userColor)
-- [ ] 03-05-PLAN.md — HarnessClient jitter backoff + one-shot.ts + index.tsx argv 파싱
-- [ ] 03-06-PLAN.md — App.tsx 치환 우선순위 + StatusBar/Message 배선 + 수동 검증
+- [x] 03-01-PLAN.md — 서버 PEXT-01~03 (Room event_id ring buffer + agent_start per-subscriber + confirm_write old_content)
+- [x] 03-02-PLAN.md — 서버 PEXT-04~05 (resume_from delta replay + cancel asyncio 중단)
+- [x] 03-03-PLAN.md — 클라이언트 protocol 타입 + store 확장 + dispatch 배선
+- [x] 03-04-PLAN.md — 신규 컴포넌트 (PresenceSegment · ReconnectOverlay · ObserverOverlay · userColor)
+- [x] 03-05-PLAN.md — HarnessClient jitter backoff + one-shot.ts + index.tsx argv 파싱
+- [x] 03-06-PLAN.md — App.tsx 치환 우선순위 + StatusBar/Message 배선 + 수동 검증
 **UI hint**: yes
 
 ---

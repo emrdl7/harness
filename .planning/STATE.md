@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-last_updated: "2026-04-24T02:19:17.575Z"
+status: ready_to_plan
+last_updated: "2026-04-24T06:24:35.644Z"
 progress:
   total_phases: 5
-  completed_phases: 0
-  total_plans: 0
+  completed_phases: 1
+  total_plans: 6
   completed_plans: 8
-  percent: 0
+  percent: 20
 ---
 
 # harness — ui-ink Milestone State
@@ -22,17 +22,20 @@ progress:
 
 **See:** `.planning/PROJECT.md` (milestone 정의 · Validated · Active · Out of Scope · Key Decisions · Constraints)
 **Core Value:** "ui-ink 가 harness 의 기본이자 유일한 UI. 로컬과 원격이 동일한 경험을 갖고, 그 경험은 Claude Code 수준이다."
-**Current focus:** Phase 3 (Remote Room + Session Control) — Phase 2 완료, Phase 3 계획 대기 중
+**Current focus:** Phase --phase — 03
 
 ---
 
 ## Current Position
 
-- **Phase:** 3
-- **Plan:** — (Phase 3 계획 수립 필요)
-- **Status:** ready
+Phase: --phase (03) — EXECUTING
+Plan: 1 of --name
+
+- **Phase:** 4
+- **Plan:** Not started
+- **Status:** Ready to plan
 - **Progress:** `[████████░░] Phase 1~2 완료 (2/5 phases)`
-- **Next action:** `/gsd-plan-phase 3` 실행 → Phase 3 (Remote Room + Session Control) 계획 수립
+- **Next action:** `/gsd-execute-phase 3` 실행 → Phase 3 (Remote Room + Session Control) 6개 플랜 실행
 
 ---
 
@@ -42,7 +45,7 @@ progress:
 |---|------|--------|-------|
 | 1 | Foundation | Complete | 3/3 |
 | 2 | Core UX | Complete | 5/5 |
-| 3 | Remote Room + Session Control | Not started | 0/0 |
+| 3 | Remote Room + Session Control | Ready to execute | 6/6 planned |
 | 4 | Testing + Docs + External Beta | Not started | 0/0 |
 | 5 | Legacy Deletion + Milestone Closure | Not started | 0/0 |
 
@@ -108,9 +111,20 @@ progress:
     - SC-4~SC-6: 자동 테스트(120/120)로 커버, approved
 - **Phase 2 완료** — INPT-01..10, RND-01..11, CNF-01..05, STAT-01..02 전 요구사항 충족
 
+### Last session summary (2026-04-24 — Phase 3 Planning)
+
+- `/gsd-plan-phase 3` 실행 → Phase 3 플랜 6개 생성 완료. 검증 통과 (0 blocker, 0 warning after revision).
+- Research: harness_server.py Room/broadcast 구조 이미 구현됨 확인. room_joined 프로토콜 불일치(members 타입) 발견 및 플랜에 반영.
+- 03-01 (Wave 1): 서버 PEXT-01~03 — Room event_id ring buffer + _broadcast_agent_start() + confirm_write old_content
+- 03-02 (Wave 1, 병렬): 서버 PEXT-04~05 + SES-02 서버측 — resume_from delta replay + cancel _cancel_requested 플래그 + x-resume-session 헤더
+- 03-03 (Wave 2): 클라이언트 protocol 타입 + store/room.ts + dispatch 확장 (members 불일치 수정 포함)
+- 03-04 (Wave 2, 병렬): userColor.ts + PresenceSegment + ReconnectOverlay + ObserverOverlay 4개 신규 컴포넌트
+- 03-05 (Wave 3): HarnessClient jitter backoff (WSR-01~03) + one-shot.ts + index.tsx argv (SES-01~03)
+- 03-06 (Wave 4, 수동 체크포인트): App.tsx 치환 우선순위 배선 + StatusBar/Message/DiffPreview + SC-1~SC-7 수동 검증
+
 ### Next session should
 
-1. Phase 3 (Remote Room + Session Control) 계획 수립: `/gsd-plan-phase 3`
+1. Phase 3 실행: `/gsd-execute-phase 3` (Wave 1 — 03-01, 03-02 병렬 시작)
 
 ---
 
