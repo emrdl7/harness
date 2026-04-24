@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 '''WebSocket 서버 — Ink UI와 통신하는 Python 백엔드'''
 import asyncio
+import hashlib
 import json
 import os
 import sys
@@ -18,6 +19,7 @@ import profile as prof
 import context
 import harness_core
 import session as sess
+import session.store as session_store
 from session.logger import read_recent
 from session.analyzer import summarize_session, build_learn_prompt
 from tools.improve import backup_sources, validate_python, read_sources, list_backups, restore_backup, HARNESS_DIR
@@ -112,6 +114,15 @@ async def broadcast(room: 'Room', **kwargs):
         room.subscribers.discard(s)
 
 
+def _token_hash(token: str) -> str:
+    '''토큰의 SHA-256 앞 8자 hex — Presence 식별자 (개인정보 노출 없음).
+
+    B4: room_member_joined 에서 user 필드로 사용.
+    SHA-256 preimage는 실용적으로 역산 불가 — 토큰 원문 미노출.
+    '''
+    return hashlib.sha256(token.encode()).hexdigest()[:8]
+
+
 def _read_existing_file(path: str) -> str | None:
     '''PEXT-02: confirm_write 의 old_content 제공용 파일 읽기 헬퍼.
     파일이 없거나 읽기 실패 시 None 반환 — 신규 파일 쓰기 시 diff 없음.
@@ -180,6 +191,8 @@ class Room:
     # PEXT-03: monotonic event_id + 60초 ring buffer (maxlen=10000 으로 메모리 고갈 방지)
     event_counter: int = field(default=0)
     event_buffer: deque = field(default_factory=lambda: deque(maxlen=10000))
+    # PEXT-05 (B2): executor 스레드 조기 종료 플래그 — cancel 수신 시 True, finally에서 False 리셋
+    _cancel_requested: bool = field(default=False)
 
 
 ROOMS: dict[str, Room] = {}
@@ -220,6 +233,10 @@ async def run_agent(ws, room: 'Room', user_input: str, plan_mode: bool = False,
     loop = asyncio.get_event_loop()
 
     def on_token(token: str):
+        # B2: _cancel_requested 플래그 체크 — executor 스레드 조기 종료
+        # GIL로 bool 읽기는 안전. return으로 스트리밍 중단 (이미 broadcast된 토큰은 취소 불가)
+        if room._cancel_requested:
+            return
         asyncio.run_coroutine_threadsafe(
             broadcast(room, type='token', text=token), loop
         )
@@ -657,10 +674,25 @@ def _spawn_input_task(room: 'Room', coro):
 
     asyncio.create_task만으로는 GC될 위험 — 명시적으로 set에 저장하고
     done 콜백으로 자동 discard.
+
+    PEXT-05 (B2): task가 시작 전에 cancel()되면 코루틴이 한 번도 실행되지 않아
+    _handle_input finally 블록이 실행되지 않는다. done callback에서 cancelled
+    상태를 감지해 busy/active_input_from/_cancel_requested를 안전하게 정리.
     '''
     task = asyncio.create_task(coro)
     room.input_tasks.add(task)
-    task.add_done_callback(room.input_tasks.discard)
+
+    def _on_done(t):
+        # set에서 제거
+        room.input_tasks.discard(t)
+        # task가 start 전에 cancel된 경우 코루틴 finally가 실행되지 않으므로
+        # 여기서 busy/active_input_from/_cancel_requested를 강제 정리
+        if t.cancelled():
+            room.busy = False
+            room.active_input_from = None
+            room._cancel_requested = False
+
+    task.add_done_callback(_on_done)
     return task
 
 
@@ -678,11 +710,15 @@ async def _handle_input(ws, room: 'Room', text: str):
         else:
             await run_agent(ws, room, text)
             await broadcast_state(room)
+    except asyncio.CancelledError:
+        # PEXT-05: 정상 취소 경로 — busy/active_input_from/cancel_flag는 finally에서 정리
+        pass
     except Exception as e:
         await broadcast(room, type='error', text=f'입력 처리 오류: {e}')
     finally:
         room.busy = False
         room.active_input_from = None
+        room._cancel_requested = False  # B2: 다음 실행을 위해 리셋
 
 
 async def _handle_cplan_execute(ws, room: 'Room', task: str):
@@ -754,6 +790,18 @@ async def _dispatch_loop(ws, room: 'Room', queue: asyncio.Queue):
             if state._confirm_bash_event:
                 state._confirm_bash_event.set()
 
+        elif t == 'cancel':
+            # PEXT-05: 입력 주체(active_input_from)만 취소 가능 — confirm_write_response와 동일한 DQ2 가드 (T-03-02-02)
+            if ws is not room.active_input_from:
+                continue
+            # B2: executor 스레드 조기 종료를 위한 플래그 설정
+            room._cancel_requested = True
+            # input_tasks에서 살아있는 task를 cancel (done() 체크로 안전 처리 — T-03-02-03)
+            for task in list(room.input_tasks):
+                if not task.done():
+                    task.cancel()
+            await broadcast(room, type='agent_cancelled')
+
         elif t == 'ping':
             await send(ws, type='pong')
 
@@ -764,9 +812,24 @@ async def _run_session(ws):
     room_header = (ws.request.headers.get('x-harness-room', '') or '').strip()
     room_name = room_header if room_header else f'_solo_{uuid.uuid4().hex}'
     is_shared = bool(room_header)  # 솔로 룸은 _solo_ 접두로 구분
+
+    # PEXT-04: x-resume-from 헤더 파싱 (재연결 시 delta replay 요청)
+    # isdigit() — 부동소수/음수/빈 문자열 거부. 2^31 상한선 — 대형 정수 거부 (T-03-02-01)
+    resume_from_raw = (ws.request.headers.get('x-resume-from', '') or '').strip()
+    if resume_from_raw.isdigit() and int(resume_from_raw) < 2 ** 31:
+        resume_from: int | None = int(resume_from_raw)
+    else:
+        resume_from = None
+
+    # SES-02 (B3): x-resume-session 헤더 파싱 — 세션 파일명
+    resume_session_id = (ws.request.headers.get('x-resume-session', '') or '').strip()
+
     room = _get_or_create_room(room_name)
     room.subscribers.add(ws)
     state = room.state  # 같은 룸의 모든 ws가 같은 Session 공유
+
+    # B4: 이 ws의 토큰을 저장해두어 room_member_joined에서 user 필드 계산에 사용
+    ws_token = (ws.request.headers.get('x-harness-token', '') or '').strip()
 
     try:
         # 초기 상태 전송 (room은 신규 필드 — 모르는 UI는 무시함)
@@ -774,19 +837,42 @@ async def _run_session(ws):
         await send(ws, type='ready', room=room_name)
 
         # Phase 3-A: 룸 메타 + 과거 컨텍스트 snapshot (DQ4) — 새 join에게만
+        # Pitfall H 수정: members 필드 추가 (현재는 빈 리스트 — room_member_joined로 점진 추가)
         await send(ws, type='room_joined',
                    room=room_name,
                    shared=is_shared,
                    subscribers=len(room.subscribers),
-                   busy=room.busy)
+                   busy=room.busy,
+                   members=[])
+
+        # SES-02 (B3): 세션 resume — 첫 번째 접속자만 세션 로드
+        if resume_session_id and not (room.subscribers - {ws}):
+            try:
+                data = session_store.load(resume_session_id)
+                state.messages = data.get('messages', [])
+                if 'working_dir' in data:
+                    state.working_dir = data['working_dir']
+            except FileNotFoundError:
+                await send(ws, type='error', text=f'세션 없음: {resume_session_id}')
+            except Exception as e:
+                await send(ws, type='error', text=f'세션 로드 오류: {e}')
+
+        # PEXT-04: delta 재송신 — ring buffer에서 resume_from 이후 이벤트 순서대로 전송
+        if resume_from is not None:
+            for (eid, _ts, payload_dict) in list(room.event_buffer):
+                if eid > resume_from:
+                    await send(ws, **payload_dict)
+
         if state.messages:
             await send(ws, type='state_snapshot',
                        turns=len([m for m in state.messages if m['role'] == 'user']),
                        messages=state.messages)
         # 기존 멤버에게 새 사람 합류 알림 (자기 자신도 받지만 UI가 자체 식별)
+        # B4: user=_token_hash(ws_token) 필드 추가 — 토큰 원문 미노출
         if is_shared and len(room.subscribers) > 1:
             await broadcast(room, type='room_member_joined',
-                            subscribers=len(room.subscribers))
+                            subscribers=len(room.subscribers),
+                            user=_token_hash(ws_token) if ws_token else '')
 
         # 자동 인덱싱 — 룸의 working_dir 기준. 두 번째 join은 is_indexed=True로 자연 스킵.
         if state.profile.get('auto_index') and not context.is_indexed(state.working_dir):

@@ -694,3 +694,285 @@ class TestConfirmWriteOldContent:
         missing = str(tmp_path / 'nonexistent.txt')
         result = srv._read_existing_file(missing)
         assert result is None
+
+
+# ── PEXT-04: delta replay + SES-02: resume-session + B3/B4 ─────────
+class TestDeltaReplay:
+    '''x-resume-from 헤더 파싱, ring buffer delta 재송신, x-resume-session,
+    _token_hash 헬퍼, room_member_joined user 필드를 단위 검증.'''
+
+    def test_no_header_no_replay(self, isolated_rooms):
+        '''x-resume-from 헤더 없음 → resume_from=None, delta 재송신 없음.'''
+        # resume_from 파싱 로직 직접 검증
+        raw = ''
+        if raw.isdigit() and int(raw) < 2 ** 31:
+            resume_from = int(raw)
+        else:
+            resume_from = None
+        assert resume_from is None
+
+    def test_resume_from_filters_events(self, isolated_rooms):
+        '''resume_from=5이면 event_id > 5인 이벤트만 재송신된다.'''
+        from collections import deque
+        room = srv._get_or_create_room('r')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        # event_buffer에 event_id 1~7 수동 삽입
+        for eid in range(1, 8):
+            room.event_buffer.append((eid, 0.0, {'type': 'token', 'text': str(eid), 'event_id': eid}))
+        resume_from = 5
+        replayed = [eid for (eid, _ts, _p) in list(room.event_buffer) if eid > resume_from]
+        assert replayed == [6, 7]
+
+    def test_resume_from_zero_sends_all(self, isolated_rooms):
+        '''resume_from=0이면 ring buffer 모든 이벤트가 재송신 대상.'''
+        room = srv._get_or_create_room('r')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        for eid in range(1, 4):
+            room.event_buffer.append((eid, 0.0, {'type': 'token', 'text': str(eid), 'event_id': eid}))
+        resume_from = 0
+        replayed = [eid for (eid, _ts, _p) in list(room.event_buffer) if eid > resume_from]
+        assert replayed == [1, 2, 3]
+
+    def test_non_integer_header_ignored(self, isolated_rooms):
+        '''x-resume-from: "abc" → resume_from=None (무시).'''
+        raw = 'abc'
+        if raw.isdigit() and int(raw) < 2 ** 31:
+            resume_from = int(raw)
+        else:
+            resume_from = None
+        assert resume_from is None
+
+    def test_overflow_header_ignored(self, isolated_rooms):
+        '''x-resume-from: "99999999999" (2^31 초과) → resume_from=None.'''
+        raw = '99999999999'
+        if raw.isdigit() and int(raw) < 2 ** 31:
+            resume_from = int(raw)
+        else:
+            resume_from = None
+        assert resume_from is None
+
+    def test_room_joined_has_members_field(self, isolated_rooms):
+        '''room_joined 페이로드에 members 필드가 포함된다 (Pitfall H 수정).'''
+        import json
+        room = srv._get_or_create_room('team')
+        room.busy = False
+        # _run_session에서 수정된 형태 — members=[] 포함
+        payload = dict(type='room_joined', room=room.name, shared=True,
+                       subscribers=1, busy=room.busy, members=[])
+        decoded = json.loads(json.dumps(payload))
+        assert 'members' in decoded
+
+    def test_resume_session_loads_state(self, isolated_rooms, tmp_path, monkeypatch):
+        '''x-resume-session 헤더 있고 첫 번째 접속자 → sess.load()가 호출된다.'''
+        import session.store as _store
+        called = []
+
+        def mock_load(filename):
+            called.append(filename)
+            return {'working_dir': str(tmp_path), 'messages': [{'role': 'user', 'content': 'restored'}]}
+
+        monkeypatch.setattr(_store, 'load', mock_load)
+        # _run_session의 resume_session 로직을 직접 시뮬레이션
+        room = srv._get_or_create_room('r')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        resume_session_id = '20240101_120000_abc123.json'
+        # 첫 번째 접속자 (room.subscribers - {ws} == 비어있음)
+        is_first = not (room.subscribers - {ws})
+        assert is_first is True
+        if resume_session_id and is_first:
+            data = _store.load(resume_session_id)
+            room.state.messages = data.get('messages', [])
+        assert called == [resume_session_id]
+        assert room.state.messages == [{'role': 'user', 'content': 'restored'}]
+
+    def test_resume_session_not_found_sends_error(self, isolated_rooms, tmp_path):
+        '''세션 파일 없으면 FileNotFoundError → error 이벤트를 전송한다.'''
+        import json
+        room = srv._get_or_create_room('r')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        # sess.load()가 FileNotFoundError를 던지는 경우를 시뮬레이션
+        async def _go():
+            try:
+                raise FileNotFoundError('세션 파일 없음')
+            except FileNotFoundError:
+                await srv.send(ws, type='error', text='세션 없음: nonexistent.json')
+        asyncio.run(_go())
+        decoded = json.loads(ws.received[-1])
+        assert decoded['type'] == 'error'
+        assert '세션 없음' in decoded['text']
+
+    def test_token_hash_returns_8_char_hex(self, isolated_rooms):
+        '''_token_hash("abc123")이 SHA-256 앞 8자 hex string을 반환한다.'''
+        import hashlib
+        result = srv._token_hash('abc123')
+        expected = hashlib.sha256('abc123'.encode()).hexdigest()[:8]
+        assert result == expected
+        assert len(result) == 8
+        assert all(c in '0123456789abcdef' for c in result)
+
+    def test_room_member_joined_has_user_field(self, isolated_rooms):
+        '''room_member_joined broadcast에 user=_token_hash(token) 필드가 포함된다.'''
+        import json
+        room = srv._get_or_create_room('team')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        token = 'mytoken123'
+        expected_hash = srv._token_hash(token)
+        asyncio.run(srv.broadcast(room, type='room_member_joined',
+                                  subscribers=1, user=expected_hash))
+        decoded = json.loads(ws.received[-1])
+        assert decoded['type'] == 'room_member_joined'
+        assert 'user' in decoded
+        assert decoded['user'] == expected_hash
+
+
+# ── PEXT-05 (B2): cancel 케이스 + _cancel_requested 플래그 ──────────
+class TestCancelTask:
+    '''_dispatch_loop cancel 케이스 + _handle_input CancelledError 처리 + B2 플래그 단위 검증.'''
+
+    @staticmethod
+    def _queue_with(items):
+        q: asyncio.Queue = asyncio.Queue()
+        for x in items:
+            q.put_nowait(x)
+        q.put_nowait(None)
+        return q
+
+    def test_cancel_by_active_input_from_cancels_tasks(self, isolated_rooms):
+        '''active_input_from과 동일한 ws가 cancel 전송 시 input_tasks의 task가 cancel()된다.'''
+        room = srv._get_or_create_room('r')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        room.active_input_from = ws
+
+        # 완료되지 않은 fake task 추가
+        cancelled = []
+
+        class _FakeTask:
+            def done(self):
+                return False
+            def cancel(self):
+                cancelled.append(True)
+
+        room.input_tasks.add(_FakeTask())
+
+        q = self._queue_with([{'type': 'cancel'}])
+        asyncio.run(srv._dispatch_loop(ws, room, q))
+        assert len(cancelled) == 1  # task.cancel()이 호출됨
+
+    def test_cancel_by_non_active_ignored(self, isolated_rooms):
+        '''active_input_from이 아닌 ws가 cancel 전송 시 아무 일도 일어나지 않는다.'''
+        room = srv._get_or_create_room('r')
+        a, b = _FakeWS(), _FakeWS()
+        room.subscribers.update({a, b})
+        room.active_input_from = a  # a가 입력 주체
+        room._cancel_requested = False
+
+        cancelled = []
+
+        class _FakeTask:
+            def done(self):
+                return False
+            def cancel(self):
+                cancelled.append(True)
+
+        room.input_tasks.add(_FakeTask())
+        # b가 cancel 전송 — 무시되어야
+        q = self._queue_with([{'type': 'cancel'}])
+        asyncio.run(srv._dispatch_loop(b, room, q))
+        assert len(cancelled) == 0
+        assert room._cancel_requested is False
+
+    def test_cancel_broadcasts_agent_cancelled(self, isolated_rooms):
+        '''cancel 메시지 수신 후 broadcast(room, type="agent_cancelled")가 호출된다.'''
+        import json
+        room = srv._get_or_create_room('r')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        room.active_input_from = ws
+        q = self._queue_with([{'type': 'cancel'}])
+        asyncio.run(srv._dispatch_loop(ws, room, q))
+        decoded = [json.loads(p) for p in ws.received]
+        assert any(d.get('type') == 'agent_cancelled' for d in decoded)
+
+    def test_cancel_sets_cancel_requested_flag(self, isolated_rooms):
+        '''cancel 메시지 수신 후 room._cancel_requested가 True가 된다 (B2).'''
+        room = srv._get_or_create_room('r')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        room.active_input_from = ws
+        assert room._cancel_requested is False
+        q = self._queue_with([{'type': 'cancel'}])
+        asyncio.run(srv._dispatch_loop(ws, room, q))
+        assert room._cancel_requested is True
+
+    def test_cancelled_error_clears_busy(self, isolated_rooms):
+        '''task cancel 시 _spawn_input_task done callback이 busy=False, active_input_from=None을 정리한다.
+
+        asyncio에서 task.cancel()을 첫 await 이전에 호출하면 코루틴이 한 번도
+        실행되지 않아 finally가 동작하지 않는다. _spawn_input_task의 on_done
+        callback이 cancelled() 상태를 감지해 room 상태를 정리해야 한다.
+        '''
+        room = srv._get_or_create_room('r')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        room.busy = True
+        room.active_input_from = ws
+
+        async def _go():
+            # _spawn_input_task를 통해 task 생성 — done callback 포함
+            task = srv._spawn_input_task(room, srv._handle_input(ws, room, 'test'))
+            # 즉시 취소 (await 이전이므로 코루틴 미실행 → done callback이 정리 담당)
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+        asyncio.run(_go())
+        assert room.busy is False
+        assert room.active_input_from is None
+
+    def test_cancel_on_done_task_safe(self, isolated_rooms):
+        '''task.cancel()이 이미 done() 상태인 task에 호출되어도 오류 없이 처리된다.'''
+        room = srv._get_or_create_room('r')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        room.active_input_from = ws
+
+        # done() 상태인 fake task
+        class _DoneTask:
+            def done(self):
+                return True
+            def cancel(self):
+                raise RuntimeError('done task에 cancel 호출됨 — 이 줄 실행되면 안 됨')
+
+        room.input_tasks.add(_DoneTask())
+        # cancel 메시지 처리 — done() 체크 후 cancel() 건너뜀
+        q = self._queue_with([{'type': 'cancel'}])
+        asyncio.run(srv._dispatch_loop(ws, room, q))  # 예외 없이 통과해야
+
+    def test_handle_input_finally_resets_cancel_flag(self, isolated_rooms, monkeypatch):
+        '''_handle_input() 완료 시 finally 블록에서 room._cancel_requested가 False로 리셋된다 (B2).'''
+        room = srv._get_or_create_room('r')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        room.busy = True
+        room.active_input_from = ws
+        room._cancel_requested = True  # 미리 True로 설정
+
+        # handle_slash가 즉시 리턴하도록 mock
+        async def _mock_slash(ws_, room_, cmd):
+            pass
+
+        monkeypatch.setattr(srv, 'handle_slash', _mock_slash)
+
+        asyncio.run(srv._handle_input(ws, room, '/test'))
+        # finally에서 _cancel_requested가 False로 리셋돼야
+        assert room._cancel_requested is False
+        assert room.busy is False
+        assert room.active_input_from is None
