@@ -172,8 +172,7 @@ export function dispatch(msg: ServerMsg): void {
     }
 
     case 'quit':
-      // Phase 3 의 useApp().exit() 연동 — 현재는 상태 표시만
-      messages.appendSystemMessage('서버 종료 요청')
+      _exit?.()
       break
 
     case 'queue':
