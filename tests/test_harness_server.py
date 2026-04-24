@@ -828,3 +828,149 @@ class TestDeltaReplay:
         assert decoded['type'] == 'room_member_joined'
         assert 'user' in decoded
         assert decoded['user'] == expected_hash
+
+
+# ── PEXT-05 (B2): cancel 케이스 + _cancel_requested 플래그 ──────────
+class TestCancelTask:
+    '''_dispatch_loop cancel 케이스 + _handle_input CancelledError 처리 + B2 플래그 단위 검증.'''
+
+    @staticmethod
+    def _queue_with(items):
+        q: asyncio.Queue = asyncio.Queue()
+        for x in items:
+            q.put_nowait(x)
+        q.put_nowait(None)
+        return q
+
+    def test_cancel_by_active_input_from_cancels_tasks(self, isolated_rooms):
+        '''active_input_from과 동일한 ws가 cancel 전송 시 input_tasks의 task가 cancel()된다.'''
+        room = srv._get_or_create_room('r')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        room.active_input_from = ws
+
+        # 완료되지 않은 fake task 추가
+        cancelled = []
+
+        class _FakeTask:
+            def done(self):
+                return False
+            def cancel(self):
+                cancelled.append(True)
+
+        room.input_tasks.add(_FakeTask())
+
+        q = self._queue_with([{'type': 'cancel'}])
+        asyncio.run(srv._dispatch_loop(ws, room, q))
+        assert len(cancelled) == 1  # task.cancel()이 호출됨
+
+    def test_cancel_by_non_active_ignored(self, isolated_rooms):
+        '''active_input_from이 아닌 ws가 cancel 전송 시 아무 일도 일어나지 않는다.'''
+        room = srv._get_or_create_room('r')
+        a, b = _FakeWS(), _FakeWS()
+        room.subscribers.update({a, b})
+        room.active_input_from = a  # a가 입력 주체
+        room._cancel_requested = False
+
+        cancelled = []
+
+        class _FakeTask:
+            def done(self):
+                return False
+            def cancel(self):
+                cancelled.append(True)
+
+        room.input_tasks.add(_FakeTask())
+        # b가 cancel 전송 — 무시되어야
+        q = self._queue_with([{'type': 'cancel'}])
+        asyncio.run(srv._dispatch_loop(b, room, q))
+        assert len(cancelled) == 0
+        assert room._cancel_requested is False
+
+    def test_cancel_broadcasts_agent_cancelled(self, isolated_rooms):
+        '''cancel 메시지 수신 후 broadcast(room, type="agent_cancelled")가 호출된다.'''
+        import json
+        room = srv._get_or_create_room('r')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        room.active_input_from = ws
+        q = self._queue_with([{'type': 'cancel'}])
+        asyncio.run(srv._dispatch_loop(ws, room, q))
+        decoded = [json.loads(p) for p in ws.received]
+        assert any(d.get('type') == 'agent_cancelled' for d in decoded)
+
+    def test_cancel_sets_cancel_requested_flag(self, isolated_rooms):
+        '''cancel 메시지 수신 후 room._cancel_requested가 True가 된다 (B2).'''
+        room = srv._get_or_create_room('r')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        room.active_input_from = ws
+        assert room._cancel_requested is False
+        q = self._queue_with([{'type': 'cancel'}])
+        asyncio.run(srv._dispatch_loop(ws, room, q))
+        assert room._cancel_requested is True
+
+    def test_cancelled_error_clears_busy(self, isolated_rooms):
+        '''_handle_input()에서 CancelledError 발생 시 finally에서 busy=False, active_input_from=None.'''
+        room = srv._get_or_create_room('r')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        room.busy = True
+        room.active_input_from = ws
+
+        async def _go():
+            # _handle_input이 CancelledError를 발생시키는 상황 시뮬레이션
+            # (task.cancel() 후 await 지점에서 CancelledError 발생)
+            task = asyncio.create_task(srv._handle_input(ws, room, 'test'))
+            room.input_tasks.add(task)
+            task.add_done_callback(room.input_tasks.discard)
+            # 즉시 취소
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+        asyncio.run(_go())
+        assert room.busy is False
+        assert room.active_input_from is None
+
+    def test_cancel_on_done_task_safe(self, isolated_rooms):
+        '''task.cancel()이 이미 done() 상태인 task에 호출되어도 오류 없이 처리된다.'''
+        room = srv._get_or_create_room('r')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        room.active_input_from = ws
+
+        # done() 상태인 fake task
+        class _DoneTask:
+            def done(self):
+                return True
+            def cancel(self):
+                raise RuntimeError('done task에 cancel 호출됨 — 이 줄 실행되면 안 됨')
+
+        room.input_tasks.add(_DoneTask())
+        # cancel 메시지 처리 — done() 체크 후 cancel() 건너뜀
+        q = self._queue_with([{'type': 'cancel'}])
+        asyncio.run(srv._dispatch_loop(ws, room, q))  # 예외 없이 통과해야
+
+    def test_handle_input_finally_resets_cancel_flag(self, isolated_rooms, monkeypatch):
+        '''_handle_input() 완료 시 finally 블록에서 room._cancel_requested가 False로 리셋된다 (B2).'''
+        room = srv._get_or_create_room('r')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        room.busy = True
+        room.active_input_from = ws
+        room._cancel_requested = True  # 미리 True로 설정
+
+        # handle_slash가 즉시 리턴하도록 mock
+        async def _mock_slash(ws_, room_, cmd):
+            pass
+
+        monkeypatch.setattr(srv, 'handle_slash', _mock_slash)
+
+        asyncio.run(srv._handle_input(ws, room, '/test'))
+        # finally에서 _cancel_requested가 False로 리셋돼야
+        assert room._cancel_requested is False
+        assert room.busy is False
+        assert room.active_input_from is None
