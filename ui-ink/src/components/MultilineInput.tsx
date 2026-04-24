@@ -66,7 +66,7 @@ const killToEnd = (lines: string[], cur: Cursor): {lines: string[]; cursor: Curs
 
 export const MultilineInput: React.FC<MultilineInputProps> = ({onSubmit, disabled}) => {
   // store — buffer 는 외부 단일 소스, cursor 만 로컬 state
-  const {buffer, setBuffer, clearBuffer, pushHistory, historyUp, historyDown} = useInputStore(
+  const {buffer, setBuffer, clearBuffer, pushHistory, historyUp, historyDown, slashOpen} = useInputStore(
     useShallow((s) => ({
       buffer: s.buffer,
       setBuffer: s.setBuffer,
@@ -74,6 +74,7 @@ export const MultilineInput: React.FC<MultilineInputProps> = ({onSubmit, disable
       pushHistory: s.pushHistory,
       historyUp: s.historyUp,
       historyDown: s.historyDown,
+      slashOpen: s.slashOpen,
     }))
   )
 
@@ -128,6 +129,9 @@ export const MultilineInput: React.FC<MultilineInputProps> = ({onSubmit, disable
       onSubmit(text)
       return
     }
+
+    // slashOpen 중에는 ↑↓·Enter 를 SelectInput 에 패스스루 (history/submit 차단)
+    if (slashOpen && (key.upArrow || key.downArrow || key.return)) return
 
     // history ↑↓ — store 에 위임. 단, 멀티라인 buffer 면 커서 이동 우선 처리
     if (key.upArrow) {
