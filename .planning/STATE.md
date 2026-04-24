@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: planning
-last_updated: "2026-04-24T17:30:00.000Z"
+status: executing
+last_updated: "2026-04-24T11:30:00.000Z"
 progress:
   total_phases: 5
-  completed_phases: 2
-  total_plans: 11
-  completed_plans: 14
-  percent: 40
+  completed_phases: 4
+  total_plans: 19
+  completed_plans: 19
+  percent: 80
 ---
 
 # harness — ui-ink Milestone State
@@ -22,20 +22,19 @@ progress:
 
 **See:** `.planning/PROJECT.md` (milestone 정의 · Validated · Active · Out of Scope · Key Decisions · Constraints)
 **Core Value:** "ui-ink 가 harness 의 기본이자 유일한 UI. 로컬과 원격이 동일한 경험을 갖고, 그 경험은 Claude Code 수준이다."
-**Current focus:** Phase 04 — Testing + Docs + External Beta
+**Current focus:** Phase 05 — Legacy Deletion + Milestone Closure
 
 ---
 
 ## Current Position
 
-Phase: 04 — READY TO EXECUTE
-Plan: Not started (5/5 planned)
+Phase: 05 — READY TO PLAN
 
-- **Phase:** 4
+- **Phase:** 5
 - **Plan:** Not started
-- **Status:** Ready to execute
-- **Progress:** `[████████░░] Phase 1~3 완료 (3/5 phases)`
-- **Next action:** `/gsd-execute-phase 4` 실행 → Phase 4 (Testing + Docs + External Beta) 5개 플랜 실행
+- **Status:** Ready to plan
+- **Progress:** `[████████████░░] Phase 1~4 완료 (4/5 phases)`
+- **Next action:** `/gsd-plan-phase 5` 실행 → Phase 5 (Legacy Deletion + Milestone Closure) 계획 수립
 
 ---
 
@@ -46,8 +45,8 @@ Plan: Not started (5/5 planned)
 | 1 | Foundation | Complete | 3/3 |
 | 2 | Core UX | Complete | 5/5 |
 | 3 | Remote Room + Session Control | Complete | 6/6 |
-| 4 | Testing + Docs + External Beta | Ready to execute | 5/5 planned |
-| 5 | Legacy Deletion + Milestone Closure | Not started | 0/0 |
+| 4 | Testing + Docs + External Beta | Complete | 5/5 |
+| 5 | Legacy Deletion + Milestone Closure | Ready to plan | 0/0 |
 
 ---
 
@@ -133,9 +132,15 @@ Plan: Not started (5/5 planned)
 - 04-04 (Wave 3): 문서 3종 — CLIENT_SETUP.md 재작성 + PROTOCOL.md 신규 + RELEASE_NOTES.md (TST-06, TST-07, TST-09)
 - 04-05 (Wave 3, checkpoint): CR-01 서버 수정 + PITFALLS 17항목 체크리스트 (TST-05, TST-08)
 
+### Last session summary (2026-04-24 — Phase 4 완료)
+
+- Phase 4 UAT 11/11 통과 (vitest 163건 · tsc · guard · ci:no-escape · CI yml · pytest 260건 · 문서 3종 · PITFALLS · CR-01 수정)
+- Phase 4 보안 검토 완료: 14/14 위협 closed (T-04-01~14) — 04-SECURITY.md 생성
+- Phase 4 → Complete 전환. ROADMAP.md + STATE.md 업데이트.
+
 ### Next session should
 
-1. Phase 4 실행: `/gsd-execute-phase 4` (Wave 1 — 04-01, 04-02 병렬 시작)
+1. Phase 5 계획: `/gsd-plan-phase 5` (Legacy Deletion + Milestone Closure)
 
 ---
 
