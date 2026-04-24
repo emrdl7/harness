@@ -6,12 +6,15 @@ import {useMessagesStore} from './store/messages.js'
 import {useStatusStore} from './store/status.js'
 import {useInputStore} from './store/input.js'
 import {useConfirmStore, bindConfirmClient} from './store/confirm.js'
+import {useRoomStore} from './store/room.js'
 import {HarnessClient} from './ws/client.js'
 import {MessageList} from './components/MessageList.js'
 import {StatusBar} from './components/StatusBar.js'
 import {Divider} from './components/Divider.js'
 import {InputArea} from './components/InputArea.js'
 import {ConfirmDialog} from './components/ConfirmDialog.js'
+import {ReconnectOverlay} from './components/ReconnectOverlay.js'
+import {ObserverOverlay} from './components/ObserverOverlay.js'
 
 export const App: React.FC = () => {
   const {exit} = useApp()
@@ -20,6 +23,11 @@ export const App: React.FC = () => {
   const {buffer} = useInputStore(useShallow((s) => ({buffer: s.buffer})))
   const busy = useStatusStore(useShallow((s) => s.busy))
   const confirmMode = useConfirmStore(useShallow((s) => s.mode))
+  // Phase 3: wsState/activeIsSelf/activeInputFrom 구독 (WSR-02, REM-04)
+  const wsState = useRoomStore((s) => s.wsState)
+  const reconnectAttempt = useRoomStore((s) => s.reconnectAttempt)
+  const activeIsSelf = useRoomStore((s) => s.activeIsSelf)
+  const activeInputFrom = useRoomStore((s) => s.activeInputFrom)
 
   const clientRef = useRef<HarnessClient | null>(null)
   const lastCtrlCRef = useRef<number>(0)
@@ -33,6 +41,7 @@ export const App: React.FC = () => {
       url,
       token,
       room: process.env['HARNESS_ROOM'],
+      resumeSession: process.env['HARNESS_RESUME_SESSION'],  // SES-02: --resume 분기에서 설정
     })
     client.connect()
     clientRef.current = client
@@ -69,7 +78,7 @@ export const App: React.FC = () => {
   useInput((ch, key) => {
     if (key.ctrl && ch === 'c') {
       if (busy) {
-        clientRef.current?.send({type: 'input', text: '/cancel'})
+        clientRef.current?.send({type: 'cancel'})  // WSR-04: cancel 메시지 교정 (stub 제거)
         useMessagesStore.getState().appendSystemMessage('취소 요청 중…')
         lastCtrlCRef.current = Date.now()
         return
@@ -87,7 +96,9 @@ export const App: React.FC = () => {
 
   // InputArea 의 onSubmit — WS 전송 + 메시지 표시
   const handleSubmit = useCallback((text: string) => {
-    useMessagesStore.getState().appendUserMessage(text)
+    // DIFF-02: room 모드에서 meta.author 추가 (Message.tsx author prefix 표시용)
+    const myToken = process.env['HARNESS_TOKEN'] ?? ''
+    useMessagesStore.getState().appendUserMessage(text, {author: myToken || 'me'})
     const client = clientRef.current
     if (client) {
       client.send({type: 'input', text})
@@ -98,18 +109,31 @@ export const App: React.FC = () => {
 
   const columns = stdout?.columns ?? 80
 
-  // D-01 레이아웃: [MessageList(Static + active)] → [Divider] → [InputArea | ConfirmDialog] → [Divider] → [StatusBar]
+  // 입력 영역 치환 우선순위 (03-UI-SPEC.md §치환 우선순위)
+  // reconnecting > failed > confirm > observer > input
+  let inputArea: React.ReactNode
+  if (wsState === 'reconnecting') {
+    inputArea = <ReconnectOverlay attempt={reconnectAttempt} />
+  } else if (wsState === 'failed') {
+    inputArea = <ReconnectOverlay failed />
+  } else if (confirmMode !== 'none') {
+    // ConfirmDialog 내부에서 activeIsSelf 체크 후 ConfirmReadOnlyView 분기 (CNF-04)
+    inputArea = <ConfirmDialog />
+  } else if (!activeIsSelf) {
+    // 관전 모드 — ObserverOverlay (REM-04, DIFF-01)
+    inputArea = <ObserverOverlay username={activeInputFrom} />
+  } else {
+    inputArea = <InputArea onSubmit={handleSubmit} disabled={busy} />
+  }
+
+  // D-01 레이아웃: [MessageList(Static + active)] → [Divider] → [inputArea] → [Divider] → [StatusBar]
   return (
     <Box flexDirection='column'>
       <MessageList/>
 
       <Divider columns={columns}/>
 
-      {confirmMode !== 'none' ? (
-        <ConfirmDialog />
-      ) : (
-        <InputArea onSubmit={handleSubmit} disabled={busy} />
-      )}
+      {inputArea}
 
       <Divider columns={columns}/>
 
