@@ -112,11 +112,17 @@ Plans:
 **Success Criteria** (what must be TRUE):
 1. vitest 4 + ink-testing-library 4 단위/통합 테스트 green: `parseServerMsg` · store reducer · dispatch exhaustive switch · `<MultilineInput>` 키 시퀀스 · TTY 가드 · Fake Harness WS 서버 통합 (agent 턴 · confirm_write accept · room busy · reconnect delta · one-shot · 3인 동시 재접속 시뮬).
 2. 회귀 스냅샷 green: 500 토큰 스트리밍 · 한국어+emoji wrap · resize 200↔40 · `/undo` + 새 메시지 · `<Static>` 오염 0.
-3. CI matrix green: bun + Node 22 양쪽 + `tsc --noEmit` + ESLint 가드 + Python pytest 199건.
-4. `CLIENT_SETUP.md` 재작성 완료 (`git clone + bun install --frozen-lockfile + bun start` · `HARNESS_URL`/`HARNESS_TOKEN`/`HARNESS_ROOM` env var · troubleshooting: native dep · bun 버전 mismatch · macOS IME) + `PROTOCOL.md` 작성 (23+ 기존 이벤트 + PEXT-01..05 확장 전수) + "이전과 달라진 점" 릴리스 노트.
-5. 외부 2인 beta 라운드 완료: fresh VM 에서 10분 내 설치 · REPL UX · Ctrl+R 등가 · macOS IME · history persist · `/save` 포맷 확인 · blocker 0 · "다운그레이드" 피드백 0. PITFALLS.md 체크리스트 17건 전원 수동 ✓.
+3. CI matrix green: bun + Node 22 양쪽 + `tsc --noEmit` + ESLint 가드 + Python pytest 260건.
+4. `CLIENT_SETUP.md` 재작성 완료 (`git clone + bun install --frozen-lockfile + bun start` · `HARNESS_URL`/`HARNESS_TOKEN`/`HARNESS_ROOM` env var · troubleshooting: native dep · bun 버전 mismatch · macOS IME) + `PROTOCOL.md` 작성 (26종 ServerMsg + 6종 ClientMsg + PEXT-01..05 확장 전수 + Known Bugs CR-01) + `RELEASE_NOTES.md` (Python REPL 대비 달라진 점 · history.txt 호환).
+5. 외부 2인 beta 준비 완료: CLIENT_SETUP.md + PITFALLS 17항목 체크리스트(04-PITFALLS-CHECKLIST.md) 완성. CR-01 수정(harness_server.py). Python pytest 260건 유지. 실제 beta 실행은 하드웨어 준비 후 별도 진행.
 
-**Plans**: TBD
+**Plans**: 5 plans
+Plans:
+- [ ] 04-01-PLAN.md — Fake WS 서버 통합 테스트 6종 (agent 턴·confirm CR-01·room busy·reconnect delta·one-shot·3인 동시 재접속)
+- [ ] 04-02-PLAN.md — CI matrix (.github/workflows/ci.yml — ubuntu+macOS × bun+Node22 + Python pytest)
+- [ ] 04-03-PLAN.md — 단위 테스트 보완 (MultilineInput 키 시퀀스·TTY 가드) + 회귀 스냅샷 4종
+- [ ] 04-04-PLAN.md — 문서 3종 (CLIENT_SETUP.md 재작성 + PROTOCOL.md 신규 + RELEASE_NOTES.md)
+- [ ] 04-05-PLAN.md — CR-01 수정 (harness_server.py) + PITFALLS 17항목 체크리스트 + 수동 검증 checkpoint
 **UI hint**: yes
 
 ---
@@ -172,7 +178,7 @@ Plans:
 | 1. Foundation | 3/3 | Complete | 2026-04-23 |
 | 2. Core UX | 5/5 | Complete | 2026-04-24 |
 | 3. Remote Room + Session Control | 0/6 | In progress | - |
-| 4. Testing + Docs + External Beta | 0/0 | Not started | - |
+| 4. Testing + Docs + External Beta | 0/5 | Planned | - |
 | 5. Legacy Deletion + Milestone Closure | 0/0 | Not started | - |
 
 ---
@@ -188,4 +194,4 @@ Phase 1 과 Phase 5 는 research-phase 스킵 가능 (STACK.md + PITFALLS.md 에
 
 ---
 
-*Last updated: 2026-04-23 via /gsd-roadmap*
+*Last updated: 2026-04-24 via /gsd-plan-phase 4*
