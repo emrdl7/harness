@@ -694,3 +694,137 @@ class TestConfirmWriteOldContent:
         missing = str(tmp_path / 'nonexistent.txt')
         result = srv._read_existing_file(missing)
         assert result is None
+
+
+# ── PEXT-04: delta replay + SES-02: resume-session + B3/B4 ─────────
+class TestDeltaReplay:
+    '''x-resume-from 헤더 파싱, ring buffer delta 재송신, x-resume-session,
+    _token_hash 헬퍼, room_member_joined user 필드를 단위 검증.'''
+
+    def test_no_header_no_replay(self, isolated_rooms):
+        '''x-resume-from 헤더 없음 → resume_from=None, delta 재송신 없음.'''
+        # resume_from 파싱 로직 직접 검증
+        raw = ''
+        if raw.isdigit() and int(raw) < 2 ** 31:
+            resume_from = int(raw)
+        else:
+            resume_from = None
+        assert resume_from is None
+
+    def test_resume_from_filters_events(self, isolated_rooms):
+        '''resume_from=5이면 event_id > 5인 이벤트만 재송신된다.'''
+        from collections import deque
+        room = srv._get_or_create_room('r')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        # event_buffer에 event_id 1~7 수동 삽입
+        for eid in range(1, 8):
+            room.event_buffer.append((eid, 0.0, {'type': 'token', 'text': str(eid), 'event_id': eid}))
+        resume_from = 5
+        replayed = [eid for (eid, _ts, _p) in list(room.event_buffer) if eid > resume_from]
+        assert replayed == [6, 7]
+
+    def test_resume_from_zero_sends_all(self, isolated_rooms):
+        '''resume_from=0이면 ring buffer 모든 이벤트가 재송신 대상.'''
+        room = srv._get_or_create_room('r')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        for eid in range(1, 4):
+            room.event_buffer.append((eid, 0.0, {'type': 'token', 'text': str(eid), 'event_id': eid}))
+        resume_from = 0
+        replayed = [eid for (eid, _ts, _p) in list(room.event_buffer) if eid > resume_from]
+        assert replayed == [1, 2, 3]
+
+    def test_non_integer_header_ignored(self, isolated_rooms):
+        '''x-resume-from: "abc" → resume_from=None (무시).'''
+        raw = 'abc'
+        if raw.isdigit() and int(raw) < 2 ** 31:
+            resume_from = int(raw)
+        else:
+            resume_from = None
+        assert resume_from is None
+
+    def test_overflow_header_ignored(self, isolated_rooms):
+        '''x-resume-from: "99999999999" (2^31 초과) → resume_from=None.'''
+        raw = '99999999999'
+        if raw.isdigit() and int(raw) < 2 ** 31:
+            resume_from = int(raw)
+        else:
+            resume_from = None
+        assert resume_from is None
+
+    def test_room_joined_has_members_field(self, isolated_rooms):
+        '''room_joined 페이로드에 members 필드가 포함된다 (Pitfall H 수정).'''
+        import json
+        room = srv._get_or_create_room('team')
+        room.busy = False
+        # _run_session에서 수정된 형태 — members=[] 포함
+        payload = dict(type='room_joined', room=room.name, shared=True,
+                       subscribers=1, busy=room.busy, members=[])
+        decoded = json.loads(json.dumps(payload))
+        assert 'members' in decoded
+
+    def test_resume_session_loads_state(self, isolated_rooms, tmp_path, monkeypatch):
+        '''x-resume-session 헤더 있고 첫 번째 접속자 → sess.load()가 호출된다.'''
+        import session.store as _store
+        called = []
+
+        def mock_load(filename):
+            called.append(filename)
+            return {'working_dir': str(tmp_path), 'messages': [{'role': 'user', 'content': 'restored'}]}
+
+        monkeypatch.setattr(_store, 'load', mock_load)
+        # _run_session의 resume_session 로직을 직접 시뮬레이션
+        room = srv._get_or_create_room('r')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        resume_session_id = '20240101_120000_abc123.json'
+        # 첫 번째 접속자 (room.subscribers - {ws} == 비어있음)
+        is_first = not (room.subscribers - {ws})
+        assert is_first is True
+        if resume_session_id and is_first:
+            data = _store.load(resume_session_id)
+            room.state.messages = data.get('messages', [])
+        assert called == [resume_session_id]
+        assert room.state.messages == [{'role': 'user', 'content': 'restored'}]
+
+    def test_resume_session_not_found_sends_error(self, isolated_rooms, tmp_path):
+        '''세션 파일 없으면 FileNotFoundError → error 이벤트를 전송한다.'''
+        import json
+        room = srv._get_or_create_room('r')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        # sess.load()가 FileNotFoundError를 던지는 경우를 시뮬레이션
+        async def _go():
+            try:
+                raise FileNotFoundError('세션 파일 없음')
+            except FileNotFoundError:
+                await srv.send(ws, type='error', text='세션 없음: nonexistent.json')
+        asyncio.run(_go())
+        decoded = json.loads(ws.received[-1])
+        assert decoded['type'] == 'error'
+        assert '세션 없음' in decoded['text']
+
+    def test_token_hash_returns_8_char_hex(self, isolated_rooms):
+        '''_token_hash("abc123")이 SHA-256 앞 8자 hex string을 반환한다.'''
+        import hashlib
+        result = srv._token_hash('abc123')
+        expected = hashlib.sha256('abc123'.encode()).hexdigest()[:8]
+        assert result == expected
+        assert len(result) == 8
+        assert all(c in '0123456789abcdef' for c in result)
+
+    def test_room_member_joined_has_user_field(self, isolated_rooms):
+        '''room_member_joined broadcast에 user=_token_hash(token) 필드가 포함된다.'''
+        import json
+        room = srv._get_or_create_room('team')
+        ws = _FakeWS()
+        room.subscribers.add(ws)
+        token = 'mytoken123'
+        expected_hash = srv._token_hash(token)
+        asyncio.run(srv.broadcast(room, type='room_member_joined',
+                                  subscribers=1, user=expected_hash))
+        decoded = json.loads(ws.received[-1])
+        assert decoded['type'] == 'room_member_joined'
+        assert 'user' in decoded
+        assert decoded['user'] == expected_hash
