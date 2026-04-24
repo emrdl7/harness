@@ -57,9 +57,10 @@ export interface ConfirmWriteResponse { type: 'confirm_write_response'; accept: 
 export interface ConfirmBashResponse  { type: 'confirm_bash_response';  accept: boolean }
 export interface SlashMsg             { type: 'slash';                  name: string; args?: string }
 export interface PingMsg              { type: 'ping' }
+export interface CancelMsg            { type: 'cancel' }
 
 export type ClientMsg =
-  | InputMsg | ConfirmWriteResponse | ConfirmBashResponse | SlashMsg | PingMsg
+  | InputMsg | ConfirmWriteResponse | ConfirmBashResponse | SlashMsg | PingMsg | CancelMsg
 
 // ─── exhaustive switch 가드 ───────────────────────────────────────────────────
 // dispatch.ts 에서 미처리 이벤트를 컴파일 에러로 탐지하는 헬퍼
