@@ -1,13 +1,12 @@
 // MessageList — completedMessages 는 <Static>, activeMessage 는 일반 Box (RND-01, RND-02)
 // <Static>: append-only 로 이미 렌더된 프레임을 재렌더하지 않음 → scrollback 안정
 // active: in-place 업데이트로 매 토큰마다 리렌더 가능
-// resize 대응: log.reset() + 화면 클리어 + Static key 갱신으로 좀비 완전 제거
+// resize 대응: 창 크기 변경 시 화면 클리어 + Static key 갱신으로 전체 remount (좀비 제거)
 import React, {useEffect, useRef, useState} from 'react'
 import {Box, Static, useStdout} from 'ink'
 import {useShallow} from 'zustand/react/shallow'
 import {useMessagesStore} from '../store/messages.js'
 import {Message} from './Message.js'
-import {resetInkLog} from '../inkReset.js'
 
 export const MessageList: React.FC = () => {
   const {completedMessages: completed, snapshotKey} = useMessagesStore(useShallow((s) => ({
@@ -21,19 +20,25 @@ export const MessageList: React.FC = () => {
 
   useEffect(() => {
     if (!stdout) return
+    let timer: ReturnType<typeof setTimeout> | null = null
     const handleResize = () => {
-      const c = stdout.columns ?? 80
-      if (c === columnsRef.current) return  // tmux 탭 전환 등 실제 변경 없으면 무시
-      columnsRef.current = c
-      // 1) Ink frame counter 초기화 — previousLineCount/cursorWasShown 리셋 (stdout 미출력)
-      resetInkLog()
-      // 2) 화면 클리어 — 구 Static 잔재(좀비) 제거 후 Static 재마운트가 전체 재출력
-      // eslint-disable-next-line no-restricted-syntax
-      process.stdout.write('\x1b[2J\x1b[H')
-      setColumns(c)
+      if (timer) clearTimeout(timer)
+      // 100ms debounce — tmux 탭 전환 시 순간 SIGWINCH 무시
+      timer = setTimeout(() => {
+        const c = stdout.columns ?? 80
+        if (c === columnsRef.current) return  // 실제 크기 변경 없으면 무시
+        columnsRef.current = c
+        // 화면 클리어 — Static 재마운트 전 구 줄바꿈 잔재 제거 (좀비 방지)
+        // eslint-disable-next-line no-restricted-syntax
+        process.stdout.write('\x1b[2J\x1b[H')
+        setColumns(c)
+      }, 100)
     }
     stdout.on('resize', handleResize)
-    return () => { stdout.off('resize', handleResize) }
+    return () => {
+      stdout.off('resize', handleResize)
+      if (timer) clearTimeout(timer)
+    }
   }, [stdout])
 
   return (
