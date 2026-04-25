@@ -24,8 +24,6 @@ describe('MessageList + Message', () => {
     const frame = lastFrame() ?? ''
     // user prefix
     expect(frame).toContain('❯')
-    // assistant prefix
-    expect(frame).toContain('●')
     expect(frame).toContain('안녕하세요')
     unmount()
   })
@@ -37,7 +35,6 @@ describe('MessageList + Message', () => {
     })
     const {lastFrame, unmount} = render(<MessageList/>)
     const frame = lastFrame() ?? ''
-    expect(frame).toContain('●')
     expect(frame).toContain('스트리밍 중...')
     unmount()
   })
@@ -65,11 +62,11 @@ describe('MessageList + Message', () => {
     unmount()
   })
 
-  it('Test 5: Message role=tool — prefix \'└ \' 포함', () => {
+  it('Test 5: Message role=tool — prefix \'✓ \' 포함', () => {
     const msg: MessageType = {id: 't1', role: 'tool', content: '[read_file] 완료', toolName: 'read_file'}
     const {lastFrame, unmount} = render(<Message message={msg}/>)
     const frame = lastFrame() ?? ''
-    expect(frame).toContain('└')
+    expect(frame).toContain('✓')
     expect(frame).toContain('[read_file] 완료')
     unmount()
   })

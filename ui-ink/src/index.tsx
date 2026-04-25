@@ -110,12 +110,14 @@ process.on('SIGINT',  () => cleanup(0))
 
   // 배너 — Ink 렌더 전 stdout 직접 출력 (Ink 범위 밖, 스크롤백으로 자연 이동)
   // eslint-disable-next-line no-restricted-syntax
+  const R = '\x1b[0m'
   process.stdout.write(
-    '\n   / /_  ____ ________  ___  __________\n' +
-    '  / __ \\/ __ `/ ___/ __ \\/ _ \\/ ___/ ___/\n' +
-    ' / / / / /_/ / /  / / / /  __(__  |__  )\n' +
-    '/_/ /_/\\__,_/_/  /_/ /_/\\___/____/____/\n' +
-    '  jabworks · harness v1.0\n\n'
+    '\n' +
+    '\x1b[1m\x1b[35m   / /_  ____ ________  ___  __________\x1b[0m\n' +
+    '\x1b[1m\x1b[94m  / __ \\/ __ `/ ___/ __ \\/ _ \\/ ___/ ___/\x1b[0m\n' +
+    '\x1b[1m\x1b[96m / / / / /_/ / /  / / / /  __(__  |__  )\x1b[0m\n' +
+    '\x1b[1m\x1b[36m/_/ /_/\\__,_/_/  /_/ /_/\\___/____/____/\x1b[0m\n' +
+    `\x1b[2m\x1b[37m  jabworks · harness v1.0${R}\n\n`
   )
 
   // Ink render — patchConsole: false (FND-14)

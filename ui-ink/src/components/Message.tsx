@@ -10,6 +10,7 @@ import {userColor} from '../utils/userColor.js'
 
 interface MessageProps {
   message: MessageType
+  columns?: number   // 터미널 폭 — Box 명시적 width 지정으로 wrap 계산 정확도 향상
 }
 
 // 코드 펜스 세그먼트 타입 정의
@@ -63,7 +64,7 @@ function splitByCodeFence(content: string): ContentSegment[] {
   return segments
 }
 
-export const Message: React.FC<MessageProps> = ({message}) => {
+export const Message: React.FC<MessageProps> = ({message, columns}) => {
   const roomName = useRoomStore((s) => s.roomName)
   const authorLabel = roomName && message.role === 'user'
     ? (typeof message.meta?.['author'] === 'string' ? message.meta['author'] : 'me')
@@ -74,16 +75,18 @@ export const Message: React.FC<MessageProps> = ({message}) => {
     ? splitByCodeFence(message.content)
     : [{type: 'text', text: message.content}]
 
+  const w = columns ?? 80
+
   // ── user ──────────────────────────────────────────────────────
   if (message.role === 'user') {
     return (
-      <Box marginTop={1} marginBottom={0} flexDirection='column'>
-        <Box>
+      <Box marginTop={1} marginBottom={0} flexDirection='column' width={w}>
+        <Box width={w}>
           {authorLabel && (
             <Text color={userColor(authorLabel)} bold>{`[${authorLabel}] `}</Text>
           )}
           <Text color='cyan' bold>{'❯ '}</Text>
-          <Text bold>{message.content}</Text>
+          <Text bold wrap='wrap'>{message.content}</Text>
         </Box>
       </Box>
     )
@@ -92,21 +95,20 @@ export const Message: React.FC<MessageProps> = ({message}) => {
   // ── assistant ─────────────────────────────────────────────────
   if (message.role === 'assistant') {
     return (
-      <Box marginTop={1} marginBottom={0} flexDirection='column'>
+      <Box marginTop={1} marginBottom={0} flexDirection='column' width={w}>
         {segments.map((seg, idx) => {
           const key = `${message.id}-seg-${idx}`
           if (seg.type === 'code') {
             return (
-              <Box key={key} flexDirection='column' marginTop={0}>
+              <Box key={key} flexDirection='column' marginTop={0} width={w}>
                 <Text dimColor>{'  ┌─'}</Text>
-                <Box paddingLeft={2}>
+                <Box paddingLeft={2} width={w}>
                   <Text wrap='wrap'>{highlightCode(seg.text, seg.lang)}</Text>
                 </Box>
                 <Text dimColor>{'  └─'}</Text>
               </Box>
             )
           }
-          // 일반 텍스트 — 앞 2칸 들여쓰기로 user prefix 와 구분
           return (
             <Text key={key} wrap='wrap'>{seg.text}</Text>
           )
@@ -119,7 +121,7 @@ export const Message: React.FC<MessageProps> = ({message}) => {
   if (message.role === 'tool') {
     const isStreaming = message.streaming
     return (
-      <Box marginTop={0} marginBottom={0}>
+      <Box marginTop={0} marginBottom={0} width={w}>
         <Text color={isStreaming ? 'yellow' : 'green'} dimColor>
           {isStreaming ? '  ⟳ ' : '  ✓ '}
         </Text>
@@ -130,7 +132,7 @@ export const Message: React.FC<MessageProps> = ({message}) => {
 
   // ── system ────────────────────────────────────────────────────
   return (
-    <Box marginTop={0} marginBottom={0}>
+    <Box marginTop={0} marginBottom={0} width={w}>
       <Text dimColor wrap='wrap'>{'  ' + message.content}</Text>
     </Box>
   )

@@ -1,6 +1,6 @@
 // App — D-01..D-04 레이아웃 + D-07..D-08 Ctrl+C/D (INPT-07)
 import React, {useCallback, useEffect, useRef, useState} from 'react'
-import {Box, Text, useApp, useInput, useStdout} from 'ink'
+import {Box, useApp, useInput, useStdout} from 'ink'
 import {useShallow} from 'zustand/react/shallow'
 import {useMessagesStore} from './store/messages.js'
 import {useStatusStore} from './store/status.js'
@@ -85,14 +85,6 @@ export const App: React.FC = () => {
     const {hydrate} = useInputStore.getState()
     if (hydrate) hydrate()
   }, [])
-
-  // RND-04: resize 시 Ink 재렌더 트리거 — 스크롤백 clear 제거 (tmux 탭 전환 시 화면 소멸 방지)
-  const [_resizeCount, setResizeCount] = useState(0)
-  useEffect(() => {
-    const handleResize = () => setResizeCount((c) => c + 1)
-    stdout.on('resize', handleResize)
-    return () => { stdout.off('resize', handleResize) }
-  }, [stdout])
 
   // D-07/D-08: Ctrl+C (busy → cancel, idle × 2 → exit) / Ctrl+D (idle → exit)
   useInput((ch, key) => {
