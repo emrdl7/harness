@@ -8,6 +8,12 @@ import {useStatusStore} from '../store/status.js'
 import {useConfirmStore} from '../store/confirm.js'
 import {useInputStore} from '../store/input.js'
 
+// inkBridge mock — stdout 캡처 (real stdout 오염 방지)
+vi.mock('../inkBridge.js', () => ({
+  inkWriteAbove: vi.fn(),
+  inkClearScreen: vi.fn(),
+}))
+
 describe('App smoke', () => {
   beforeEach(() => {
     // 더미 env var — SetupWizard 를 건너뛰고 main 레이아웃 렌더
@@ -38,7 +44,7 @@ describe('App smoke', () => {
     unmount()
   })
 
-  it('renders completed + active messages', () => {
+  it('renders active message in frame (completed flushed via inkBridge mock)', () => {
     useMessagesStore.setState({
       completedMessages: [
         {id: '1', role: 'user', content: 'hello'},
@@ -47,7 +53,8 @@ describe('App smoke', () => {
     })
     const {lastFrame, unmount} = render(<App/>)
     const frame = lastFrame() ?? ''
-    expect(frame).toContain('hello')
+    // 완료 메시지(hello)는 stdout 으로 flush — frame 에 없음
+    // active(stream)는 Ink frame 에 있음
     expect(frame).toContain('stream')
     unmount()
   })

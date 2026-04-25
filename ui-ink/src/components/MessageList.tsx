@@ -1,13 +1,14 @@
-// MessageList — completedMessages 는 <Static>, activeMessage 는 일반 Box (RND-01, RND-02)
-// <Static>: append-only 로 이미 렌더된 프레임을 재렌더하지 않음 → scrollback 안정
-// active: in-place 업데이트로 매 토큰마다 리렌더 가능
-// Static position:'absolute' 기본값 → content 폭으로 크기 결정 → 터미널 폭 초과 시 커서 추적 오차
-// style.width 를 명시적으로 지정해 Static box 가 터미널 전체 폭을 차지하도록 강제
-import React from 'react'
-import {Box, Static, useStdout} from 'ink'
+// MessageList — Claude Code 식 아키텍처
+// 완료 메시지는 stdout 직접 출력 (터미널 자연 스크롤백 → resize 안전)
+// Ink 는 in-flight(streaming) 메시지 + active(streaming assistant) 만 관리
+import React, {useLayoutEffect, useRef, useState} from 'react'
+import {Box} from 'ink'
 import {useShallow} from 'zustand/react/shallow'
 import {useMessagesStore} from '../store/messages.js'
+import {useRoomStore} from '../store/room.js'
 import {Message} from './Message.js'
+import {formatMessage} from '../utils/formatMessage.js'
+import {inkWriteAbove, inkClearScreen} from '../inkBridge.js'
 
 export const MessageList: React.FC = () => {
   const {completedMessages: completed, snapshotKey} = useMessagesStore(useShallow((s) => ({
@@ -15,21 +16,45 @@ export const MessageList: React.FC = () => {
     snapshotKey: s.snapshotKey,
   })))
   const active = useMessagesStore(useShallow((s) => s.activeMessage))
-  const {stdout} = useStdout()
-  const columns = stdout?.columns ?? 80
+  const roomName = useRoomStore((s) => s.roomName)
+
+  const [flushedCount, setFlushedCount] = useState(0)
+  const lastSnapshotKeyRef = useRef(snapshotKey)
+
+  useLayoutEffect(() => {
+    // 스냅샷 reload (REM-03) — 화면 클리어 + flushedCount 리셋
+    if (snapshotKey !== lastSnapshotKeyRef.current) {
+      lastSnapshotKeyRef.current = snapshotKey
+      inkClearScreen()
+      setFlushedCount(0)
+      return  // 다음 effect 사이클에서 새 스냅샷을 flush
+    }
+
+    // 순서대로 flush, 첫 streaming 메시지에서 멈춤
+    let i = flushedCount
+    const toFlush = []
+    while (i < completed.length) {
+      const m = completed[i]
+      if (m.streaming) break  // tool 등 in-flight 면 대기
+      toFlush.push(m)
+      i++
+    }
+    if (toFlush.length === 0) return
+
+    const text = toFlush.map((m) => formatMessage(m, {roomName})).join('')
+    inkWriteAbove(text)
+    setFlushedCount(i)
+  }, [completed, snapshotKey, roomName, flushedCount])
+
+  // Ink 에는 아직 flush 안 된 in-flight(streaming tool 등) + active(streaming assistant) 만 렌더
+  const inFlight = completed.slice(flushedCount)
 
   return (
-    <Box flexDirection='column' width={columns}>
-      {/* REM-03: snapshotKey를 Static key로 사용 — snapshot 로드 시 Static 강제 remount */}
-      {/* style.width=columns: Static box 가 터미널 전체 폭을 차지해야 텍스트가 올바른 폭에서 wrapping */}
-      <Static key={snapshotKey} items={completed} style={{width: columns}}>
-        {(m) => <Message key={m.id} message={m} columns={columns}/>}
-      </Static>
-      {active ? (
-        <Box flexDirection='column' width={columns}>
-          <Message message={active} columns={columns}/>
-        </Box>
-      ) : null}
+    <Box flexDirection='column'>
+      {inFlight.map((m) => (
+        <Message key={m.id} message={m}/>
+      ))}
+      {active ? <Message message={active}/> : null}
     </Box>
   )
 }
