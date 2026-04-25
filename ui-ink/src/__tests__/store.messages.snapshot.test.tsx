@@ -2,14 +2,8 @@
 // + Phase 4 회귀 스냅샷 4종 (TST-03)
 // TDD RED: 구현 전 실패 테스트
 import React from 'react'
-import {describe, it, expect, beforeEach, vi} from 'vitest'
+import {describe, it, expect, beforeEach} from 'vitest'
 import {render} from 'ink-testing-library'
-
-// inkBridge mock — 새 아키텍처: 완료 메시지는 stdout flush, 테스트는 active/inFlight 만 frame 으로 검증
-vi.mock('../inkBridge.js', () => ({
-  inkWriteAbove: vi.fn(),
-  inkClearScreen: vi.fn(),
-}))
 import {useMessagesStore} from '../store/messages.js'
 import {useRoomStore} from '../store/room.js'
 import {useStatusStore} from '../store/status.js'
@@ -155,9 +149,8 @@ describe('회귀 스냅샷 (TST-03)', () => {
     unmount()
   })
 
-  it('/undo + 새 메시지 순서 스냅샷 (TST-03) — store 순서 검증', () => {
-    // 새 아키텍처: 완료 메시지는 stdout flush 됨 → frame 에 보이지 않음
-    // 순서 보존은 store + flush 로직(MessageList 의 useLayoutEffect)에서 보장
+  it('/undo + 새 메시지 순서 스냅샷 (TST-03)', () => {
+    // alt screen 모드: 모든 메시지가 frame 에 직접 렌더 → 순서 검증 가능
     useMessagesStore.setState({
       completedMessages: [
         {id: 'msg-01', role: 'user', content: '첫 번째 메시지', streaming: false},
@@ -168,10 +161,11 @@ describe('회귀 스냅샷 (TST-03)', () => {
     const {lastFrame, unmount} = render(<App />)
     const frame = lastFrame()
     expect(frame).toMatchSnapshot()
-    // 순서는 store 에서 검증 (frame 에는 완료 메시지 없음)
-    const completed = useMessagesStore.getState().completedMessages
-    expect(completed[0].content).toBe('첫 번째 메시지')
-    expect(completed[1].content).toBe('새로운 응답')
+    const pos1 = frame?.indexOf('첫 번째 메시지') ?? -1
+    const pos2 = frame?.indexOf('새로운 응답') ?? -1
+    expect(pos1).toBeGreaterThanOrEqual(0)
+    expect(pos2).toBeGreaterThanOrEqual(0)
+    expect(pos1).toBeLessThan(pos2)
     unmount()
   })
 

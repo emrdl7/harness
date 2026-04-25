@@ -22,7 +22,7 @@
 
 ## 절대 금지 (이번 milestone)
 
-- **Alternate screen** (`\x1b[?1049h`) 또는 **mouse tracking** (`\x1b[?1000h` 계열) 출력 — 터미널 scrollback 파괴
+- **Raw alternate screen escape** (`\x1b[?1049h`) 직접 stdout 출력 금지 — Ink 의 `alternateScreen: true` 옵션 경유로만 사용. (Claude Code 식 alt buffer 모드 채택 — 2026-04-25 결정)
 - **Python UI 병존 유지** — PROJECT.md Key Decision. `main.py` REPL / `cli/tui.py` / `cli/app.py` / `ui/index.js` 전부 Phase 5 에서 삭제 대상. 새 기능을 Python REPL 에 추가하지 말 것
 - **Textual / curses / urwid** 같은 풀스크린 TUI 제안 — 영구 봉인 (`~/.claude/projects/-Users-johyeonchang-harness/memory/feedback_claude_code_ui.md` 참조)
 - **Legacy 파일 유지하면서 새 파일 추가** — 사용자 명시: "기존 코드 유지해보니까 gsd나 다른 에이전트들이 헷깔리는 경우가 상당히 많음". 대체 구현은 old 삭제가 default

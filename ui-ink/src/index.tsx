@@ -120,7 +120,8 @@ process.on('SIGINT',  () => cleanup(0))
     `\x1b[2m\x1b[37m  jabworks · harness v1.0${R}\n\n`
   )
 
-  // Ink render — patchConsole: false (FND-14)
-  // alternate screen 비활성: 별도 옵션 없이 기본 Ink 는 inline 렌더
-  render(<App />, {patchConsole: false})
+  // Ink render — alternate screen 모드 (Claude Code 식)
+  // resize/scroll/탭 전환 안전성을 위해 full-screen alt buffer 사용
+  // 종료 시 메인 스크린 복원 → 배너만 스크롤백에 남음
+  render(<App />, {patchConsole: false, alternateScreen: true})
 })()

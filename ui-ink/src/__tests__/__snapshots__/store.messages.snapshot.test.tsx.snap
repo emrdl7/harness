@@ -1,7 +1,11 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`회귀 스냅샷 (TST-03) > /undo + 새 메시지 순서 스냅샷 (TST-03) — store 순서 검증 1`] = `
-"❯
+exports[`회귀 스냅샷 (TST-03) > /undo + 새 메시지 순서 스냅샷 (TST-03) 1`] = `
+"
+❯ 첫 번째 메시지
+
+새로운 응답
+❯
   ● connected | /tmp | qwen2.5 | agent | turn 0 | ctx 0%"
 `;
 

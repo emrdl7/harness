@@ -1,27 +1,19 @@
 #!/usr/bin/env bash
-# CI 가드: alternate screen(ESC[?1049h) / mouse tracking(ESC[?1000h 계열) 금지 (FND-11)
-# harness CLAUDE.md 절대 금지 목록 자동 검증
-
+# CI 가드: 소스 코드 내 raw alternate-screen escape 하드코딩 금지
+# (Ink 의 alternateScreen 옵션 경유는 합법 — Claude Code 식 alt buffer 모드)
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC_DIR="$(dirname "$SCRIPT_DIR")/src"
 
-RESULT=$(grep -rn $'\x1b\[\?1049\|\x1b\[\?1000\|\x1b\[\?1002\|\x1b\[\?1003\|\x1b\[\?1006' "$SRC_DIR" 2>/dev/null || true)
+# 문자열 리터럴 형태 (raw stdout.write 우회 차단)
+RESULT=$(grep -rn '1049h\|1000h\|?1002\|?1003\|?1006\|smcup\|rmcup' "$SRC_DIR" 2>/dev/null || true)
 
 if [ -n "$RESULT" ]; then
-  echo "오류: alternate screen 또는 mouse tracking escape 코드 발견"
+  echo "오류: raw alternate-screen / mouse-tracking escape 발견"
+  echo "Ink 의 alternateScreen 옵션 경유로 사용할 것"
   echo "$RESULT"
   exit 1
 fi
 
-# 문자열 리터럴로도 검색
-RESULT2=$(grep -rn '1049h\|1000h\|?1002\|?1003\|?1006\|smcup\|rmcup' "$SRC_DIR" 2>/dev/null || true)
-
-if [ -n "$RESULT2" ]; then
-  echo "오류: alternate screen 관련 패턴 발견"
-  echo "$RESULT2"
-  exit 1
-fi
-
-echo "OK: alternate screen / mouse tracking escape 코드 없음"
+echo "OK: raw alt-screen escape 없음 (Ink 옵션 경유만 허용)"

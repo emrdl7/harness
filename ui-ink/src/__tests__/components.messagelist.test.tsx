@@ -1,4 +1,4 @@
-// MessageList + Message 컴포넌트 테스트 — Claude Code 식: 완료는 stdout flush, in-flight/active만 Ink 렌더
+// MessageList + Message 컴포넌트 테스트 — alt screen 모드: 모든 메시지가 Ink frame 에 렌더
 import React from 'react'
 import {describe, it, expect, beforeEach, vi, afterEach} from 'vitest'
 import {render} from 'ink-testing-library'
@@ -7,20 +7,12 @@ import {Message} from '../components/Message.js'
 import {useMessagesStore} from '../store/messages.js'
 import type {Message as MessageType} from '../store/messages.js'
 
-// inkBridge mock — stdout 캡처 (real stdout 오염 방지 + 검증용)
-const writeAboveCalls: string[] = []
-vi.mock('../inkBridge.js', () => ({
-  inkWriteAbove: (data: string) => { writeAboveCalls.push(data) },
-  inkClearScreen: () => {},
-}))
-
 describe('MessageList + Message', () => {
   beforeEach(() => {
     useMessagesStore.setState({completedMessages: [], activeMessage: null, snapshotKey: 0})
-    writeAboveCalls.length = 0
   })
 
-  it('Test 1: 완료 메시지는 inkWriteAbove 로 flush — frame 에는 없음', () => {
+  it('Test 1: completedMessages=[user,assistant], activeMessage=null — 2개 렌더', () => {
     useMessagesStore.setState({
       completedMessages: [
         {id: 'u1', role: 'user', content: '안녕하세요'},
@@ -30,12 +22,8 @@ describe('MessageList + Message', () => {
     })
     const {lastFrame, unmount} = render(<MessageList/>)
     const frame = lastFrame() ?? ''
-    // 완료 메시지는 stdout 으로 flush 됐으므로 Ink frame 에는 없음
-    expect(frame).not.toContain('안녕하세요')
-    // 대신 inkWriteAbove 로 출력됨 (cli-highlight 등으로 ANSI 포함)
-    const written = writeAboveCalls.join('')
-    expect(written).toContain('안녕하세요')
-    expect(written).toContain('❯')
+    expect(frame).toContain('❯')
+    expect(frame).toContain('안녕하세요')
     unmount()
   })
 
@@ -50,7 +38,7 @@ describe('MessageList + Message', () => {
     unmount()
   })
 
-  it('Test 3: 완료(user)는 flush, active(assistant)는 frame 에 렌더', () => {
+  it('Test 3: 완료(user) + active(assistant) 둘 다 frame 에 렌더', () => {
     useMessagesStore.setState({
       completedMessages: [
         {id: 'u1', role: 'user', content: '질문입니다'},
@@ -59,10 +47,7 @@ describe('MessageList + Message', () => {
     })
     const {lastFrame, unmount} = render(<MessageList/>)
     const frame = lastFrame() ?? ''
-    // 완료 user 는 frame 에 없음, stdout flush 됨
-    expect(frame).not.toContain('질문입니다')
-    expect(writeAboveCalls.join('')).toContain('질문입니다')
-    // active assistant 는 Ink frame 에 렌더됨
+    expect(frame).toContain('질문입니다')
     expect(frame).toContain('답변 중...')
     unmount()
   })
