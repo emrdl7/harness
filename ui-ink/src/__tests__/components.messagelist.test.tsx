@@ -39,20 +39,18 @@ describe('MessageList + Message', () => {
     unmount()
   })
 
-  it('Test 2: active assistant 토큰은 inkWriteAbove 로 stream — frame 에는 없음', () => {
+  it('Test 2: completedMessages=[], activeMessage={role:assistant} — assistant 1개 렌더', () => {
     useMessagesStore.setState({
       completedMessages: [],
       activeMessage: {id: 'a1', role: 'assistant', content: '스트리밍 중...', streaming: true},
     })
     const {lastFrame, unmount} = render(<MessageList/>)
     const frame = lastFrame() ?? ''
-    // active 도 Ink 가 아닌 stdout 으로 stream
-    expect(frame).not.toContain('스트리밍 중...')
-    expect(writeAboveCalls.join('')).toContain('스트리밍 중...')
+    expect(frame).toContain('스트리밍 중...')
     unmount()
   })
 
-  it('Test 3: 완료(user) + active(assistant) 모두 stdout 으로 흐름 — frame 비어있음', () => {
+  it('Test 3: 완료(user)는 flush, active(assistant)는 frame 에 렌더', () => {
     useMessagesStore.setState({
       completedMessages: [
         {id: 'u1', role: 'user', content: '질문입니다'},
@@ -61,11 +59,11 @@ describe('MessageList + Message', () => {
     })
     const {lastFrame, unmount} = render(<MessageList/>)
     const frame = lastFrame() ?? ''
+    // 완료 user 는 frame 에 없음, stdout flush 됨
     expect(frame).not.toContain('질문입니다')
-    expect(frame).not.toContain('답변 중...')
-    const written = writeAboveCalls.join('')
-    expect(written).toContain('질문입니다')
-    expect(written).toContain('답변 중...')
+    expect(writeAboveCalls.join('')).toContain('질문입니다')
+    // active assistant 는 Ink frame 에 렌더됨
+    expect(frame).toContain('답변 중...')
     unmount()
   })
 

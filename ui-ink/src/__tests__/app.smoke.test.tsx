@@ -44,7 +44,7 @@ describe('App smoke', () => {
     unmount()
   })
 
-  it('completed + active 모두 stdout 으로 stream — Ink frame 은 UI 만 (mock 됨)', () => {
+  it('renders active message in frame (completed flushed via inkBridge mock)', () => {
     useMessagesStore.setState({
       completedMessages: [
         {id: '1', role: 'user', content: 'hello'},
@@ -53,9 +53,9 @@ describe('App smoke', () => {
     })
     const {lastFrame, unmount} = render(<App/>)
     const frame = lastFrame() ?? ''
-    // 메시지는 mocked inkBridge 로 흐름 — frame 에는 없음
-    expect(frame).not.toContain('hello')
-    expect(frame).not.toContain('stream')
+    // 완료 메시지(hello)는 stdout 으로 flush — frame 에 없음
+    // active(stream)는 Ink frame 에 있음
+    expect(frame).toContain('stream')
     unmount()
   })
 

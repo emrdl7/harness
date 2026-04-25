@@ -137,8 +137,8 @@ describe('회귀 스냅샷 (TST-03)', () => {
     unmount()
   })
 
-  it('한국어+emoji 메시지 렌더 스냅샷 (TST-03) — active 도 stdout 흐름', () => {
-    // 새 아키텍처: 완료/active 모두 stdout 으로 stream → frame 에는 UI 셸만
+  it('한국어+emoji 메시지 렌더 스냅샷 (TST-03) — active 로 검증', () => {
+    // 새 아키텍처: 완료는 stdout flush, frame 검증은 active 로 (ink-testing-library 한계)
     useMessagesStore.setState({
       completedMessages: [],
       activeMessage: {
@@ -150,8 +150,7 @@ describe('회귀 스냅샷 (TST-03)', () => {
     })
     const {lastFrame, unmount} = render(<App />)
     const frame = lastFrame()
-    // 메시지는 frame 에 없음 (stdout flush)
-    expect(frame).not.toContain('안녕하세요')
+    expect(frame).toContain('안녕하세요')
     expect(frame).toMatchSnapshot()
     unmount()
   })
@@ -179,7 +178,7 @@ describe('회귀 스냅샷 (TST-03)', () => {
   it('spinner 오염 0 — frame 에 spinner 잔재 없음 (TST-03)', () => {
     useMessagesStore.setState({
       completedMessages: [],
-      activeMessage: null,
+      activeMessage: {id: 'done-01', role: 'assistant', content: '완료된 메시지', streaming: true},
     })
     const {lastFrame, unmount} = render(<App />)
     const frame = lastFrame() ?? ''
