@@ -12,7 +12,6 @@ import {bindExit} from './ws/dispatch.js'
 import {loadConfig, type HarnessConfig} from './config.js'
 import {MessageList} from './components/MessageList.js'
 import {StatusBar} from './components/StatusBar.js'
-import {Divider} from './components/Divider.js'
 import {InputArea} from './components/InputArea.js'
 import {ConfirmDialog} from './components/ConfirmDialog.js'
 import {ReconnectOverlay} from './components/ReconnectOverlay.js'
@@ -148,17 +147,11 @@ export const App: React.FC = () => {
     return <NickPrompt cfg={cfg} onDone={setCfg} />
   }
 
-  // D-01 레이아웃: [MessageList(Static + active)] → [Divider] → [inputArea] → [Divider] → [StatusBar]
+  // 레이아웃: [MessageList] → [inputArea] → [StatusBar] (Divider 제거 — 스크롤백 오염 방지)
   return (
     <Box flexDirection='column'>
       <MessageList/>
-
-      <Divider columns={columns}/>
-
       {inputArea}
-
-      <Divider columns={columns}/>
-
       <StatusBar columns={columns}/>
     </Box>
   )

@@ -38,9 +38,8 @@ describe('App smoke', () => {
   it('renders without error (empty state)', () => {
     const {lastFrame, unmount} = render(<App/>)
     expect(lastFrame()).toBeTruthy()
-    // 레이아웃 필수 요소 존재
-    expect(lastFrame()).toContain('─')          // Divider
-    expect(lastFrame()).toContain('❯')          // InputArea prefix
+    // 레이아웃 필수 요소 — Divider 제거됨, InputArea prefix 만 검증
+    expect(lastFrame()).toContain('❯')
     unmount()
   })
 

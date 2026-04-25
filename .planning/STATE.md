@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: complete
-last_updated: "2026-04-24T12:21:30.000Z"
+status: Milestone v1.0 완료
+last_updated: "2026-04-24T14:14:02.323Z"
 progress:
   total_phases: 5
-  completed_phases: 5
-  total_plans: 22
+  completed_phases: 3
+  total_plans: 14
   completed_plans: 22
   percent: 100
 ---
