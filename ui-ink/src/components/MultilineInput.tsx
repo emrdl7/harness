@@ -240,14 +240,9 @@ export const MultilineInput: React.FC<MultilineInputProps> = ({onSubmit, disable
     }
   })
 
-  // 렌더 — 각 라인을 단일 문자열(ANSI inline) 로 만들어 단일 <Text> 출력
-  // CJK 폭 어긋남 방지: nested Text / Box 분리 없이 ANSI escape 만 박음
+  // 렌더 — inverse cursor 폐기, 단순 텍스트 + cursor 위치에 ASCII 마커
+  // CJK 폭 어긋남 방지: ANSI escape 자체를 안 씀, 가장 단순한 출력
   const lines = splitLines(buffer)
-  const CYAN = '\x1b[36m'
-  const DIM = '\x1b[2m'
-  const INV_ON = '\x1b[7m'
-  const INV_OFF = '\x1b[27m'
-  const RESET = '\x1b[0m'
 
   return (
     <Box flexDirection='column'>
@@ -255,19 +250,18 @@ export const MultilineInput: React.FC<MultilineInputProps> = ({onSubmit, disable
         const prefix = rowIdx === 0 ? '❯ ' : '… '
         const isCursorLine = rowIdx === cursor.row
         if (!isCursorLine) {
-          const txt = rowIdx === 0
-            ? `${CYAN}${prefix}${RESET}${line}`
-            : `${DIM}${prefix}${RESET}${line}`
-          return <Text key={'line-' + rowIdx}>{txt}</Text>
+          return (
+            <Text key={'line-' + rowIdx} dimColor={rowIdx > 0}>{prefix}{line}</Text>
+          )
         }
+        // cursor 라인 — cursor 위치에 '▏' 마커(1셀, 좌측 세로줄) 삽입, 텍스트는 그대로
         const before = line.slice(0, cursor.col)
-        const at = line.slice(cursor.col, cursor.col + 1) || ' '
-        const after = line.slice(cursor.col + 1)
-        const prefixColored = rowIdx === 0
-          ? `${CYAN}${prefix}${RESET}`
-          : `${DIM}${prefix}${RESET}`
-        const txt = `${prefixColored}${before}${INV_ON}${at}${INV_OFF}${after}`
-        return <Text key={'line-' + rowIdx}>{txt}</Text>
+        const after = line.slice(cursor.col)
+        return (
+          <Text key={'line-' + rowIdx}>
+            <Text color='cyan'>{prefix}</Text>{before}<Text color='cyan'>{'▏'}</Text>{after}
+          </Text>
+        )
       })}
     </Box>
   )
