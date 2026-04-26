@@ -1,6 +1,6 @@
 // App — D-01..D-04 레이아웃 + D-07..D-08 Ctrl+C/D (INPT-07)
 import React, {useCallback, useEffect, useRef, useState} from 'react'
-import {Box, useApp, useInput, useStdout} from 'ink'
+import {Box, Text, useApp, useInput, useStdout} from 'ink'
 import {useShallow} from 'zustand/react/shallow'
 import {useMessagesStore} from './store/messages.js'
 import {useStatusStore} from './store/status.js'
@@ -159,6 +159,7 @@ export const App: React.FC = () => {
       <Box flexDirection='column' flexGrow={1} overflow='hidden' justifyContent='flex-end'>
         <MessageList/>
       </Box>
+      <Box><Text dimColor>{'─'.repeat(columns)}</Text></Box>
       {inputArea}
       <StatusBar columns={columns}/>
     </Box>

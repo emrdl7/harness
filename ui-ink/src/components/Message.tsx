@@ -99,13 +99,14 @@ export const Message: React.FC<MessageProps> = ({message, columns}) => {
         {segments.map((seg, idx) => {
           const key = `${message.id}-seg-${idx}`
           if (seg.type === 'code') {
+            const langLabel = seg.lang ? ` ${seg.lang} ` : ''
             return (
-              <Box key={key} flexDirection='column' marginTop={0} width={w}>
-                <Text dimColor>{'  ┌─'}</Text>
-                <Box paddingLeft={2} width={w}>
+              <Box key={key} flexDirection='column' marginTop={1} width={w}>
+                <Text dimColor>{`  ╭─${langLabel}─`}</Text>
+                <Box paddingLeft={3} width={w}>
                   <Text wrap='wrap'>{highlightCode(seg.text, seg.lang)}</Text>
                 </Box>
-                <Text dimColor>{'  └─'}</Text>
+                <Text dimColor>{'  ╰─'}</Text>
               </Box>
             )
           }
