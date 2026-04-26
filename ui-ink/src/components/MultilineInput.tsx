@@ -6,9 +6,37 @@
 // INPT-05: 멀티라인 paste — Ink 7 usePaste hook(primary, bracketed paste 감지)
 //           usePaste 이벤트에서 텍스트를 cursor 위치에 insertAt 으로 삽입, submit 발생 없음
 import React from 'react'
-import {Box, Text, useInput, usePaste} from 'ink'
+import {Box, Text, useInput, usePaste, useCursor} from 'ink'
 import {useShallow} from 'zustand/react/shallow'
 import {useInputStore} from '../store/input.js'
+
+// 유니코드 시각 폭 계산 — 한글·CJK 는 2셀, 나머지는 1셀
+function displayWidth(s: string): number {
+  let w = 0
+  for (const ch of s) {
+    const cp = ch.codePointAt(0) ?? 0
+    if (
+      (cp >= 0x1100 && cp <= 0x115F) ||
+      (cp >= 0x2E80 && cp <= 0x303E) ||
+      (cp >= 0x3040 && cp <= 0x33FF) ||
+      (cp >= 0x3400 && cp <= 0x4DBF) ||
+      (cp >= 0x4E00 && cp <= 0xA4CF) ||
+      (cp >= 0xA960 && cp <= 0xA97F) ||
+      (cp >= 0xAC00 && cp <= 0xD7AF) ||
+      (cp >= 0xF900 && cp <= 0xFAFF) ||
+      (cp >= 0xFE10 && cp <= 0xFE6F) ||
+      (cp >= 0xFF01 && cp <= 0xFF60) ||
+      (cp >= 0xFFE0 && cp <= 0xFFE6) ||
+      (cp >= 0x20000 && cp <= 0x2FFFD) ||
+      (cp >= 0x30000 && cp <= 0x3FFFD)
+    ) {
+      w += 2
+    } else {
+      w += 1
+    }
+  }
+  return w
+}
 
 // 커서 상태 — row/col 을 buffer 문자열의 라인 배열과 동기화
 interface Cursor {
@@ -65,6 +93,8 @@ const killToEnd = (lines: string[], cur: Cursor): {lines: string[]; cursor: Curs
 }
 
 export const MultilineInput: React.FC<MultilineInputProps> = ({onSubmit, disabled}) => {
+  const {setCursorPosition} = useCursor()
+
   // store — buffer 는 외부 단일 소스, cursor 만 로컬 state
   const {buffer, setBuffer, clearBuffer, pushHistory, historyUp, historyDown, slashOpen} = useInputStore(
     useShallow((s) => ({
@@ -243,6 +273,18 @@ export const MultilineInput: React.FC<MultilineInputProps> = ({onSubmit, disable
   // 렌더 — inverse cursor 폐기, 단순 텍스트 + cursor 위치에 ASCII 마커
   // CJK 폭 어긋남 방지: ANSI escape 자체를 안 씀, 가장 단순한 출력
   const lines = splitLines(buffer)
+
+  // 한글 IME 커서 보정 — Ink 7 공식 useCursor API
+  // useInsertionEffect 에서 log-update 에 등록 → renderInteractiveFrame 의 cursorSuffix 로 원자 적용
+  // y 계산: fullscreen 후 cursor 는 StatusBar(마지막 행) 끝에 위치 → moveUp = rows - y
+  //   → MultilineInput(StatusBar 바로 위) = rows - 1, x = '❯ ' + before 의 표시 폭(0-indexed)
+  const termRows = process.stdout.rows ?? 24
+  const cursorLineBefore = (lines[cursor.row] ?? '').slice(0, cursor.col)
+  if (!disabled && lines.length === 1) {
+    setCursorPosition({x: displayWidth('❯ ' + cursorLineBefore), y: termRows - 1})
+  } else {
+    setCursorPosition(undefined)
+  }
 
   return (
     <Box flexDirection='column'>
