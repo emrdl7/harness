@@ -240,33 +240,34 @@ export const MultilineInput: React.FC<MultilineInputProps> = ({onSubmit, disable
     }
   })
 
-  // 렌더 — 각 라인마다 prefix, 현재 cursor 라인의 cursor 위치에 inverse 문자
+  // 렌더 — 각 라인을 단일 문자열(ANSI inline) 로 만들어 단일 <Text> 출력
+  // CJK 폭 어긋남 방지: nested Text / Box 분리 없이 ANSI escape 만 박음
   const lines = splitLines(buffer)
+  const CYAN = '\x1b[36m'
+  const DIM = '\x1b[2m'
+  const INV_ON = '\x1b[7m'
+  const INV_OFF = '\x1b[27m'
+  const RESET = '\x1b[0m'
 
   return (
     <Box flexDirection='column'>
       {lines.map((line, rowIdx) => {
-        // prefix: 첫 라인은 ❯, 이후 라인은 …
         const prefix = rowIdx === 0 ? '❯ ' : '… '
         const isCursorLine = rowIdx === cursor.row
         if (!isCursorLine) {
-          // 단일 <Text> — Ink 의 yoga 레이아웃과 stdout 출력 위치 동기화 (CJK 안전)
-          return (
-            <Text key={'line-' + rowIdx} dimColor={rowIdx > 0}>{prefix}{line}</Text>
-          )
+          const txt = rowIdx === 0
+            ? `${CYAN}${prefix}${RESET}${line}`
+            : `${DIM}${prefix}${RESET}${line}`
+          return <Text key={'line-' + rowIdx}>{txt}</Text>
         }
-        // cursor 라인 — 단일 <Text> 안에서 inline <Text inverse> 로 cursor 표시
         const before = line.slice(0, cursor.col)
         const at = line.slice(cursor.col, cursor.col + 1) || ' '
         const after = line.slice(cursor.col + 1)
-        return (
-          <Text key={'line-' + rowIdx}>
-            <Text color='cyan'>{prefix}</Text>
-            {before}
-            <Text inverse>{at}</Text>
-            {after}
-          </Text>
-        )
+        const prefixColored = rowIdx === 0
+          ? `${CYAN}${prefix}${RESET}`
+          : `${DIM}${prefix}${RESET}`
+        const txt = `${prefixColored}${before}${INV_ON}${at}${INV_OFF}${after}`
+        return <Text key={'line-' + rowIdx}>{txt}</Text>
       })}
     </Box>
   )

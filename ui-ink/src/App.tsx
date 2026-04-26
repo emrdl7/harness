@@ -13,6 +13,7 @@ import {loadConfig, type HarnessConfig} from './config.js'
 import {MessageList} from './components/MessageList.js'
 import {StatusBar} from './components/StatusBar.js'
 import {InputArea} from './components/InputArea.js'
+import {Banner} from './components/Banner.js'
 import {ConfirmDialog} from './components/ConfirmDialog.js'
 import {ReconnectOverlay} from './components/ReconnectOverlay.js'
 import {ObserverOverlay} from './components/ObserverOverlay.js'
@@ -147,11 +148,14 @@ export const App: React.FC = () => {
     return <NickPrompt cfg={cfg} onDone={setCfg} />
   }
 
-  // alt screen 모드: viewport 채우고, MessageList 가 flex-grow + justifyContent='flex-end'
-  // → 새 메시지가 아래(InputArea 바로 위)에 쌓이고 오래된 건(Banner 포함) 위로 밀려 clip 됨
+  // alt screen 모드 레이아웃:
+  // - Banner: 화면 최상단 고정
+  // - MessageList: 가운데 flex-grow, justifyContent='flex-end' (새 메시지가 InputArea 바로 위에 쌓임)
+  // - InputArea + StatusBar: 화면 하단 고정
   const rows = stdout?.rows ?? 24
   return (
     <Box flexDirection='column' height={rows}>
+      <Banner/>
       <Box flexDirection='column' flexGrow={1} overflow='hidden' justifyContent='flex-end'>
         <MessageList/>
       </Box>
