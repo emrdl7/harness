@@ -147,12 +147,12 @@ export const App: React.FC = () => {
     return <NickPrompt cfg={cfg} onDone={setCfg} />
   }
 
-  // alt screen 모드: 전체 viewport 채우고, MessageList 가 flex-grow 로 남는 공간 다 차지,
-  // InputArea + StatusBar 는 화면 하단 고정 (Claude Code 식)
+  // alt screen 모드: viewport 채우고, MessageList 가 flex-grow + justifyContent='flex-end'
+  // → 새 메시지가 아래(InputArea 바로 위)에 쌓이고 오래된 건(Banner 포함) 위로 밀려 clip 됨
   const rows = stdout?.rows ?? 24
   return (
     <Box flexDirection='column' height={rows}>
-      <Box flexDirection='column' flexGrow={1} overflow='hidden'>
+      <Box flexDirection='column' flexGrow={1} overflow='hidden' justifyContent='flex-end'>
         <MessageList/>
       </Box>
       {inputArea}

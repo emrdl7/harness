@@ -250,26 +250,22 @@ export const MultilineInput: React.FC<MultilineInputProps> = ({onSubmit, disable
         const prefix = rowIdx === 0 ? '❯ ' : '… '
         const isCursorLine = rowIdx === cursor.row
         if (!isCursorLine) {
+          // 단일 <Text> — Ink 의 yoga 레이아웃과 stdout 출력 위치 동기화 (CJK 안전)
           return (
-            // 라인은 독립 식별자가 없고 buffer 에서 derive — string rowIdx 기반 key 사용
-            // CLAUDE.md 금지는 messages 등 외부 도메인 엔티티 리스트의 index key 사용임
-            <Box key={'line-' + rowIdx}>
-              <Text dimColor={rowIdx > 0}>{prefix}</Text>
-              <Text>{line}</Text>
-            </Box>
+            <Text key={'line-' + rowIdx} dimColor={rowIdx > 0}>{prefix}{line}</Text>
           )
         }
-        // cursor 라인 — before / cursor 문자(inverse) / after 분리 렌더
+        // cursor 라인 — 단일 <Text> 안에서 inline <Text inverse> 로 cursor 표시
         const before = line.slice(0, cursor.col)
         const at = line.slice(cursor.col, cursor.col + 1) || ' '
         const after = line.slice(cursor.col + 1)
         return (
-          <Box key={'line-' + rowIdx}>
+          <Text key={'line-' + rowIdx}>
             <Text color='cyan'>{prefix}</Text>
-            <Text>{before}</Text>
+            {before}
             <Text inverse>{at}</Text>
-            <Text>{after}</Text>
-          </Box>
+            {after}
+          </Text>
         )
       })}
     </Box>
