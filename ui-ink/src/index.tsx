@@ -108,20 +108,7 @@ process.on('SIGINT',  () => cleanup(0))
     process.env['HARNESS_NICK'] = process.argv[iNickIdx + 1]
   }
 
-  // 배너 — Ink 렌더 전 stdout 직접 출력 (Ink 범위 밖, 스크롤백으로 자연 이동)
-  // eslint-disable-next-line no-restricted-syntax
-  const R = '\x1b[0m'
-  process.stdout.write(
-    '\n' +
-    '\x1b[1m\x1b[35m   / /_  ____ ________  ___  __________\x1b[0m\n' +
-    '\x1b[1m\x1b[94m  / __ \\/ __ `/ ___/ __ \\/ _ \\/ ___/ ___/\x1b[0m\n' +
-    '\x1b[1m\x1b[96m / / / / /_/ / /  / / / /  __(__  |__  )\x1b[0m\n' +
-    '\x1b[1m\x1b[36m/_/ /_/\\__,_/_/  /_/ /_/\\___/____/____/\x1b[0m\n' +
-    `\x1b[2m\x1b[37m  jabworks · harness v1.0${R}\n\n`
-  )
-
   // Ink render — alternate screen 모드 (Claude Code 식)
-  // resize/scroll/탭 전환 안전성을 위해 full-screen alt buffer 사용
-  // 종료 시 메인 스크린 복원 → 배너만 스크롤백에 남음
+  // 배너는 components/Banner.tsx 가 메시지 비어있을 때 alt buffer 안에서 렌더
   render(<App />, {patchConsole: false, alternateScreen: true})
 })()

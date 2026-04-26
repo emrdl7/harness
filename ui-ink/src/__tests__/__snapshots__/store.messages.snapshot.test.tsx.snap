@@ -5,6 +5,24 @@ exports[`회귀 스냅샷 (TST-03) > /undo + 새 메시지 순서 스냅샷 (TST
 ❯ 첫 번째 메시지
 
 새로운 응답
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ❯
   ● connected | /tmp | qwen2.5 | agent | turn 0 | ctx 0%"
 `;
@@ -18,6 +36,20 @@ AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 AAAAAAAAAAAAAAAAAAAA
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ❯
   ● connected | /tmp | qwen2.5 | agent | turn 0 | ctx 0%"
 `;
@@ -25,6 +57,26 @@ AAAAAAAAAAAAAAAAAAAA
 exports[`회귀 스냅샷 (TST-03) > spinner 오염 0 — frame 에 spinner 잔재 없음 (TST-03) 1`] = `
 "
 완료된 메시지
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ❯
   ● connected | /tmp | qwen2.5 | agent | turn 0 | ctx 0%"
 `;
@@ -32,6 +84,26 @@ exports[`회귀 스냅샷 (TST-03) > spinner 오염 0 — frame 에 spinner 잔�
 exports[`회귀 스냅샷 (TST-03) > 한국어+emoji 메시지 렌더 스냅샷 (TST-03) — active 로 검증 1`] = `
 "
 안녕하세요! 🎉 이것은 한국어 메시지입니다. emoji 포함 wrap 검증.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ❯
   ● connected | /tmp | qwen2.5 | agent | turn 0 | ctx 0%"
 `;
