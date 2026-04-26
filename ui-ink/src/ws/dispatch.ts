@@ -13,6 +13,7 @@ export function bindExit(fn: (() => void) | null): void {
   _exit = fn
 }
 
+
 export function dispatch(msg: ServerMsg): void {
   const messages = useMessagesStore.getState()
   const status = useStatusStore.getState()
@@ -46,12 +47,14 @@ export function dispatch(msg: ServerMsg): void {
       break
 
     case 'agent_end':
+
       messages.agentEnd()
       status.setBusy(false)
       break
 
     case 'agent_cancelled':
       // PEXT-05: 에이전트 실행 취소 알림 처리
+
       messages.agentEnd()
       status.setBusy(false)
       room.setActiveIsSelf(true)
@@ -59,6 +62,7 @@ export function dispatch(msg: ServerMsg): void {
       break
 
     case 'error':
+
       messages.appendSystemMessage(`오류: ${msg.text}`)
       status.setBusy(false)
       break
@@ -192,6 +196,7 @@ export function dispatch(msg: ServerMsg): void {
       break
 
     case 'claude_end':
+
       status.setBusy(false)
       break
 

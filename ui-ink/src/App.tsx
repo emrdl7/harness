@@ -1,6 +1,6 @@
 // App — D-01..D-04 레이아웃 + D-07..D-08 Ctrl+C/D (INPT-07)
 import React, {useCallback, useEffect, useRef, useState} from 'react'
-import {Box, Text, useApp, useInput, useStdout} from 'ink'
+import {Box, Text, Static, useApp, useInput, useStdout} from 'ink'
 import {useShallow} from 'zustand/react/shallow'
 import {useMessagesStore} from './store/messages.js'
 import {useStatusStore} from './store/status.js'
@@ -152,14 +152,9 @@ export const App: React.FC = () => {
   // - Banner: 화면 최상단 고정
   // - MessageList: 가운데 flex-grow, justifyContent='flex-end' (새 메시지가 InputArea 바로 위에 쌓임)
   // - InputArea + StatusBar: 화면 하단 고정
-  const rows = stdout?.rows ?? 24
   return (
-    <Box flexDirection='column' height={rows}>
-      <Banner/>
-      <Box flexDirection='column' flexGrow={1} overflow='hidden' justifyContent='flex-end'>
-        <MessageList/>
-      </Box>
-      <Box><Text dimColor>{'─'.repeat(columns)}</Text></Box>
+    <Box flexDirection='column'>
+      <MessageList/>
       {inputArea}
       <StatusBar columns={columns}/>
     </Box>

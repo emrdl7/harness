@@ -14,6 +14,7 @@ interface MessagesState {
   completedMessages: Message[]    // <Static> 전용 append-only — agent_end 시에만 push
   activeMessage: Message | null   // 스트리밍 중 assistant — 일반 트리에만 렌더
   snapshotKey: number             // Phase 3: Static key remount 트리거 (REM-03)
+  pendingUserMessage: Message | null  // 재연결 시 state_snapshot 덮어쓰기 방지용
   appendUserMessage: (content: string, meta?: Record<string, unknown>) => void
   agentStart: () => void
   appendToken: (text: string) => void    // activeMessage in-place 업데이트 (NOT completedMessages push)
@@ -29,12 +30,15 @@ export const useMessagesStore = create<MessagesState>((set) => ({
   completedMessages: [],
   activeMessage: null,
   snapshotKey: 0,
+  pendingUserMessage: null,
 
-  appendUserMessage: (content, meta?) => set((s) => ({
-    completedMessages: [...s.completedMessages, {
-      id: crypto.randomUUID(), role: 'user', content, meta,
-    }],
-  })),
+  appendUserMessage: (content, meta?) => set((s) => {
+    const msg: Message = {id: crypto.randomUUID(), role: 'user', content, meta}
+    return {
+      completedMessages: [...s.completedMessages, msg],
+      pendingUserMessage: msg,
+    }
+  }),
 
   agentStart: () => set(() => ({
     activeMessage: {
@@ -67,6 +71,7 @@ export const useMessagesStore = create<MessagesState>((set) => ({
     return {
       completedMessages: [...s.completedMessages, {...s.activeMessage, streaming: false}],
       activeMessage: null,
+      pendingUserMessage: null,  // 턴 완료 — pending 해제
     }
   }),
 
@@ -124,9 +129,14 @@ export const useMessagesStore = create<MessagesState>((set) => ({
           ? m['meta'] as Record<string, unknown>
           : undefined,
       }))
+    // 재연결 race: 서버 스냅샷이 pending 유저 메시지를 포함하지 않을 경우 보존
+    const pending = s.pendingUserMessage
+    const hasPending = pending !== null && !parsed.some(
+      m => m.role === 'user' && m.content === pending.content
+    )
     return {
       snapshotKey: s.snapshotKey + 1,  // Static key remount 트리거
-      completedMessages: parsed,
+      completedMessages: hasPending ? [...parsed, pending] : parsed,
       activeMessage: null,
     }
   }),

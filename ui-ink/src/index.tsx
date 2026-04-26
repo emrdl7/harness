@@ -110,5 +110,5 @@ process.on('SIGINT',  () => cleanup(0))
 
   // Ink render — alternate screen 모드 (Claude Code 식)
   // 배너는 components/Banner.tsx 가 메시지 비어있을 때 alt buffer 안에서 렌더
-  render(<App />, {patchConsole: false, alternateScreen: true})
+  render(<App />, {patchConsole: false})
 })()

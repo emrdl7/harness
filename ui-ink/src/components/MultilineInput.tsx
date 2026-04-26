@@ -3,40 +3,13 @@
 // INPT-02: Enter 제출, Shift+Enter·Ctrl+J 개행
 // INPT-03: ↑↓ history (store 위임)
 // INPT-04: POSIX (Ctrl+A/E/K/W/U)
-// INPT-05: 멀티라인 paste — Ink 7 usePaste hook(primary, bracketed paste 감지)
-//           usePaste 이벤트에서 텍스트를 cursor 위치에 insertAt 으로 삽입, submit 발생 없음
+// INPT-05: 멀티라인 paste — usePasteCompat (bracketed paste 직접 감지)
+//           paste 텍스트는 cursor 위치에 insertAt 으로 삽입, submit 발생 없음
 import React from 'react'
-import {Box, Text, useInput, usePaste, useCursor} from 'ink'
+import {Box, Text, useInput} from 'ink'
 import {useShallow} from 'zustand/react/shallow'
 import {useInputStore} from '../store/input.js'
-
-// 유니코드 시각 폭 계산 — 한글·CJK 는 2셀, 나머지는 1셀
-function displayWidth(s: string): number {
-  let w = 0
-  for (const ch of s) {
-    const cp = ch.codePointAt(0) ?? 0
-    if (
-      (cp >= 0x1100 && cp <= 0x115F) ||
-      (cp >= 0x2E80 && cp <= 0x303E) ||
-      (cp >= 0x3040 && cp <= 0x33FF) ||
-      (cp >= 0x3400 && cp <= 0x4DBF) ||
-      (cp >= 0x4E00 && cp <= 0xA4CF) ||
-      (cp >= 0xA960 && cp <= 0xA97F) ||
-      (cp >= 0xAC00 && cp <= 0xD7AF) ||
-      (cp >= 0xF900 && cp <= 0xFAFF) ||
-      (cp >= 0xFE10 && cp <= 0xFE6F) ||
-      (cp >= 0xFF01 && cp <= 0xFF60) ||
-      (cp >= 0xFFE0 && cp <= 0xFFE6) ||
-      (cp >= 0x20000 && cp <= 0x2FFFD) ||
-      (cp >= 0x30000 && cp <= 0x3FFFD)
-    ) {
-      w += 2
-    } else {
-      w += 1
-    }
-  }
-  return w
-}
+import {usePaste} from '../hooks/usePasteCompat.js'
 
 // 커서 상태 — row/col 을 buffer 문자열의 라인 배열과 동기화
 interface Cursor {
@@ -60,7 +33,6 @@ const insertAt = (lines: string[], cur: Cursor, text: string): {lines: string[];
   const merged = before + text + after
   const mergedLines = merged.split('\n')
   const next = [...lines.slice(0, cur.row), ...mergedLines, ...lines.slice(cur.row + 1)]
-  // 커서는 삽입된 텍스트의 "끝" 으로 이동
   const lastInserted = mergedLines[mergedLines.length - 1] ?? ''
   const newRow = cur.row + mergedLines.length - 1
   const newCol = mergedLines.length === 1
@@ -73,9 +45,7 @@ const insertAt = (lines: string[], cur: Cursor, text: string): {lines: string[];
 const deleteWordBefore = (lines: string[], cur: Cursor): {lines: string[]; cursor: Cursor} => {
   const line = lines[cur.row] ?? ''
   let i = cur.col
-  // 앞쪽 공백 스킵
   while (i > 0 && line[i - 1] === ' ') i--
-  // 단어 스킵
   while (i > 0 && line[i - 1] !== ' ') i--
   const next = line.slice(0, i) + line.slice(cur.col)
   const newLines = [...lines]
@@ -93,9 +63,6 @@ const killToEnd = (lines: string[], cur: Cursor): {lines: string[]; cursor: Curs
 }
 
 export const MultilineInput: React.FC<MultilineInputProps> = ({onSubmit, disabled}) => {
-  const {setCursorPosition} = useCursor()
-
-  // store — buffer 는 외부 단일 소스, cursor 만 로컬 state
   const {buffer, setBuffer, clearBuffer, pushHistory, historyUp, historyDown, slashOpen} = useInputStore(
     useShallow((s) => ({
       buffer: s.buffer,
@@ -121,10 +88,8 @@ export const MultilineInput: React.FC<MultilineInputProps> = ({onSubmit, disable
     })
   }, [buffer])
 
-  // INPT-05 primary: Ink 7 usePaste — bracketed paste 이벤트 수신
-  // paste 텍스트는 cursor 위치에 삽입되며 submit 을 발생시키지 않음
+  // INPT-05: bracketed paste — cursor 위치에 삽입, submit 없음
   usePaste((pastedText) => {
-    if (disabled) return
     const lines = splitLines(buffer)
     const r = insertAt(lines, cursor, pastedText)
     setBuffer(joinLines(r.lines))
@@ -132,27 +97,22 @@ export const MultilineInput: React.FC<MultilineInputProps> = ({onSubmit, disable
   })
 
   useInput((input, key) => {
-    if (disabled) return
-
     const lines = splitLines(buffer)
 
     // Shift+Enter 또는 Ctrl+J → 개행 삽입 (INPT-02)
     if ((key.return && key.shift) || (key.ctrl && input === 'j')) {
+      if (disabled) return
       const r = insertAt(lines, cursor, '\n')
       setBuffer(joinLines(r.lines))
       setCursor(r.cursor)
       return
     }
 
-    // Enter (단독) → 제출
-    // usePaste 가 active 이면 paste 텍스트는 useInput 에 도달하지 않으므로
-    // key.return 단독 체크만으로 안전하게 submit 처리 가능
+    // Enter (단독) → 제출 — busy 중에는 차단
     if (key.return && !key.shift) {
+      if (disabled) return
       const text = joinLines(lines)
-      if (text.trim() === '') {
-        // 빈 입력 제출 차단 (T-02C-04 완화)
-        return
-      }
+      if (text.trim() === '') return
       pushHistory(text)
       clearBuffer()
       setCursor({row: 0, col: 0})
@@ -160,12 +120,11 @@ export const MultilineInput: React.FC<MultilineInputProps> = ({onSubmit, disable
       return
     }
 
-    // slashOpen 중에는 ↑↓·Enter 를 SelectInput 에 패스스루 (history/submit 차단)
+    // slashOpen 중에는 ↑↓·Enter 를 SelectInput 에 패스스루
     if (slashOpen && (key.upArrow || key.downArrow || key.return)) return
 
-    // history ↑↓ — store 에 위임. 단, 멀티라인 buffer 면 커서 이동 우선 처리
+    // history ↑↓
     if (key.upArrow) {
-      // 멀티라인이고 현재 row > 0 이면 라인 이동
       if (lines.length > 1 && cursor.row > 0) {
         const newRow = cursor.row - 1
         const newCol = Math.min(cursor.col, (lines[newRow] ?? '').length)
@@ -227,7 +186,6 @@ export const MultilineInput: React.FC<MultilineInputProps> = ({onSubmit, disable
       return
     }
     if (key.ctrl && input === 'u') {
-      // 현재 라인 전체 삭제
       const newLines = [...lines]
       newLines[cursor.row] = ''
       setBuffer(joinLines(newLines))
@@ -245,7 +203,6 @@ export const MultilineInput: React.FC<MultilineInputProps> = ({onSubmit, disable
         setBuffer(joinLines(newLines))
         setCursor({row: cursor.row, col: cursor.col - 1})
       } else if (cursor.row > 0) {
-        // 라인 머지 — 현재 라인을 이전 라인 끝에 붙임
         const prev = lines[cursor.row - 1] ?? ''
         const curLine = lines[cursor.row] ?? ''
         const merged = prev + curLine
@@ -260,8 +217,7 @@ export const MultilineInput: React.FC<MultilineInputProps> = ({onSubmit, disable
       return
     }
 
-    // 일반 입력 — ctrl/meta 조합이 아니고 input 이 존재
-    // usePaste 가 active 이면 paste 텍스트는 여기 도달하지 않음
+    // 일반 입력
     if (input && !key.ctrl && !key.meta) {
       const r = insertAt(lines, cursor, input)
       setBuffer(joinLines(r.lines))
@@ -270,21 +226,7 @@ export const MultilineInput: React.FC<MultilineInputProps> = ({onSubmit, disable
     }
   })
 
-  // 렌더 — inverse cursor 폐기, 단순 텍스트 + cursor 위치에 ASCII 마커
-  // CJK 폭 어긋남 방지: ANSI escape 자체를 안 씀, 가장 단순한 출력
   const lines = splitLines(buffer)
-
-  // 한글 IME 커서 보정 — Ink 7 공식 useCursor API
-  // useInsertionEffect 에서 log-update 에 등록 → renderInteractiveFrame 의 cursorSuffix 로 원자 적용
-  // y 계산: fullscreen 후 cursor 는 StatusBar(마지막 행) 끝에 위치 → moveUp = rows - y
-  //   → MultilineInput(StatusBar 바로 위) = rows - 1, x = '❯ ' + before 의 표시 폭(0-indexed)
-  const termRows = process.stdout.rows ?? 24
-  const cursorLineBefore = (lines[cursor.row] ?? '').slice(0, cursor.col)
-  if (!disabled && lines.length === 1) {
-    setCursorPosition({x: displayWidth('❯ ' + cursorLineBefore), y: termRows - 1})
-  } else {
-    setCursorPosition(undefined)
-  }
 
   return (
     <Box flexDirection='column'>
@@ -296,11 +238,16 @@ export const MultilineInput: React.FC<MultilineInputProps> = ({onSubmit, disable
             <Text key={'line-' + rowIdx} dimColor={rowIdx > 0}>{prefix}{line}</Text>
           )
         }
-        // cursor 라인 — cursor 위치에 '▏' 마커(1셀, 좌측 세로줄) 삽입, 텍스트는 그대로
+        // cursor 라인 — terminalCursorFocus 로 포크 렌더러에 IME 커서 위치 전달
+        // terminalCursorPosition: prefix(2자) + cursor.col 이 '▏' 위치(0-indexed)
         const before = line.slice(0, cursor.col)
         const after = line.slice(cursor.col)
         return (
-          <Text key={'line-' + rowIdx}>
+          <Text
+            key={'line-' + rowIdx}
+            terminalCursorFocus={true}
+            terminalCursorPosition={prefix.length + cursor.col}
+          >
             <Text color='cyan'>{prefix}</Text>{before}<Text color='cyan'>{'▏'}</Text>{after}
           </Text>
         )
