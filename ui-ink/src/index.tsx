@@ -3,7 +3,10 @@
 // TTY 가드, 시그널 핸들러, patchConsole: false
 import React from 'react'
 import {render} from 'ink'
+// @ts-ignore: ink의 package.json exports에 노출되지 않은 내부 모듈 사용 (RND-09)
+import {setStringWidthFunction} from '../node_modules/ink/build/measure-text.js'
 import {App} from './App.js'
+import {stringWidth} from './utils/stringWidth.js'
 import {isInteractiveTTY} from './tty-guard.js'
 
 // TTY 가드 — non-TTY 환경(파이프, CI)이거나 argv 에 질문이 있으면 one-shot 분기 (FND-12)
@@ -108,7 +111,23 @@ process.on('SIGINT',  () => cleanup(0))
     process.env['HARNESS_NICK'] = process.argv[iNickIdx + 1]
   }
 
-  // Ink render — alternate screen 모드 (Claude Code 식)
-  // 배너는 components/Banner.tsx 가 메시지 비어있을 때 alt buffer 안에서 렌더
+  // Ink의 기본 width 계산을 CJK가 지원되는 커스텀 stringWidth로 교체
+  setStringWidthFunction(stringWidth)
+
+  // 일반 터미널 모드 (Claude Code 식 스크롤백 지원)
+  // 시작 전 화면 클리어 + 커서 홈으로 이동하여 프롬프트 잔상 방지
+  process.stdout.write('\x1b[2J\x1b[3J\x1b[H')
+
+  // 첫 배너를 터미널 상단에 일반 텍스트로 고정 출력 (RND-11)
+  const banner = [
+    '\n',
+    '\x1b[1m\x1b[35m   / /_  ____ ________  ___  __________\x1b[0m',
+    '\x1b[1m\x1b[94m  / __ \\/ __ `/ ___/ __ \\/ _ \\/ ___/ ___/\x1b[0m',
+    '\x1b[1m\x1b[96m / / / / /_/ / /  / / / /  __(__  |__  )\x1b[0m',
+    '\x1b[1m\x1b[36m/_/ /_/\\__,_/_/  /_/ /_/\\___/____/____/\x1b[0m',
+    '\x1b[2m\x1b[37m  jabworks · harness v1.0\x1b[0m\n\n'
+  ].join('\n')
+  process.stdout.write(banner)
+
   render(<App />, {patchConsole: false})
 })()

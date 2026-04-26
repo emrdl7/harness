@@ -24,7 +24,7 @@
     "@inkjs/ui": "^2.0.0",
     "cli-highlight": "^2.1.11",
     "diff": "^9.0.0",
-    "ink": "^7.0.1",
+    "ink": "npm:@jrichman/ink@6.6.9",
     "ink-link": "^5.0.0",
     "ink-select-input": "^6.2.0",
     "ink-spinner": "^5.0.0",

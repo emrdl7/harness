@@ -9,7 +9,7 @@ vi.mock('cli-highlight', async (importOriginal) => {
   const actual = await importOriginal<typeof cliHighlight>()
   return {
     ...actual,
-    highlight: vi.fn((code: string, _opts?: unknown) => `[HIGHLIGHTED:${code}]`),
+    highlight: vi.fn((code: string, _opts?: unknown) => code.split('\n').map(l => l ? `[HIGHLIGHTED:${l}]` : '').join('\n')),
   }
 })
 
@@ -35,7 +35,7 @@ describe('Message — cli-highlight 코드 펜스 통합 (E-1)', () => {
     const {lastFrame, unmount} = render(<Message message={msg}/>)
     const frame = lastFrame() ?? ''
 
-    // highlight 가 호출되었는지 확인
+    // highlight 가 전체 블록으로 호출되었는지 확인
     expect(highlightSpy).toHaveBeenCalledWith('const x = 1\n', expect.objectContaining({ignoreIllegals: true}))
     // ANSI(모의) 출력이 렌더됨
     expect(frame).toContain('HIGHLIGHTED')

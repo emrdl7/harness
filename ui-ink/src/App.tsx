@@ -149,13 +149,14 @@ export const App: React.FC = () => {
   }
 
   // alt screen 모드 레이아웃:
-  // - Banner: 화면 최상단 고정
-  // - MessageList: 가운데 flex-grow, justifyContent='flex-end' (새 메시지가 InputArea 바로 위에 쌓임)
+  // - MessageList(Banner 포함): 가운데 flex-grow, justifyContent='flex-end' (새 메시지가 InputArea 바로 위에 쌓임)
   // - InputArea + StatusBar: 화면 하단 고정
   return (
     <Box flexDirection='column'>
       <MessageList/>
-      {inputArea}
+      <Box marginY={1}>
+        {inputArea}
+      </Box>
       <StatusBar columns={columns}/>
     </Box>
   )

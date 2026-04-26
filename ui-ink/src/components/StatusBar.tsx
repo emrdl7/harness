@@ -162,7 +162,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({columns}) => {
   return (
     <Box>
       {busy
-        ? <Text color={theme.status.busy}><Spinner type='dots'/>{' '}</Text>
+        ? <Text color={theme.status.busy}><Spinner type='dots' />{' '}</Text>
         : <Text>{'  '}</Text>}
       <Text color={connColor}>{connText}</Text>
       {kept.map((seg) => (
