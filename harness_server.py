@@ -985,6 +985,10 @@ async def main():
         print('  인증 없는 서버 기동을 거부합니다.', file=sys.stderr)
         sys.exit(1)
 
+    # .harness.toml 적용 — Session.__init__ 에서도 다시 로드되지만,
+    # _ensure_mlx_running() 이 config.BACKEND 를 보기 전에 서버 cwd 기준으로 한 번 갱신해야 함.
+    config.runtime_override(prof.load(os.getcwd()))
+
     _ensure_mlx_running()
 
     # 스타트업 시 이전 실행의 잔재 파일 정리

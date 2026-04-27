@@ -2,6 +2,8 @@ __pycache__/
 *.pyc
 *.pyo
 .harness_bak/
+.harness/
+.harness.toml
 *.egg-info/
 .DS_Store
 context/.index/
