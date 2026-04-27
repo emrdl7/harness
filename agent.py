@@ -157,6 +157,7 @@ Claude 위임 규칙 (ask_claude):
 - 현재 작업 디렉토리는 이 프롬프트에 명시되어 있으므로 별도 툴 호출 없이 직접 답변하세요.
 - 존재하지 않는 툴을 절대 호출하지 마세요. 사용 가능한 툴만 사용하세요.
 - 파일 경로는 항상 절대 경로 또는 working_dir 기준 상대 경로를 사용하세요.
+- 동일한 도구를 한 turn 안에서 5회 이상 호출하지 마세요. 검색/페치 결과가 충분치 않아도 가진 정보로 답변하세요. 부족하면 사용자에게 추가 정보를 요청하세요. 무한 검색은 메모리 부족과 응답 지연을 유발합니다.
 
 툴 결과 표시 규칙 (중요):
 - 클라이언트 UI 가 read_file/write_file/edit_file/grep_search/run_command 등의 결과를
@@ -621,6 +622,24 @@ def run(
                     'content': (
                         f'동일한 툴({recent[0][0]})을 같은 인자로 {REPEAT_WINDOW}회 반복했습니다. '
                         '다른 접근 방법을 시도하거나, 진행이 불가능한 이유를 사용자에게 설명하세요.'
+                    ),
+                })
+                _tool_call_history.clear()
+                consecutive_failures = 0
+                continue
+
+        # 반복 감지 #2: 동일 툴 5회 (인자 무관) — search_web/fetch_page 처럼 매번 다른
+        # 쿼리로 도는 무한 루프 차단. 위 #1 은 같은 인자만 잡아서 빠짐.
+        SAME_TOOL_LIMIT = 5
+        if len(_tool_call_history) >= SAME_TOOL_LIMIT:
+            recent_names = [tc[0] for tc in list(_tool_call_history)[-SAME_TOOL_LIMIT:]]
+            if all(n == recent_names[0] for n in recent_names):
+                session_messages.append({
+                    'role': 'user',
+                    'content': (
+                        f'동일한 툴({recent_names[0]})을 {SAME_TOOL_LIMIT}회 연속 호출했습니다. '
+                        '더 이상 같은 도구를 부르지 말고 지금까지의 결과만으로 답변을 마무리하세요. '
+                        '결과가 충분치 않으면 그 점을 명시하고 사용자가 추가로 알려줄 정보를 요청하세요.'
                     ),
                 })
                 _tool_call_history.clear()
