@@ -1,3 +1,7 @@
 node_modules/
 dist/
 *.js.map
+# 디버그 임시 — ad-hoc 실험 산출물
+test-*.tsx
+test-*.js
+output-*.txt

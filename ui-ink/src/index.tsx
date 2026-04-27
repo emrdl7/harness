@@ -116,6 +116,8 @@ process.on('SIGINT',  () => cleanup(0))
 
   // 일반 터미널 모드 (Claude Code 식 스크롤백 지원)
   // 시작 전 화면 클리어 + 커서 홈으로 이동하여 프롬프트 잔상 방지
+  // Ink render() 이전 startup 출력 — 이중 렌더 룰의 적용 대상 아님
+  // eslint-disable-next-line no-restricted-syntax
   process.stdout.write('\x1b[2J\x1b[3J\x1b[H')
 
   // 첫 배너를 터미널 상단에 일반 텍스트로 고정 출력 (RND-11)
@@ -127,6 +129,8 @@ process.on('SIGINT',  () => cleanup(0))
     '\x1b[1m\x1b[36m/_/ /_/\\__,_/_/  /_/ /_/\\___/____/____/\x1b[0m',
     '\x1b[2m\x1b[37m  jabworks · harness v1.0\x1b[0m\n\n'
   ].join('\n')
+  // Ink render() 이전 배너 — 이중 렌더 룰의 적용 대상 아님
+  // eslint-disable-next-line no-restricted-syntax
   process.stdout.write(banner)
 
   render(<App />, {patchConsole: false})
