@@ -3,7 +3,8 @@
 // 본 Plan 은 실제 WS 송신이나 messages store push 를 수행하지 않음
 // onSubmit 은 상위(App.tsx) 가 WS 송신을 처리함
 import React from 'react'
-import {Box, useStdout} from 'ink'
+import {Box} from 'ink'
+import {useTerminalColumns} from '../hooks/useTerminalColumns.js'
 import {useShallow} from 'zustand/react/shallow'
 import {useInputStore} from '../store/input.js'
 import {MultilineInput} from './MultilineInput.js'
@@ -15,8 +16,7 @@ interface InputAreaProps {
 }
 
 export const InputArea: React.FC<InputAreaProps> = ({onSubmit, disabled}) => {
-  const {stdout} = useStdout()
-  const columns = stdout?.columns ?? 80
+  const columns = useTerminalColumns()
 
   const {buffer, setBuffer, slashOpen, setSlashOpen} = useInputStore(
     useShallow((s) => ({
@@ -59,7 +59,7 @@ export const InputArea: React.FC<InputAreaProps> = ({onSubmit, disabled}) => {
   }, [buffer])
 
   return (
-    <Box flexDirection='column' width={columns} backgroundColor='#222222' paddingY={1} paddingX={2}>
+    <Box flexDirection='column' width={columns} paddingY={0} paddingX={2} borderStyle="single" borderLeft={false} borderRight={false} borderColor="gray">
       {slashOpen && (
         <SlashPopup
           query={slashQuery}

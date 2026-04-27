@@ -14,7 +14,7 @@ export const MessageList: React.FC = () => {
     <>
       {/* 완료된 메시지도 터미널 히스토리로 밀어냄 */}
       <Static items={completed}>
-        {(m) => <Message key={m.id} message={m}/>}
+        {(m) => <Message key={m.id} message={m} isStatic/>}
       </Static>
       {/* 현재 입력 중이거나 생성 중인 메시지만 하단에 렌더링 */}
       {active ? <Message message={active}/> : null}

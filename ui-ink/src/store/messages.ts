@@ -7,6 +7,8 @@ export interface Message {
   content: string
   streaming?: boolean      // 스트리밍 중인 메시지 여부
   toolName?: string        // tool 메시지용
+  toolArgs?: Record<string, unknown>   // AR-01: tool_start 시 인자 (registry 컴포넌트용)
+  toolPayload?: unknown                // AR-01: tool_end 시 dict 결과 (registry 컴포넌트용)
   meta?: Record<string, unknown>
 }
 
@@ -20,7 +22,7 @@ interface MessagesState {
   appendToken: (text: string) => void    // activeMessage in-place 업데이트 (NOT completedMessages push)
   agentEnd: () => void
   appendToolStart: (name: string, args: Record<string, unknown>) => void
-  appendToolEnd: (name: string, result: string) => void
+  appendToolEnd: (name: string, payload: unknown) => void   // AR-01: dict 결과 받음
   appendSystemMessage: (content: string) => void
   clearMessages: () => void
   loadSnapshot: (rawMessages: unknown[]) => void  // Phase 3: state_snapshot 히스토리 로드 (REM-03)
@@ -79,22 +81,29 @@ export const useMessagesStore = create<MessagesState>((set) => ({
     completedMessages: [...s.completedMessages, {
       id: crypto.randomUUID(),
       role: 'tool',
-      content: `[${name}] ${JSON.stringify(args)}`,
+      content: `[${name}] ${JSON.stringify(args)}`,   // 하위호환: registry 미매칭 시 fallback 표시
       toolName: name,
+      toolArgs: args,                                  // AR-01: 구조화 인자 보존
       streaming: true,
     }],
   })),
 
   // tool 은 completedMessages 안에서 in-place 업데이트 (streaming → false)
-  appendToolEnd: (name, result) => set((s) => {
+  // AR-01: payload 는 dict (백엔드가 dict broadcast). content 는 fallback 표시용 string 유지
+  appendToolEnd: (name, payload) => set((s) => {
     const revIdx = [...s.completedMessages].reverse().findIndex(
       (m) => m.role === 'tool' && m.toolName === name && m.streaming,
     )
     if (revIdx === -1) return {}
     const realIdx = s.completedMessages.length - 1 - revIdx
+    // fallback content: payload 가 string 이면 그대로, 아니면 짧은 JSON
+    const fallback = typeof payload === 'string'
+      ? payload
+      : JSON.stringify(payload).slice(0, 200)
     const updated = {
       ...s.completedMessages[realIdx],
-      content: `[${name}] ${result}`,
+      content: `[${name}] ${fallback}`,
+      toolPayload: payload,                            // AR-01: 구조화 결과 보존
       streaming: false,
     }
     return {

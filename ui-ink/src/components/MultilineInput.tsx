@@ -99,18 +99,24 @@ export const MultilineInput: React.FC<MultilineInputProps> = ({onSubmit, disable
   useInput((input, key) => {
     const lines = splitLines(buffer)
 
-    // Shift+Enter 또는 Ctrl+J → 개행 삽입 (INPT-02)
-    if ((key.return && key.shift) || (key.ctrl && input === 'j')) {
-      if (disabled) return
+    // 터미널 제약으로 Shift+Enter 가 일반 Enter 와 동일하게 인식되는 경우가 많음
+    // 보완책으로 Option+Enter(Mac) / Alt+Enter 또는 Ctrl+J 를 개행으로 처리
+    if ((key.return && (key.shift || key.meta)) || (key.ctrl && input === 'j')) {
+      // AR-04: busy 중에도 개행 허용 — onSubmit 측 enqueue 로 처리
+      void disabled
       const r = insertAt(lines, cursor, '\n')
       setBuffer(joinLines(r.lines))
-      setCursor(r.cursor)
+      // 개행 시 커서를 다음 줄 처음으로 이동
+      setCursor({
+        row: cursor.row + 1,
+        col: 0,
+      })
       return
     }
 
-    // Enter (단독) → 제출 — busy 중에는 차단
+    // Enter (단독) → 제출
+    // AR-04: busy 중에도 onSubmit 호출 — App.tsx 가 busy 분기로 enqueue/send 결정
     if (key.return && !key.shift) {
-      if (disabled) return
       const text = joinLines(lines)
       if (text.trim() === '') return
       pushHistory(text)

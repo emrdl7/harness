@@ -5,7 +5,10 @@
 
 export interface TokenMsg        { type: 'token';               text: string }
 export interface ToolStartMsg    { type: 'tool_start';          name: string; args: Record<string, unknown> }
-export interface ToolEndMsg      { type: 'tool_end';            name: string; result: string }
+// AR-01: 백엔드 harness_server.py:251 가 dict 객체 그대로 broadcast — 기존 string 가정은 오류였다
+// 실전 payload 예: read_file → {ok, content, path}, run_command → {ok, stdout, stderr, returncode}
+// 컴포넌트 분기는 components/tools/index.ts 의 registry 가 담당
+export interface ToolEndMsg      { type: 'tool_end';            name: string; result: unknown }
 export interface AgentStartMsg   { type: 'agent_start'; from_self?: boolean }  // PEXT-01: per-subscriber 관전 모드 판정
 export interface AgentEndMsg     { type: 'agent_end' }
 export interface AgentCancelledMsg { type: 'agent_cancelled' }  // PEXT-05: 에이전트 실행 취소 알림

@@ -1,6 +1,6 @@
 // dispatch exhaustive switch 단위 테스트 (FND-04, FND-05)
 import {describe, it, expect, beforeEach} from 'vitest'
-import {dispatch} from '../ws/dispatch.js'
+import {dispatch, flushPendingTokens} from '../ws/dispatch.js'
 import {useMessagesStore} from '../store/messages.js'
 import {useStatusStore} from '../store/status.js'
 import {useRoomStore} from '../store/room.js'
@@ -15,8 +15,9 @@ describe('dispatch', () => {
     useConfirmStore.setState({mode: 'none', payload: {}})
   })
 
-  it('token → 메시지에 token text 포함', () => {
+  it('token → 메시지에 token text 포함 (AR-02 coalesce — flush 후 검증)', () => {
     dispatch({type: 'token', text: 'hi'})
+    flushPendingTokens()   // AR-02: 16ms 대기 회피, 즉시 flush
     const {activeMessage, completedMessages} = useMessagesStore.getState()
     // token 은 activeMessage 에 누적됨
     const content = activeMessage?.content ?? completedMessages[completedMessages.length - 1]?.content ?? ''
@@ -83,8 +84,9 @@ describe('dispatch', () => {
     expect(useStatusStore.getState().busy).toBe(false)
   })
 
-  it('claude_token → completedMessages 또는 activeMessage 에 token text 포함', () => {
+  it('claude_token → completedMessages 또는 activeMessage 에 token text 포함 (AR-02 coalesce)', () => {
     dispatch({type: 'claude_token', text: 'claude says hi'})
+    flushPendingTokens()   // AR-02
     const {activeMessage, completedMessages} = useMessagesStore.getState()
     const content = activeMessage?.content ?? completedMessages[completedMessages.length - 1]?.content ?? ''
     expect(content).toContain('claude says hi')

@@ -3,7 +3,6 @@
 // RND-09: ctxTokens 변경 시 StatusBar 본체 리렌더 방지를 위한 CtxMeter 격리 서브컴포넌트
 import React from 'react'
 import {Box, Text} from 'ink'
-import Spinner from 'ink-spinner'
 import {useShallow} from 'zustand/react/shallow'
 import {useStatusStore} from '../store/status.js'
 import {useRoomStore} from '../store/room.js'
@@ -161,10 +160,8 @@ export const StatusBar: React.FC<StatusBarProps> = ({columns}) => {
 
   return (
     <Box>
-      {busy
-        ? <Text color={theme.status.busy}><Spinner type='dots' />{' '}</Text>
-        : <Text>{'  '}</Text>}
-      <Text color={connColor}>{connText}</Text>
+      <Text>{'  '}</Text>
+      <Text color={busy ? theme.status.busy : connColor}>{connText}</Text>
       {kept.map((seg) => (
         <React.Fragment key={seg.key}>
           <Text color={theme.muted}>{SEP}</Text>

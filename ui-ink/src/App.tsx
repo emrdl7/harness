@@ -1,10 +1,12 @@
 // App — D-01..D-04 레이아웃 + D-07..D-08 Ctrl+C/D (INPT-07)
 import React, {useCallback, useEffect, useRef, useState} from 'react'
-import {Box, Text, Static, useApp, useInput, useStdout} from 'ink'
+import {Box, Text, Static, useApp, useInput} from 'ink'
+import {useTerminalColumns} from './hooks/useTerminalColumns.js'
 import {useShallow} from 'zustand/react/shallow'
 import {useMessagesStore} from './store/messages.js'
 import {useStatusStore} from './store/status.js'
 import {useInputStore} from './store/input.js'
+import {useInputQueueStore} from './store/inputQueue.js'
 import {useConfirmStore, bindConfirmClient} from './store/confirm.js'
 import {useRoomStore} from './store/room.js'
 import {HarnessClient} from './ws/client.js'
@@ -19,6 +21,8 @@ import {ReconnectOverlay} from './components/ReconnectOverlay.js'
 import {ObserverOverlay} from './components/ObserverOverlay.js'
 import {SetupWizard} from './components/SetupWizard.js'
 import {NickPrompt} from './components/NickPrompt.js'
+import {ToolIndicator} from './components/ToolIndicator.js'
+import {QueueIndicator} from './components/QueueIndicator.js'
 
 // env var 우선 → config 파일 fallback
 function resolveConfig(): HarnessConfig | null {
@@ -39,12 +43,13 @@ function resolveConfig(): HarnessConfig | null {
 
 export const App: React.FC = () => {
   const {exit} = useApp()
-  const {stdout} = useStdout()
 
   const [cfg, setCfg] = useState<HarnessConfig | null>(resolveConfig)
 
   const {buffer} = useInputStore(useShallow((s) => ({buffer: s.buffer})))
   const busy = useStatusStore(useShallow((s) => s.busy))
+  const activeTool = useStatusStore((s) => s.activeTool)
+  const activeToolArgs = useStatusStore((s) => s.activeToolArgs)
   const confirmMode = useConfirmStore(useShallow((s) => s.mode))
   // Phase 3: wsState/activeIsSelf/activeInputFrom 구독 (WSR-02, REM-04)
   const wsState = useRoomStore((s) => s.wsState)
@@ -106,9 +111,8 @@ export const App: React.FC = () => {
     }
   })
 
-  // InputArea 의 onSubmit — WS 전송 + 메시지 표시
-  const handleSubmit = useCallback((text: string) => {
-    // DIFF-02: room 모드에서만 meta.author 추가 (Message.tsx author prefix 표시용)
+  // 실제 WS 송신 — sendNow(text) 형태로 분리하여 큐 flush 에서도 재사용
+  const sendNow = useCallback((text: string) => {
     const author = cfg?.room ? (cfg.nick || 'me') : undefined
     useMessagesStore.getState().appendUserMessage(text, {author})
     const client = clientRef.current
@@ -117,9 +121,29 @@ export const App: React.FC = () => {
     } else {
       useMessagesStore.getState().appendSystemMessage('(연결 안 됨 — HARNESS_URL / HARNESS_TOKEN 필요)')
     }
-  }, [])
+  }, [cfg])
 
-  const columns = stdout?.columns ?? 80
+  // InputArea 의 onSubmit — busy 분기 (AR-04)
+  // busy=false → 즉시 send. busy=true → 큐 enqueue (turn 종료 시 자동 flush)
+  const handleSubmit = useCallback((text: string) => {
+    if (busy) {
+      useInputQueueStore.getState().enqueue(text, 'steer')
+      useMessagesStore.getState().appendSystemMessage(`▸ 큐에 추가됨 (총 ${useInputQueueStore.getState().queue.length}건)`)
+      return
+    }
+    sendNow(text)
+  }, [busy, sendNow])
+
+  // AR-04: busy=true → false 전환 시 큐에서 다음 인풋 dequeue + send
+  useEffect(() => {
+    if (busy) return
+    const queue = useInputQueueStore.getState().queue
+    if (queue.length === 0) return
+    const next = useInputQueueStore.getState().dequeue()
+    if (next) sendNow(next.text)
+  }, [busy, sendNow])
+
+  const columns = useTerminalColumns()
 
   // 입력 영역 치환 우선순위 (03-UI-SPEC.md §치환 우선순위)
   // reconnecting > failed > confirm > observer > input
@@ -154,6 +178,8 @@ export const App: React.FC = () => {
   return (
     <Box flexDirection='column'>
       <MessageList/>
+      {busy && <ToolIndicator tool={activeTool} args={activeToolArgs} />}
+      <QueueIndicator />
       <Box marginY={1}>
         {inputArea}
       </Box>

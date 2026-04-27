@@ -65,7 +65,7 @@ describe('MessageList + Message', () => {
     const msg: MessageType = {id: 't1', role: 'tool', content: '[read_file] 완료', toolName: 'read_file'}
     const {lastFrame, unmount} = render(<Message message={msg}/>)
     const frame = lastFrame() ?? ''
-    expect(frame).toContain('✓')
+    expect(frame).toContain('⚙')
     expect(frame).toContain('[read_file] 완료')
     unmount()
   })

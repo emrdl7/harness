@@ -13,6 +13,34 @@ export function bindExit(fn: (() => void) | null): void {
   _exit = fn
 }
 
+// AR-02: 60fps 스트리밍 token coalescer
+// chunk 마다 set state 호출하면 Ink 재조정 폭주 → 한글 IME/긴 코드 깜빡거림.
+// 16ms 동안 chunk 누적 → trailing flush 1회만 set 호출.
+// agent_end / agent_cancelled / claude_end 등 turn 종료 이벤트 처리 직전엔 강제 flush — 토큰 손실 방지.
+const FLUSH_INTERVAL_MS = 16
+let _pendingTokens = ''
+let _flushTimer: ReturnType<typeof setTimeout> | null = null
+
+function scheduleFlush(): void {
+  if (_flushTimer) return
+  _flushTimer = setTimeout(() => {
+    _flushTimer = null
+    flushPendingTokens()
+  }, FLUSH_INTERVAL_MS)
+}
+
+export function flushPendingTokens(): void {
+  if (_flushTimer) {
+    clearTimeout(_flushTimer)
+    _flushTimer = null
+  }
+  if (_pendingTokens) {
+    const text = _pendingTokens
+    _pendingTokens = ''
+    useMessagesStore.getState().appendToken(text)
+  }
+}
+
 
 export function dispatch(msg: ServerMsg): void {
   const messages = useMessagesStore.getState()
@@ -28,18 +56,25 @@ export function dispatch(msg: ServerMsg): void {
 
   switch (msg.type) {
     case 'token':
-      messages.appendToken(msg.text)
+      // AR-02: 즉시 set 대신 16ms 윈도우에 누적 → trailing flush
+      _pendingTokens += msg.text
+      scheduleFlush()
       break
 
     case 'tool_start':
+      flushPendingTokens()   // AR-02: tool 경계 — 누적 중인 텍스트 먼저 표시
       messages.appendToolStart(msg.name, msg.args)
+      status.setActiveTool(msg.name, msg.args)
       break
 
     case 'tool_end':
+      flushPendingTokens()
       messages.appendToolEnd(msg.name, msg.result)
+      status.setActiveTool(null)
       break
 
     case 'agent_start':
+      flushPendingTokens()
       messages.agentStart()
       status.setBusy(true)
       // PEXT-01: from_self 필드로 관전 모드 판정 (undefined → true = 구버전 호환)
@@ -47,16 +82,18 @@ export function dispatch(msg: ServerMsg): void {
       break
 
     case 'agent_end':
-
+      flushPendingTokens()   // AR-02: turn 종료 — 잔여 token 보장
       messages.agentEnd()
       status.setBusy(false)
+      status.setActiveTool(null)
       break
 
     case 'agent_cancelled':
       // PEXT-05: 에이전트 실행 취소 알림 처리
-
+      flushPendingTokens()
       messages.agentEnd()
       status.setBusy(false)
+      status.setActiveTool(null)
       room.setActiveIsSelf(true)
       messages.appendSystemMessage('에이전트 실행이 취소되었습니다')
       break
@@ -196,12 +233,14 @@ export function dispatch(msg: ServerMsg): void {
       break
 
     case 'claude_end':
-
+      flushPendingTokens()   // AR-02
       status.setBusy(false)
       break
 
     case 'claude_token':
-      messages.appendToken(msg.text)
+      // AR-02: token 과 동일 coalesce 경로
+      _pendingTokens += msg.text
+      scheduleFlush()
       break
 
     default:
