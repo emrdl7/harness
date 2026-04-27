@@ -1,169 +1,96 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
-status: Milestone v1.0 완료
-last_updated: "2026-04-26T11:15:33.395Z"
+milestone: v1.1
+milestone_name: client-side-tool-execution
+status: Phase 1 context 작성 완료 (CONTEXT.md), planning 대기
+last_updated: "2026-04-27"
 progress:
   total_phases: 5
-  completed_phases: 3
-  total_plans: 14
-  completed_plans: 22
-  percent: 100
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
-# harness — ui-ink Milestone State
+# harness — v1.1 Client-side Tool Execution Milestone State
 
-**Last updated:** 2026-04-24
+**Last updated:** 2026-04-27
 
 ---
 
 ## Project Reference
 
-**See:** `.planning/PROJECT.md` (milestone 정의 · Validated · Active · Out of Scope · Key Decisions · Constraints)
-**Core Value:** "ui-ink 가 harness 의 기본이자 유일한 UI. 로컬과 원격이 동일한 경험을 갖고, 그 경험은 Claude Code 수준이다."
-**Current focus:** Phase 05 — Legacy Deletion + Milestone Closure
+**Milestone def:** `.planning/PROJECT.md` (v1.1)
+**Design ground truth:** `.planning/CLIENT-TOOLS-DESIGN.md`
+**Roadmap:** `.planning/ROADMAP.md` — 5 phase
+**Requirements:** `.planning/REQUIREMENTS.md` — RPC-01~06, BBR-01, SES-01, MCP-01, DOC-01
+
+**Core Value:** "사용자가 자기 PC 에서 ui-ink 를 띄우면, 자기 PC 코드를 자기 PC 도구로 작업한다. LLM 만 집 머신을 통한다. Claude Code 와 동일한 사용자 경험."
 
 ---
 
 ## Current Position
 
-Phase: 05 — COMPLETE
+**Phase 1 — rpc-skeleton** (RPC 골격 + read_file PoC)
 
-- **Phase:** 5
-- **Plan:** Complete (3/3)
-- **Status:** Milestone v1.0 완료
-- **Progress:** `[██████████████] 5/5 phases 완료 (100%)`
-- **Next action:** 다음 milestone 계획 시 `/gsd-new-project` 또는 `/gsd-discuss-phase` 실행
-
----
-
-## Phases
-
-| # | Name | Status | Plans |
-|---|------|--------|-------|
-| 1 | Foundation | Complete | 3/3 |
-| 2 | Core UX | Complete | 5/5 |
-| 3 | Remote Room + Session Control | Complete | 6/6 |
-| 4 | Testing + Docs + External Beta | Complete | 5/5 |
-| 5 | Legacy Deletion + Milestone Closure | Complete | 3/3 |
+- **Phase dir:** `.planning/phases/01-rpc-skeleton/`
+- **Status:** CONTEXT.md 작성 완료 (2026-04-27, Claude-driven, 사용자 위임)
+- **Progress:** `[              ] 0/5 phases (0%)`
+- **Next action:**
+  1. `/gsd-plan-phase 1` — 01-CONTEXT.md 기반으로 Phase 1 PLAN 생성
+  2. PLAN review → `/gsd-execute-phase 1`
 
 ---
 
-## Performance Metrics
+## Phases (v1.1)
 
-- **Requirements:** 85 v1 REQ-ID · 100% phase 매핑 완료
-- **Phases:** 5 (coarse granularity)
-- **Mode:** YOLO · Parallelization enabled
-- **Workflow toggles:** research ✓ · plan_check ✓ · verifier ✓ · ui_phase ✓ · ui_safety_gate ✓ · code_review ✓ · discuss_mode ✓
+| # | Slug | Status | CONTEXT | PLAN |
+|---|------|--------|---------|------|
+| 1 | rpc-skeleton | Context ready | ✓ | — |
+| 2 | fs-tools | Not started | — | — |
+| 3 | shell-git | Not started | — | — |
+| 4 | bb2-deletion-session | Not started | — | — |
+| 5 | mcp-cleanup | Not started | — | — |
 
 ---
 
-## Accumulated Context
+## Key Decisions (from PROJECT.md)
 
-### Key Decisions (from PROJECT.md)
-
-- UI 스택 = Node + Ink + Zustand + bun + TypeScript (Python 재현 불가 검증됨) — ✓ Validated
-- Legacy Python UI 전부 삭제 (Phase 5) — ✓ Validated
-- ui-ink = 로컬 + 원격 공통 UI — ✓ Validated
-- WS 프로토콜 확장은 같은 milestone 에서 자유롭게 (Phase 3 집결) — ✓ Validated
-- `harness_server.py` = 유일한 백엔드 경계 — ✓ Validated
-- Python 백엔드 유지 (UI 만 교체) — ✓ Validated
-
-### Background Issues (CONCERNS 잔여, 이번 milestone 범위)
-
-- §1.12 spinner vs Live (Python REPL) — **Phase 5 legacy 삭제와 함께 자동 소멸 예정**
-- §3 Architecture 잔여 7건 중 Python REPL 관련 — **Phase 5 에서 close 처리 예정**
-- §1.10 `run_command` shell-quoting — Ink 재작성과 독립, 이번 milestone 제외
-
-### Todos
-
-- [x] 05-01-PLAN.md 실행 — cli/ 삭제 + ui/index.js 삭제 + main.py 정리 (Wave 1)
-- [x] 05-02-PLAN.md 실행 — pytest + vitest 회귀 검증 (Wave 2)
-- [x] 05-03-PLAN.md 실행 — PROJECT.md Evolution + CONCERNS close + milestone 종료 (Wave 3)
-
-### Blockers
-
-(none)
-
-## Deferred Items
-
-Items acknowledged and deferred at milestone close on 2026-04-24:
-
-| Category | Item | Status |
-|----------|------|--------|
-| verification | Phase 01: 01-VERIFICATION.md | human_needed — 수동 항목 잔재, Phase 1 Complete 처리됨 |
-| verification | Phase 03: 03-VERIFICATION.md | human_needed — 수동 항목 잔재, Phase 3 Complete 처리됨 |
-| uat | Phase 03: 03-HUMAN-UAT.md SC-2 Presence | deferred — 멀티 터미널 환경 필요, 다음 milestone 검증 |
+- 운영 모델 = Claude Code 셀프호스팅 (1인 1세션) — 사용자 발화 2026-04-27
+- 도구 위치: fs/shell/git/MCP = 클라, web/claude_cli/improve = 서버
+- BB-2 코드 전체 deletion (Phase 4) — 사용자 발화 *"같은 방에서 만날 필요 자체가 없다. 메신저 좋다"*
+- RPC = WS 위임 (별도 transport 아님). call_id correlation + asyncio.Future
+- Python 측 도구 deletion = phase 별 즉시 (CLAUDE.md "legacy 삭제 default")
+- RX-02 세션 = 클라 단독 `./.harness/sessions/` (Phase 4 에서 이전)
 
 ---
 
 ## Session Continuity
 
-### Last session summary
+### Last session summary (2026-04-27)
 
-- `/gsd-plan-phase 1` 실행 → Phase 1 플랜 3개 생성 완료. 검증 통과 (0 blocker, 0 warning).
-- Plan A (Wave 1): 의존성 bump (ink@7/react@19.2/zustand@5), tsconfig, ESLint, CI 가드 — FND-01,02,09,10,11
-- Plan B (Wave 1, 병렬): WS 프로토콜 교정, protocol.ts, ws/ 모듈, store 5 슬라이스 — FND-03..08
-- Plan C (Wave 2): 하드닝, vitest 4종, end-to-end 스모크 — FND-12..16
-- 이전: `/gsd-new-project` 실행 · 85 REQ-ID · ROADMAP 5 phase · BB-1/BB-2 완료.
-
-### Last session summary (2026-04-24)
-
-- Phase 2 Plan E (Wave 3) 전체 완료:
-  - E-1: Message.tsx cli-highlight 코드 펜스 하이라이트 통합 (RND-06) — a207536
-  - E-2: ToolCard.test.tsx 5건 추가 (Space/Enter 토글 TDD) — 6ed2d1a
-  - E-3: StatusBar CtxMeter 서브컴포넌트 격리 (RND-09) — bb3ad6c
-  - E-4: vitest 120/120 + tsc + lint + ci-no-escape 전 게이트 통과 — bd3bac2
-  - E-5: Phase 2 SC-1~SC-6 수동 검증 전원 APPROVED (2026-04-24)
-    - SC-1: 스트리밍/scrollback/resize — approved
-    - SC-2: MultilineInput — approved (Shift+Enter Terminal.app 한계, Ctrl+J 대체 확인)
-    - SC-3: SlashPopup — approved (App.tsx 배선 수정 + ↑↓ 패스스루 버그픽스 후 동작)
-    - SC-4~SC-6: 자동 테스트(120/120)로 커버, approved
-- **Phase 2 완료** — INPT-01..10, RND-01..11, CNF-01..05, STAT-01..02 전 요구사항 충족
-
-### Last session summary (2026-04-24 — Phase 3 Planning)
-
-- `/gsd-plan-phase 3` 실행 → Phase 3 플랜 6개 생성 완료. 검증 통과 (0 blocker, 0 warning after revision).
-- Research: harness_server.py Room/broadcast 구조 이미 구현됨 확인. room_joined 프로토콜 불일치(members 타입) 발견 및 플랜에 반영.
-- 03-01 (Wave 1): 서버 PEXT-01~03 — Room event_id ring buffer + _broadcast_agent_start() + confirm_write old_content
-- 03-02 (Wave 1, 병렬): 서버 PEXT-04~05 + SES-02 서버측 — resume_from delta replay + cancel _cancel_requested 플래그 + x-resume-session 헤더
-- 03-03 (Wave 2): 클라이언트 protocol 타입 + store/room.ts + dispatch 확장 (members 불일치 수정 포함)
-- 03-04 (Wave 2, 병렬): userColor.ts + PresenceSegment + ReconnectOverlay + ObserverOverlay 4개 신규 컴포넌트
-- 03-05 (Wave 3): HarnessClient jitter backoff (WSR-01~03) + one-shot.ts + index.tsx argv (SES-01~03)
-- 03-06 (Wave 4, 수동 체크포인트): App.tsx 치환 우선순위 배선 + StatusBar/Message/DiffPreview + SC-1~SC-7 수동 검증
-
-### Last session summary (2026-04-24 — Phase 4 Planning)
-
-- `/gsd-plan-phase 4 --skip-ui` 실행 → Phase 4 플랜 5개 생성 완료. 검증 통과 (0 blocker, 0 warning).
-- Research 스킵 (Phase 1~3에서 패턴 확립, CONTEXT.md에 상세 방향 기술됨)
-- 패턴 매퍼 실행: ws-backoff.test.ts → integration.*.test.ts analog, protocol.ts → PROTOCOL.md analog 확인
-- 04-01 (Wave 1): Fake WS 서버 통합 테스트 — agent 턴 · **CR-01 자동 발견** · room busy · 3인 동시 재접속 · reconnect delta · REM-06 (TST-02)
-- 04-02 (Wave 1, 병렬): CI matrix — ubuntu+macOS × bun+Node22 (TST-04)
-- 04-03 (Wave 2): 단위 테스트 보완 + 회귀 스냅샷 4종 (TST-01, TST-03)
-- 04-04 (Wave 3): 문서 3종 — CLIENT_SETUP.md 재작성 + PROTOCOL.md 신규 + RELEASE_NOTES.md (TST-06, TST-07, TST-09)
-- 04-05 (Wave 3, checkpoint): CR-01 서버 수정 + PITFALLS 17항목 체크리스트 (TST-05, TST-08)
-
-### Last session summary (2026-04-24 — Phase 4 완료)
-
-- Phase 4 UAT 11/11 통과 (vitest 163건 · tsc · guard · ci:no-escape · CI yml · pytest 260건 · 문서 3종 · PITFALLS · CR-01 수정)
-- Phase 4 보안 검토 완료: 14/14 위협 closed (T-04-01~14) — 04-SECURITY.md 생성
-- Phase 4 → Complete 전환. ROADMAP.md + STATE.md 업데이트.
-
-### Last session summary (2026-04-24 — Phase 5 Planning)
-
-- `/gsd-plan-phase 5` 실행 → Phase 5 플랜 3개 생성 완료.
-- Wave 구조: Wave 1(05-01 삭제) → Wave 2(05-02 검증) → Wave 3(05-03 문서 종료)
-- 05-01 (Wave 1): cli/ 모듈 7종 + ui/index.js + main.py REPL 경로 삭제 (LEG-01~03)
-- 05-02 (Wave 2): pytest + vitest 회귀 검증 + 환경 위생 grep 5종 (LEG-04~05)
-- 05-03 (Wave 3): PROJECT.md Evolution Validated 이동 + CONCERNS §1.12/§3.1/§3.5 close + ROADMAP/STATE milestone 종료 (LEG-06~08)
+- v1.0 milestone 종료 후 사용자 정정: PROJECT.md 의 "백엔드 공유" 가 "Claude Code 처럼" 의 잘못된 의역. 도구 실행이 서버 측에서 도는 게 외부 사용자 시나리오 미충족
+- BB-2 (Room/broadcast/presence) 도 사용자 요구 외 — *"되네?" 하면서 지켜본 것뿐, 같은 방에서 만날 필요 자체가 없다*
+- v1.1 milestone 신설 — Client-side Tool Execution. 5 phase 구조 확정
+- 작성: `.planning/CLIENT-TOOLS-DESIGN.md` (245줄), `.planning/PROJECT.md` (v1.1 본문 재작성), `.planning/ROADMAP.md`, `.planning/REQUIREMENTS.md` (9개 REQ-ID), `CLAUDE.md` (Operating Model 갱신)
+- Archive: v1.0 phase 디렉토리 5개 → `.planning/archive/v1.0-phases/`
+- 신설: v1.1 phase 디렉토리 5개 (01-rpc-skeleton ~ 05-mcp-cleanup)
+- Memory: `project_harness_v11_pivot.md` 추가 (사용자 발화 4개 인용)
+- Phase 1 CONTEXT.md 작성 (Claude-driven, 사용자 *"니가 알아서 해라"* 위임)
 
 ### Next session should
 
-1. Phase 5 실행: `/gsd-execute-phase 5` (Legacy Deletion + Milestone Closure)
-2. Wave 1 (05-01): cli/ 삭제 → ui/index.js 삭제 → main.py 정리
-3. Wave 2 (05-02): pytest 회귀 검증 → vitest 검증 → 환경 위생 grep
-4. Wave 3 (05-03): PROJECT.md Evolution 업데이트 → CONCERNS close → milestone 종료
+1. `/gsd-plan-phase 1` — 01-CONTEXT.md 의 D-01~D-19 결정을 PLAN 으로 변환
+2. PLAN 검토 후 `/gsd-execute-phase 1`
+3. Phase 1 의 D-19 수동 검증 — 외부 PC ui-ink → `read_file` → 외부 PC 파일이 LLM 컨텍스트에 들어가는지 확인
+
+---
+
+## v1.0 (closed 2026-04-24)
+
+archive: `.planning/milestones/v1.0-ROADMAP.md`, `.planning/milestones/v1.0-REQUIREMENTS.md`, `.planning/archive/v1.0-phases/`
+delivered: ui-ink UI 재작성, 85 REQ-ID, pytest 224건+vitest 163건 green
+v1.1 정정 항목: 협업 모델 ("백엔드 공유" → "모델 공유"), BB-2 deletion 확정
 
 ---
 

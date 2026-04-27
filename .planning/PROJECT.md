@@ -1,97 +1,93 @@
-# harness — Ink UI 재작성 milestone
+# harness — Client-side Tool Execution milestone (v1.1)
 
 ## What This Is
 
-harness 는 로컬 Ollama(`qwen2.5-coder:32b` 등) 기반의 Claude Code 풍 터미널 에이전트이다. 집 머신에 `harness_server.py` 를 상시 구동해두고, 로컬 사용자 + 외부 원격 2인이 각자 장비에서 접속해 하나의 백엔드를 공유한다. 이번 milestone 은 **UI 층을 Python(prompt_toolkit + Rich)에서 Node + Ink + Zustand + bun + TypeScript 로 전면 재작성** 해 로컬·원격이 동일한 ui-ink 클라이언트를 쓰도록 통일한다.
+harness 는 **Claude Code 셀프호스팅** 터미널 에이전트이다. 집 머신에 LLM 서버(`harness_server.py` + MLX/Ollama)를 상시 구동해두고, 각 사용자가 자기 PC 에서 ui-ink 클라이언트를 띄워 그 LLM 을 사용한다. 도구 실행(파일/쉘/git)은 **각 사용자 자기 PC** 에서 일어난다 — Claude Code 가 Anthropic 서버 파일을 만지지 않고 사용자 로컬 머신을 만지는 것과 동일한 모델.
+
+이번 milestone(v1.1)은 v1.0 의 잘못된 "백엔드 공유" 모델 — 도구가 서버 측에서 도는 — 을 **Claude Code 셀프호스팅 모델** 로 정정한다. 도구 실행을 클라이언트 측으로 이전하고, 사용자 요구가 아니었던 BB-2 협업 인프라(Room/broadcast/presence)는 일괄 제거한다.
 
 ## Core Value
 
-**"ui-ink 가 harness 의 기본이자 유일한 UI. 로컬과 원격이 동일한 경험을 갖고, 그 경험은 Claude Code 수준이다."**
+**"사용자가 자기 PC 에서 ui-ink 를 띄우면, 자기 PC 의 코드를 자기 PC 의 도구로 작업한다. LLM 만 집 머신을 통한다. Claude Code 와 동일한 사용자 경험."**
 
-이 한 문장이 우선순위 판단 기준이다. 백엔드 기능 추가·진화 엔진 개선 등이 이 목표와 충돌하면 뒤로 미룬다. 반대로 UI 요구가 백엔드 프로토콜 변경을 요구하면 같은 milestone 에서 처리한다.
+## Operating Model (확정)
+
+- **1인 1세션** — 1 ws ↔ 1 session ↔ 1 working_dir (사용자 자기 PC)
+- **LLM** = 서버 PC (집 머신 MLX/Ollama). 멀티 테넌트 (N 사용자 동시 접속, 컨텍스트 격리)
+- **도구** (fs/shell/git/MCP) = 사용자 자기 PC. 서버는 RPC 로 위임
+- **도구 (서버 측)** = `search_web`/`fetch_page`/`claude_cli`/`improve` — 외부망/API/자기수정 일관성
+- **협업** = 사용자 요구 외. 외부 메신저(슬랙/디스코드) 책임. harness 안에 Room/broadcast/presence 없음
 
 ## Requirements
 
-### Validated
+### Validated (이전 milestone v1.0 산출물 중 v1.1 에서 그대로 사용)
 
-<!-- 기존 코드로 이미 동작하고 신뢰 가능한 기능. 이번 milestone 에서 건드리지 않거나 인터페이스만 맞춘다. -->
+- ✓ Ollama/MLX 기반 agent 루프 (`agent.py`) — 툴 콜 · reflection · MAX_TOOL_RESULT_CHARS — existing
+- ✓ ui-ink 코어 UX — 입력/스트리밍 렌더/슬래시 popup/confirm 다이얼로그/StatusBar/스크롤 — Phase 1~3 (v1.0)
+- ✓ Tool 결과 렌더 (V1+V2) — BashBlock/GrepResultBlock/ListFilesBlock/ReadFileBlock/FileEditBlock/GitLogBlock/WebSearchBlock + R1~R5 자동 컬러링 (v1.0 종료 후)
+- ✓ AR-01 tool registry · AR-02 60fps coalescer · AR-04 input queue · IX-01 `@` 파일 픽커 · RX-01 context auto-compact · RX-02 simple session — UI-RENDER-PLAN.md 참조
+- ✓ 배포 하드닝 — `HARNESS_TOKENS` · `HARNESS_BIND=127.0.0.1` · shell classifier · fs sandbox · `run_python` confirm — existing
+- ✓ MLX 백엔드 (`mlx_lm.server` qwen3.6 27B 4bit) — 서버 시작 시 자동 스폰 — 2026-04-26
 
-- ✓ Ollama 기반 agent 루프 (`agent.py`) — 툴 콜 · reflection · MAX_TOOL_RESULT_CHARS — existing
-- ✓ 툴 레이어 (`tools/fs.py · shell.py · git.py · web.py · claude_cli.py` 외) — 샌드박스 + shell 인젝션 방어 포함 — existing
-- ✓ 세션 저장/복원 (`session/store.py · compactor.py · logger.py · analyzer.py`) — existing
-- ✓ 진화 엔진 (`evolution/*`) — idle_runner · proposer · executor · scorer · tracker. 원격 활성 시 skip, git 커밋 강제 — existing
-- ✓ `harness_core/` (13/14 슬래시 명령 · SlashContext · dispatch) — BB-1 — existing
-- ✓ `harness_server.py` WS 서버 — 다중 방(Room) · turn-taking · confirm 격리 · state snapshot · `/who` — BB-1, BB-2 — existing
-- ✓ 배포 하드닝 — `HARNESS_TOKENS` · `HARNESS_BIND=127.0.0.1` 기본 · shell classifier · fs sandbox · `run_python` confirm 강제 — existing
-- ✓ `ui-ink/` 에 모든 핵심 UX 구현 — 입력 · 슬래시 · confirm 다이얼로그 · tool 결과 렌더 · status bar · 스크롤 · 리모트 룸 · one-shot/resume — Phase 1~3
-- ✓ 멀티라인 입력 (Enter=제출 / Shift+Enter=개행) + 슬래시 자동완성 popup — Phase 2
-- ✓ `confirm_write` · `confirm_bash` 전용 다이얼로그 (diff Panel · 코드 미리보기 · y/n) — Phase 2
-- ✓ Tool 결과 렌더 (diff hunks · 코드 펜스 Syntax highlight · Write 요약) — Phase 2
-- ✓ Status bar 세그먼트 — path · model · turn · mode · ctx · room presence — Phase 2
-- ✓ 스크롤 지원 — PgUp/PgDn, 마우스 휠, scrollback 유지 (alternate screen 금지) — Phase 2
-- ✓ 리모트 룸 UX — 멤버 목록, busy 표시, 입력 주체 시각화, 새 join 시 snapshot 로드 — Phase 3
-- ✓ One-shot (`harness "질문"`) 과 resume (`harness --resume <id>`) 모드 — Phase 3
-- ✓ 원격 2인도 ui-ink 를 공식 클라이언트로 사용 (`bun run` 또는 배포 번들) — `ui/index.js` 완전 대체 — Phase 3
-- ✓ WS 프로토콜 명세 문서화 + 확장 5건 (PEXT-01~05) — Phase 3~4
-- ✓ **Legacy UI 삭제** — `main.py` REPL 경로 · `cli/tui.py` · `cli/app.py` · `ui/index.js` — Phase 5
-- ✓ ui-ink 자체 테스트 스캐폴드 (vitest 163건) — REPL 피처 동등 + 회귀 가드 — Phase 4
+### Active (v1.1 신규)
 
-### Active
-
-(없음 — milestone 완료)
+- RPC-01 — WS 프로토콜에 `tool_request` / `tool_result` 추가, 서버 측 `room.pending_calls`(또는 `session.pending_calls`) 도입
+- RPC-02 — `agent.py` 의 도구 dispatch 분기 — 클라 위임 도구 vs 서버 도구. 첫 PoC = `read_file`
+- RPC-03 — ui-ink 측 `tools/registry.ts` + `tools/fs.ts shell.ts git.ts` (Bun child_process 기반)
+- RPC-04 — Confirm 플로우 클라 측 통합 — 다이얼로그 → 사용자 응답 → 클라 도구 실행 (BB-2 broadcast 없음)
+- RPC-05 — pytest fs/shell/git 케이스를 vitest 동등 변환 (~70건 추정)
+- RPC-06 — `tools/fs.py` `tools/shell.py` `tools/git.py` 삭제 + pytest 삭제 (CLAUDE.md "legacy 삭제 default")
+- BBR-01 — BB-2 코드 일괄 deletion: `harness_server.py` Room/broadcast/active_input_from/snapshot/who, ui-ink `PresenceSegment`/`ReconnectOverlay`/`ObserverOverlay`/`store/room.ts`, `protocol.ts` room_*, `--room`/`HARNESS_ROOM` env, 관련 pytest/vitest, `BB-2-DESIGN.md` archive
+- SES-01 — RX-02 세션 위치 = 서버 측 → 클라 측 `./.harness/sessions/` 로 이전
+- MCP-01 — `tools/mcp.py` → ui-ink 측 (sidecar 또는 직접). `~/.harness/mcp.json` 정의 위치 = 클라 측
+- DOC-01 — PROTOCOL.md 갱신 (RPC 추가, room_* 제거), CLIENT_SETUP.md 갱신 (--room 제거, 1인 1세션 명시)
 
 ### Out of Scope
 
-<!-- 이번 milestone 에서 의도적으로 제외. 이유가 반드시 따라붙는다. -->
-
-- Textual · curses · urwid 등 Python 풀스크린 TUI — **Claude Code 급 UX 를 Python 으로 재현 불가** 가 2026-04-23 세션 전반에서 검증됨. 영구 봉인.
-- Python UI 층 유지/병존 — **에이전트가 old/new 혼동하는 사고가 반복** 되어 사용자가 명시적으로 "legacy 유지 금지" 요청.
-- Electron / 웹 UI / 브라우저 클라이언트 — 터미널 네이티브 UX 가 목표이므로 이번 milestone 밖.
-- 바이너리 배포 · 자동 업데이트 · Homebrew 탭 — 외부 사용자 2인은 `git clone` 전제, 배포 편의성은 다음 milestone 후보.
-- 백엔드 언어 교체 (Python → TS 등) — UI 만 Ink, 백엔드는 Python 유지. 한 번에 하나씩.
-- 진화 엔진 대규모 개편 — 필요시 소규모 수정은 허용하되 프로젝트 목표 아님.
-- Claude API 직접 호출 — `tools/claude_cli.py`(Claude CLI `--print` 위임) 이 이미 충분.
+- **협업 기능** (Room/broadcast/presence/공동 컨텍스트) — 사용자가 명시: *"같은 방에서 만날 필요 자체가 없다. 메신저 좋다"* (2026-04-27). 협업이 필요하면 외부 메신저 사용
+- **PTY 기반 shell** — `run_command` 는 simple spawn 시작. PTY 는 v1.2+ 후보
+- **Anthropic API 직접 호출** — `tools/claude_cli.py` (Claude CLI `--print` 위임) 유지
+- **바이너리 배포 / 자동 업데이트 / Homebrew 탭** — 외부 사용자는 `git clone + bun install + bun start` 전제
+- **백엔드 언어 교체** (Python → TS 등) — 클라 측 도구만 TS, 서버 측 agent/세션/web/improve 은 Python 유지
+- **진화 엔진 대규모 개편** — 별도 milestone
 
 ## Context
 
 **기술 환경**
-- Python 3.14 venv (프리릴리스) · Ollama 로컬 · websockets 16 · Rich · prompt_toolkit (Python REPL 은 이번 milestone 에서 삭제 예정)
-- 신규: bun · TypeScript · React (via Ink) · Zustand · Yoga layout · chalk · open source Ink ecosystem
-- 집 머신 = 상시 서버 / 외부 2인 = `bun run` 클라이언트 + `HARNESS_TOKENS` 토큰 + `HARNESS_URL` WS 주소 + `HARNESS_ROOM` 룸 이름
+- Python 3.14 venv + websockets 16 + asyncio · MLX/Ollama (집 머신 LLM)
+- ui-ink: bun + TypeScript + React (Ink) + Zustand · Bun child_process (도구 실행)
+- 1 사용자 = 1 ws = 1 session = 1 working_dir (자기 PC). 서버는 N session 동시 보유
 
-**누적 결정 (이전 세션들)**
-- BB-1 (harness_core) 완료 — 슬래시 명령 13/14 가 main 과 server 양쪽에서 동일 로직 공유
-- BB-2 (공유 룸) 완료 — 여러 WS 가 한 `Room` 을 공유, turn-taking, confirm 격리, state snapshot, `/who`
-- 배포 하드닝 체크리스트 전부 체크 완료 — 서버 거부/바인딩/샌드박스/shell 분류/자가수정 git commit
-- `main.py` 분할(§3.1) 완료 — 1666 → 515 줄. `cli/intent · render · claude · setup · callbacks · slash` 로 모듈화. **이번 milestone 에서 `main.py` 자체가 삭제 대상이므로 위 모듈들의 운명도 함께 결정 필요.**
-- Ink 방향 전환(2026-04-23) — Python prompt_toolkit Application + patch_stdout 시도가 Claude Code UX 재현에 실패 (prompt_toolkit renderer 가 wrap 추적 불가) → 스택 교체 결론
+**누적 결정 (이전 milestones)**
+- v1.0 (2026-04-22 → 2026-04-24) — UI 층 Python → ui-ink 재작성. **단, 협업 모델을 "백엔드 공유" 로 잘못 옮긴 결과 도구가 서버 측에서 동작 → v1.1 에서 정정**
+- BB-1 (harness_core) — 슬래시 명령 코어 분리. 1인 1세션 모델에서도 그대로 사용 가능
+- BB-2 (Room) — **v1.1 에서 폐기 확정** (사용자 요구 아니었음, 메신저로 대체)
+- MLX 마이그레이션 — Ollama → mlx_lm.server. 서버 시작 시 자동 스폰
 
-**알려진 배경 이슈 (CONCERNS 잔여)**
-- §1.10 `run_command` shell-quoting Edge — sticky-deny 로 부분 완화. Ink 재작성과 독립이므로 이번 milestone 에선 건드리지 않음.
-- §1.12 spinner vs Live — Python REPL 버그. **legacy 삭제와 함께 자동 소멸.**
-- §3 Architecture 잔여 7건 — 대부분 Python REPL 관련 리팩터. **legacy 삭제로 자동 처리되는 항목 검토 필요.**
-- CONCERNS · ENHANCEMENTS 전체는 `.planning/codebase/` 에 보존됨. 참조만 하고 이번 milestone 에 끌어오진 않음.
+**알려진 배경 이슈**
+- v1.0 PROJECT.md 의 "하나의 백엔드 공유" 표현이 사용자 의도("LLM 만 공유, 도구는 각자 PC")와 어긋났던 것이 v1.1 milestone 의 트리거
+- `.planning/CLIENT-TOOLS-DESIGN.md` — 본 milestone 의 ground truth design doc
 
 ## Constraints
 
-- **Tech stack**: UI = Node 20+ · bun · TypeScript · Ink(React) · Zustand. 백엔드는 Python 3.14 유지. 두 스택이 섞이지 않도록 디렉토리 경계 명확.
-- **Compatibility**: `harness_server.py` WS 프로토콜은 **기존 이벤트 타입을 깨지 않고 확장** (신규 필드 추가 OK, 기존 필드 의미 변경 금지). 서버 버전과 ui-ink 버전이 일정 기간 호환 유지.
-- **Deployment**: 외부 2인이 `git clone + bun install + bun start` 로 실행 가능해야 함. 패키지 매니저 전제 = **bun** (npm/pnpm 혼재 금지).
-- **Security**: 토큰 = `HARNESS_TOKENS` 환경변수. ui-ink 는 토큰을 파일에 저장하지 않음 (env var 또는 대화형 입력). `HARNESS_BIND` 외부 노출은 명시적 opt-in 유지.
-- **Dependency discipline**: Ink 생태계에서 small, well-maintained 패키지 선호. `ink-select-input`, `ink-text-input`, `ink-spinner` 등 공식 wrapper 우선. 자체 작성은 명확한 이유가 있을 때만.
-- **Terminal UX 원칙**: alternate screen 사용 금지. 터미널 scrollback 유지 (사용자가 Cmd+C 로 과거 출력 복사 가능). 이건 Claude Code 와 동일한 핵심 UX.
-- **Testing**: Python 백엔드 pytest 회귀 0. Ink 는 bun test 또는 vitest + ink-testing-library. Ink 쪽 테스트 부재 = 블로커로 승격.
+- **Tech stack**: 서버 = Python 3.14 (도구 일부만 잔존, fs/shell/git 은 클라). 클라 = bun + TS + Ink + Zustand
+- **Compatibility**: WS 프로토콜은 RPC 추가 + room_* 제거. 기존 클라이언트 호환 안 됨 = `harness_server.py` ↔ ui-ink 동시 갱신
+- **Deployment**: 사용자 = `git clone + bun install + bun start`. 서버 운영자 = `git clone + .venv + python harness_server.py`. 둘이 별도 PC 가능
+- **Security**: `HARNESS_TOKENS` 멀티유저 인증 유지. `HARNESS_BIND` 외부 노출은 명시적 opt-in. 도구 실행이 클라 측이라 서버는 더 이상 사용자 fs 와 직접 접촉 안 함
+- **Confirm**: 클라 측 자체 다이얼로그. 서버는 "이 도구 호출 허용?" 메타도 안 묻고 그냥 tool_request 보냄. 클라가 자기 사용자에게만 묻고 결정
+- **RPC 신뢰성**: 타임아웃 30s 기본, run_command 별도. 클라 disconnect 시 pending tool calls 일괄 cancel
+- **Testing**: Python pytest 회귀 0 (fs/shell/git deletion 분 제외). ui-ink vitest 회귀 0 + RPC-* 신규 케이스 추가
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| UI 스택 = Node + Ink + Zustand + bun + TS | Claude Code 본체와 동일 스택. Python(prompt_toolkit/Rich)로 재현 불가 검증됨. | ✓ Validated — Phase 1~5 완료 |
-| Legacy Python UI 전부 삭제 (`main.py` REPL · `cli/tui.py` · `cli/app.py` · `ui/index.js`) | 사용자 명시: "기존 코드 유지해보니까 gsd나 다른 에이전트들이 헷깔리는 경우가 상당히 많음". 새 구현이 old 를 대체할 때 old 를 남기지 않는다. | ✓ Validated — Phase 5 완료 |
-| ui-ink 가 로컬 + 원격 공통 UI | "외부 원격 클라이언트 또한 동일 ui로 사용해야 함" 사용자 결정. 유지 비용 절반. | ✓ Validated — Phase 1~5 완료 |
-| WS 프로토콜 확장은 같은 milestone 에서 자유롭게 | UI 요구에 맞춰 한 번에 정리. 이후 drift 최소화. | ✓ Validated — Phase 5 완료 |
-| `harness_server.py` = 유일한 백엔드 경계 | CLI/원격 이분이 없어짐. server 하나만 유지하면 됨. | ✓ Validated — Phase 5 완료 |
-| Python 백엔드(agent/tools/session/evolution/core) 유지 | UI 만 교체. 한 번에 하나씩. 백엔드 교체는 별도 milestone 후보. | ✓ Validated — Phase 5 완료 |
+| 운영 모델 = Claude Code 셀프호스팅 (1인 1세션) | 사용자 발화 *"Claude Code 가 어디 Anthropic 서버 파일 수정하냐"* (2026-04-27). v1.0 의 "백엔드 공유" 는 잘못된 의역 | v1.1 진행 중 |
+| 도구 실행 위치 = 클라 (fs/shell/git/MCP) + 서버 (web/claude_cli/improve) | LLM 한테 자기 PC 코드 작업시키는 게 목적. 외부망/자기수정만 서버 측 일관성 | v1.1 진행 중 |
+| BB-2 코드 전체 deletion | 사용자 발화 *"같은 방에서 만날 필요 자체가 없다. 메신저 좋다"* (2026-04-27). 사용자 요구 아니었음 | v1.1 진행 중 |
+| RPC = WS 위임 (별도 transport 아님) | 기존 WS 채널 재사용. call_id correlation + asyncio.Future | v1.1 진행 중 |
+| Python 측 도구 deletion 시점 = 즉시 (phase 별) | CLAUDE.md "legacy 삭제 default". dual-stack 유지 비용 > 일시 회귀 위험 | v1.1 진행 중 |
+| RX-02 세션 = 클라 측 단독 | 서버는 사용자 PC fs 모름. session 메타도 사용자 PC 에 둠 | v1.1 진행 중 |
 
 ## Evolution
 
@@ -112,26 +108,33 @@ This document evolves at phase transitions and milestone boundaries.
 
 ---
 
-## Milestone Closure
+## Previous Milestone Closure — v1.0 (ui-ink UI 재작성)
 
 **Milestone:** v1.0 — ui-ink UI 재작성
 **Completed:** 2026-04-24
 **Phases:** 5/5 완료
 
-### 달성 요약
+### 달성
 
-- ui-ink 가 harness 의 기본이자 유일한 UI 로 확정 (Core Value 달성)
-- 로컬 + 원격 2인 = 3 클라이언트가 동일한 ui-ink 클라이언트 사용
-- Python prompt_toolkit UI 전수 삭제 — 에이전트 혼동 원인 제거
-- 85/85 v1 REQ-ID 전부 구현 완료
-- WS 프로토콜 확장 5건(PEXT-01~05) stable
-- Python pytest 224건 + ui-ink vitest 163건 전 케이스 green
+- ui-ink 가 harness 의 기본이자 유일한 UI (UI 층 Python → bun+TS+Ink 전면 재작성)
+- 85/85 v1 REQ-ID 구현
+- WS 프로토콜 확장 5건 (PEXT-01~05)
+- Python pytest 224건 + ui-ink vitest 163건 green
+- Python prompt_toolkit UI 5,440줄 deletion
 
-### 다음 milestone 후보
+### v1.1 에서 정정/폐기되는 항목
 
-- 바이너리 배포 (bun build --compile 단일 실행파일)
-- 백엔드 언어 교체 검토 (별도 milestone)
-- 진화 엔진 개편 (별도 milestone)
+- **"하나의 백엔드 공유" 협업 모델** — 사용자 의도 *"Claude Code 처럼"* 의 잘못된 의역. v1.1 에서 1인 1세션 + LLM 만 공유로 정정
+- **BB-2 (Room/broadcast/presence/active_input_from/snapshot/who)** — 사용자 요구 아니었음 (*"되네?" 하면서 지켜본 것뿐, 같은 방에서 만날 필요 자체가 없다*). v1.1 에서 일괄 deletion
+- **PROTOCOL.md room_\* 메시지** — RPC 신설 + room_* 제거로 갱신
+
+### 그대로 유지
+
+- ui-ink 코어 UX 컴포넌트 (Message/Input/Slash/Confirm/StatusBar/Scrollback)
+- AR-01 tool registry, V1 의 R1~R5/T1~T6 시각화 (BB-2 와 독립)
+- harness_core 슬래시 명령 13/14 (1인 세션에서도 동등 동작)
+- MLX 백엔드 마이그레이션
+- 배포 하드닝 체크리스트
 
 ---
-*Last updated: 2026-04-24 — milestone v1.0 완료*
+*Last updated: 2026-04-27 — v1.1 milestone 시작*
