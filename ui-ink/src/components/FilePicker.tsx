@@ -4,6 +4,7 @@
 import React from 'react'
 import {Box, Text, useInput} from 'ink'
 import SelectInput from 'ink-select-input'
+import {useShallow} from 'zustand/react/shallow'
 import {useFileListStore} from '../store/files.js'
 
 interface SelectItem {
@@ -52,11 +53,13 @@ function shortLabel(path: string): string {
 }
 
 export const FilePicker: React.FC<FilePickerProps> = ({query, onSelect, onClose}) => {
-  const {files, loaded, request} = useFileListStore((s) => ({
+  // useShallow 필수 — selector 가 새 객체 반환하면 zustand 가 매 렌더 리렌더 강제 → 무한 루프.
+  // CLAUDE.md 의 '전체 store selector 금지' + 동일 가드.
+  const {files, loaded, request} = useFileListStore(useShallow((s) => ({
     files: s.files,
     loaded: s.loaded,
     request: s.request,
-  }))
+  })))
 
   // 첫 진입 시 1회 요청 — 이미 캐시 있으면 noop
   React.useEffect(() => {
