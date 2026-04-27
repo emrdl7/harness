@@ -1,5 +1,7 @@
-// InputArea — MultilineInput 과 SlashPopup 을 묶는 컨테이너
-// D-11: SlashPopup 은 InputArea "위쪽" 에 표시 → flexDirection='column' 에서 SlashPopup 먼저 렌더
+// InputArea — MultilineInput 과 SlashPopup/FilePicker 를 묶는 컨테이너
+// 자식 순서: MultilineInput → SlashPopup → FilePicker (popup 들이 input 아래로 표시)
+//   이전엔 popup 이 input 위였지만 입력창 위치가 popup 등장/사라짐에 따라
+//   요동치는 UX 문제로 input 을 위에 고정하고 popup 을 아래로 변경.
 // 본 Plan 은 실제 WS 송신이나 messages store push 를 수행하지 않음
 // onSubmit 은 상위(App.tsx) 가 WS 송신을 처리함
 import React from 'react'
@@ -100,6 +102,7 @@ export const InputArea: React.FC<InputAreaProps> = ({onSubmit, disabled}) => {
 
   return (
     <Box flexDirection='column' width={columns} paddingY={0} paddingX={2} borderStyle="single" borderLeft={false} borderRight={false} borderColor="gray">
+      <MultilineInput onSubmit={onSubmit} disabled={disabled} />
       {slashOpen && (
         <SlashPopup
           query={slashQuery}
@@ -114,7 +117,6 @@ export const InputArea: React.FC<InputAreaProps> = ({onSubmit, disabled}) => {
           onClose={handleFileClose}
         />
       )}
-      <MultilineInput onSubmit={onSubmit} disabled={disabled} />
     </Box>
   )
 }
