@@ -26,7 +26,7 @@ from session.analyzer import summarize_session, build_learn_prompt
 from tools.improve import backup_sources, validate_python, read_sources, list_backups, restore_backup, HARNESS_DIR
 import evolution
 from tools.claude_cli import ask as claude_ask, is_available as claude_available
-from session.compactor import needs_compaction, compact
+from session.compactor import needs_compaction, compact, estimate_chars
 
 PORT         = int(os.environ.get('HARNESS_PORT', '7891'))
 BIND         = os.environ.get('HARNESS_BIND', '127.0.0.1')  # 외부 노출은 HARNESS_BIND=0.0.0.0 명시 필요
@@ -293,15 +293,30 @@ async def run_agent(ws, room: 'Room', user_input: str, plan_mode: bool = False,
         context.search(user_input, state.working_dir) if context.is_indexed(state.working_dir) else ''
     )
 
-    # 세션이 너무 길면 요약 압축
+    # 세션이 너무 길면 요약 압축 (RX-01: 풍부한 정보로 사용자에게 발생 사실/규모 노출)
     if needs_compaction(state.messages):
-        await broadcast(room, type='info', text='세션 압축 중...')
+        before_chars = estimate_chars(state.messages)
+        await broadcast(room, type='info', text='↻ 컨텍스트 압축 중…')
         new_msgs, dropped = await asyncio.get_event_loop().run_in_executor(
             None, compact, state.messages
         )
         state.messages = new_msgs
         state.compact_count += 1
-        await broadcast(room, type='info', text=f'압축 완료 (메시지 {dropped}개 요약)')
+        after_chars = estimate_chars(state.messages)
+        kept = len([m for m in new_msgs if m['role'] != 'system'])
+
+        def _fmt(n: int) -> str:
+            return f'{n / 1000:.1f}K' if n >= 1000 else str(n)
+
+        if dropped == 0:
+            # 요약 실패 fallback — 원본 유지됨을 사용자에게 알림
+            msg = f'⚠ 컨텍스트 압축 실패 — 원본 유지 ({_fmt(before_chars)} chars)'
+        else:
+            msg = (
+                f'↻ 컨텍스트 압축됨 ({_fmt(before_chars)} → {_fmt(after_chars)} chars'
+                f' · {dropped}개 요약 · {kept}개 보존)'
+            )
+        await broadcast(room, type='info', text=msg)
 
     await _broadcast_agent_start(room, ws)  # PEXT-01: per-subscriber from_self 분기
 

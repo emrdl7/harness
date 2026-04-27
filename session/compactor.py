@@ -59,6 +59,12 @@ def needs_compaction(messages: list) -> bool:
     return _chars(non_sys) > _compact_threshold()
 
 
+def estimate_chars(messages: list) -> int:
+    '''비-system 메시지의 JSON 직렬화 합계 — RX-01 압축 배너 정보용.'''
+    non_sys = [m for m in messages if m['role'] != 'system']
+    return _chars(non_sys)
+
+
 def _summarize(messages_to_summarize: list) -> str:
     lines = []
     for m in messages_to_summarize:
