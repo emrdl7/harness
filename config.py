@@ -3,7 +3,7 @@ import os
 # 추론 백엔드 — 'ollama' (기본) | 'mlx' (mlx_lm.server OpenAI 호환)
 BACKEND         = os.environ.get('HARNESS_BACKEND',     'ollama')
 OLLAMA_BASE_URL = os.environ.get('HARNESS_OLLAMA_URL', 'http://localhost:11434')
-MLX_BASE_URL    = os.environ.get('HARNESS_MLX_URL',    'http://localhost:8080')
+MLX_BASE_URL    = os.environ.get('HARNESS_MLX_URL',    'http://localhost:7892')
 # MLX Qwen3.6 thinking 모드 — 기본 off (켜면 reasoning 필드로만 출력되어 툴콜 무력화)
 MLX_THINKING    = os.environ.get('HARNESS_MLX_THINKING', '0').lower() in ('1', 'true', 'yes')
 MODEL           = os.environ.get('HARNESS_MODEL',      'qwen3-coder:30b')
