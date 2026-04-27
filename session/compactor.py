@@ -3,8 +3,11 @@ import requests
 import config
 
 # 비시스템 메시지 누적 문자가 이 값을 넘으면 compaction 트리거
-# qwen3-coder:30b 기준 32K 컨텍스트 → 20K 문자(≈5K 토큰) 수준에서 압축
-COMPACT_THRESHOLD = 20000
+# config.CONTEXT_WINDOW * 2 (한국어 1자 ≈ 0.5~0.7 토큰 가정 시 컨텍스트 ~70% 도달 시점)
+# 동적이므로 .harness.toml 의 num_ctx 변경 시 자동 추종.
+def _compact_threshold() -> int:
+    return config.CONTEXT_WINDOW * 2
+
 # compaction 후 유지할 최근 메시지 수
 KEEP_RECENT = 10
 
@@ -19,7 +22,7 @@ _SUMMARY_PROMPT = (
 )
 
 
-_TOOL_RESULT_MAX_CHARS = 4000  # tool 결과 1개가 이 크기 넘으면 head+tail truncate
+_TOOL_RESULT_MAX_CHARS = 8000  # tool 결과 1개가 이 크기 넘으면 head+tail truncate
 
 
 def _chars(messages: list) -> int:
@@ -53,7 +56,7 @@ def _truncate_large_tool_outputs(messages: list) -> list:
 
 def needs_compaction(messages: list) -> bool:
     non_sys = [m for m in messages if m['role'] != 'system']
-    return _chars(non_sys) > COMPACT_THRESHOLD
+    return _chars(non_sys) > _compact_threshold()
 
 
 def _summarize(messages_to_summarize: list) -> str:
