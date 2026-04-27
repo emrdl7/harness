@@ -112,6 +112,35 @@ export const App: React.FC = () => {
     if (key.ctrl && ch === 'd' && !buffer && !busy) {
       exit()
     }
+    // IX-03 (c 단계): Ctrl+Y → 가장 최근 assistant 메시지의 첫 코드블록을 OS 클립보드로 복사
+    if (key.ctrl && ch === 'y') {
+      const msgs = useMessagesStore.getState().completedMessages
+      let target = null
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        if (msgs[i]!.role === 'assistant') { target = msgs[i]!; break }
+      }
+      if (!target) {
+        useMessagesStore.getState().appendSystemMessage('복사할 응답이 없습니다')
+        return
+      }
+      const fence = target.content.match(/```\w*\n([\s\S]*?)```/)
+      const code = fence ? fence[1]! : target.content
+      const cmd = process.platform === 'darwin' ? 'pbcopy'
+        : process.platform === 'win32' ? 'clip'
+        : 'xclip -selection clipboard'
+      void import('node:child_process').then(({execSync}) => {
+        try {
+          execSync(cmd, {input: code})
+          const lines = code.split('\n').filter(Boolean).length
+          useMessagesStore.getState().appendSystemMessage(
+            `${fence ? '코드' : '응답'} 클립보드 복사됨 (${lines}줄)`
+          )
+        } catch (err) {
+          const m = err instanceof Error ? err.message : String(err)
+          useMessagesStore.getState().appendSystemMessage(`복사 실패: ${m.slice(0, 80)}`)
+        }
+      })
+    }
   })
 
   // 실제 WS 송신 — sendNow(text) 형태로 분리하여 큐 flush 에서도 재사용
