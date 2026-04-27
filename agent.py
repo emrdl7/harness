@@ -14,6 +14,11 @@ import skills
 
 MAX_TOOL_RESULT_CHARS = 20_000
 
+# RPC-02 (D-10): 클라이언트 측에서 실행되는 도구.
+# Phase 1 = read_file 만. Phase 2 에서 fs 전체, Phase 3 에서 shell+git 추가.
+# rpc_call 콜백이 주입된 경우에만 우회 — 단독 CLI 실행 시 fallback 으로 ok=false 에러 반환.
+CLIENT_SIDE_TOOLS = {'read_file'}
+
 
 # ── Thinking 스트리밍 파서 ────────────────────────────────────────
 class _ThinkingParser:
@@ -428,6 +433,7 @@ def run(
     on_thought=None,
     on_thought_end=None,
     hooks: dict = None,
+    rpc_call=None,  # RPC-02 (D-08): callable[(name, args, timeout?), dict] | None
 ) -> tuple[str, list]:
     if session_messages is None:
         session_messages = []
@@ -561,21 +567,36 @@ def run(
             if fn_name in ('run_command', 'run_python') and 'cwd' not in args:
                 args = {**args, 'cwd': working_dir}
 
-            fn = TOOL_MAP.get(fn_name)
-            if fn:
-                try:
-                    result = fn(**args)
-                except TypeError as e:
-                    result = {'ok': False, 'error': f'인자 오류: {e}'}
+            # RPC-02 (D-08, D-10, D-16): 클라 위임 도구 — rpc_call 로 ws→client→ws 라운드트립.
+            # rpc_call 미주입 시 (단독 CLI / pytest) fallback 으로 ok=false 에러 반환 — 호환성 유지.
+            if fn_name in CLIENT_SIDE_TOOLS:
+                if rpc_call is None:
+                    result = {
+                        'ok': False,
+                        'error': f'rpc_call 콜백 없음 — {fn_name} 은 클라 측 도구입니다',
+                    }
+                else:
+                    # D-16: read_file 의 file_path → path alias 정규화 (TS 측은 path 만 받음)
+                    if fn_name == 'read_file' and 'path' not in args and 'file_path' in args:
+                        args = dict(args)
+                        args['path'] = args.pop('file_path')
+                    result = rpc_call(fn_name, args)
             else:
-                result = {
-                    'ok': False,
-                    'error': f'툴 "{fn_name}"은 존재하지 않습니다. 툴을 호출하지 말고 자연어로 직접 답변해 주세요.',
-                    '_unknown_tool': fn_name,
-                }
-                unknown_tool_count += 1
-                if on_unknown_tool:
-                    on_unknown_tool(fn_name, args)
+                fn = TOOL_MAP.get(fn_name)
+                if fn:
+                    try:
+                        result = fn(**args)
+                    except TypeError as e:
+                        result = {'ok': False, 'error': f'인자 오류: {e}'}
+                else:
+                    result = {
+                        'ok': False,
+                        'error': f'툴 "{fn_name}"은 존재하지 않습니다. 툴을 호출하지 말고 자연어로 직접 답변해 주세요.',
+                        '_unknown_tool': fn_name,
+                    }
+                    unknown_tool_count += 1
+                    if on_unknown_tool:
+                        on_unknown_tool(fn_name, args)
 
             if on_tool:
                 on_tool(fn_name, args, result)
