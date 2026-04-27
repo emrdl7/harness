@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Phases
 status: executing
-last_updated: "2026-04-27T13:19:26.452Z"
+last_updated: "2026-04-27T13:28:16.726Z"
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 3
-  completed_plans: 1
-  percent: 33
+  completed_plans: 2
+  percent: 67
 ---
 
 # harness — v1.1 Client-side Tool Execution Milestone State
@@ -32,15 +32,14 @@ progress:
 ## Current Position
 
 Phase: 01 (rpc-skeleton) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 **Phase 1 — rpc-skeleton** (RPC 골격 + read_file PoC)
 
 - **Phase dir:** `.planning/phases/01-rpc-skeleton/`
-- **Status:** Executing Phase 01 — Plan 01 완료
-- **Progress:** [███░░░░░░░] 33%
+- **Status:** Executing Phase 01 — Plan 01 + Plan 02 완료
+- **Progress:** [███████░░░] 67%
 - **Next action:**
-  1. Plan 02 (Python harness_server.py 측 RPC 구현) 실행
-  2. Plan 03 (vitest read_file 5케이스 + 통합)
+  1. Plan 03 (vitest read_file 5케이스 + Python deletion + 수동 검증) 실행
 
 ---
 
@@ -48,7 +47,7 @@ Plan: 2 of 3
 
 | # | Slug | Status | CONTEXT | PLAN |
 |---|------|--------|---------|------|
-| 1 | rpc-skeleton | In progress (1/3) | ✓ | ✓ |
+| 1 | rpc-skeleton | In progress (2/3) | ✓ | ✓ |
 | 2 | fs-tools | Not started | — | — |
 | 3 | shell-git | Not started | — | — |
 | 4 | bb2-deletion-session | Not started | — | — |
@@ -71,20 +70,22 @@ Plan: 2 of 3
 
 ### Last session summary (2026-04-27)
 
-- v1.0 milestone 종료 후 사용자 정정: PROJECT.md 의 "백엔드 공유" 가 "Claude Code 처럼" 의 잘못된 의역. 도구 실행이 서버 측에서 도는 게 외부 사용자 시나리오 미충족
-- BB-2 (Room/broadcast/presence) 도 사용자 요구 외 — *"되네?" 하면서 지켜본 것뿐, 같은 방에서 만날 필요 자체가 없다*
-- v1.1 milestone 신설 — Client-side Tool Execution. 5 phase 구조 확정
-- 작성: `.planning/CLIENT-TOOLS-DESIGN.md` (245줄), `.planning/PROJECT.md` (v1.1 본문 재작성), `.planning/ROADMAP.md`, `.planning/REQUIREMENTS.md` (9개 REQ-ID), `CLAUDE.md` (Operating Model 갱신)
-- Archive: v1.0 phase 디렉토리 5개 → `.planning/archive/v1.0-phases/`
-- 신설: v1.1 phase 디렉토리 5개 (01-rpc-skeleton ~ 05-mcp-cleanup)
-- Memory: `project_harness_v11_pivot.md` 추가 (사용자 발화 4개 인용)
-- Phase 1 CONTEXT.md 작성 (Claude-driven, 사용자 *"니가 알아서 해라"* 위임)
+- Plan 01-02 실행 완료 — Python 백엔드 (harness_server.py + agent.py) 에 RPC 위임 골격 추가
+- harness_server.py: ws._pending_calls + run_agent.rpc_call 클로저 + _dispatch_loop tool_result case + finally cleanup
+- agent.py: CLIENT_SIDE_TOOLS = {'read_file'} + run() 의 rpc_call 인자 + line 564 직전 분기 + file_path alias 정규화
+- 신규 pytest 7건 (test_rpc_bridge 3 + test_agent_client_side_dispatch 4) — 전체 234 green (227 baseline + 7), 회귀 0
+- Deviation 1건: alias 정규화 dict spread 패턴 버그 자동 수정 (`{**args, ...args.pop()}` → `dict(args)` 카피 후 pop+assign)
+
+### Decisions
+
+- RPC bridge: confirm_write 패턴 응용 (D-09) — Event 대신 asyncio.Future 로 결과값 운반. asyncio.shield 로 외부 cancel 보호
+- ws._pending_calls (D-05): Room 단위 X, ws scope dict[str, asyncio.Future]. BB-2 deletion 후에도 변경 0
+- alias 정규화 (D-16): dict(args) 카피 후 pop+assign — {**args, ...args.pop()} 패턴이 양쪽 키 잔존 버그 발생하므로 회피
 
 ### Next session should
 
-1. `/gsd-plan-phase 1` — 01-CONTEXT.md 의 D-01~D-19 결정을 PLAN 으로 변환
-2. PLAN 검토 후 `/gsd-execute-phase 1`
-3. Phase 1 의 D-19 수동 검증 — 외부 PC ui-ink → `read_file` → 외부 PC 파일이 LLM 컨텍스트에 들어가는지 확인
+1. `/gsd-execute-phase 1` 의 Plan 03 실행 — vitest read_file 5케이스 + tools/fs.py:read_file deletion + 수동 검증
+2. Phase 1 의 D-19 수동 검증 — 외부 PC ui-ink → `read_file` → 외부 PC 파일이 LLM 컨텍스트에 들어가는지 확인
 
 ---
 
