@@ -14,6 +14,7 @@ import {FileEditBlock} from './FileEditBlock.js'
 import {GrepResultBlock} from './GrepResultBlock.js'
 import {ListFilesBlock} from './ListFilesBlock.js'
 import {GitLogBlock} from './GitLogBlock.js'
+import {WebSearchBlock} from './WebSearchBlock.js'
 import type {ToolBlockComponent} from './types.js'
 
 export const TOOL_REGISTRY: Record<string, ToolBlockComponent> = {
@@ -25,6 +26,7 @@ export const TOOL_REGISTRY: Record<string, ToolBlockComponent> = {
   grep_search: GrepResultBlock,
   list_files:  ListFilesBlock,
   git_log:     GitLogBlock,
+  search_web:  WebSearchBlock,
 }
 
 export function getToolRenderer(name: string): ToolBlockComponent {
