@@ -974,7 +974,12 @@ def _ensure_mlx_running() -> None:
     log_fp = open(log_path, 'a', buffering=1)
     log_fp.write(f'\n=== mlx_lm.server start {time.strftime("%Y-%m-%d %H:%M:%S")} model={config.MODEL} ===\n')
 
-    cmd = [cli, '--model', config.MODEL, '--host', host, '--port', str(port)]
+    # --prompt-cache-bytes 로 KV cache 누적 한도 4GB. 기본 무제한이라 길게 쓰면 9GB+ 까지
+    # 차서 METAL OutOfMemory (Insufficient Memory) 로 mlx 죽음. M3 Max 36GB 에서
+    # 모델 가중치(4bit 27B ≈ 14GB) + 시스템 + 다른 앱 공존 안전선.
+    cache_bytes = 4 * 1024 ** 3  # 4 GB
+    cmd = [cli, '--model', config.MODEL, '--host', host, '--port', str(port),
+           '--prompt-cache-bytes', str(cache_bytes)]
     print(f'mlx_lm.server  spawning  {config.MODEL} → {base}  (log: {log_path})', flush=True)
     subprocess.Popen(cmd, stdout=log_fp, stderr=subprocess.STDOUT, start_new_session=True)
 
