@@ -15,6 +15,7 @@ import websockets
 from websockets.exceptions import ConnectionClosed
 
 import agent
+import config
 import profile as prof
 import context
 import harness_core
@@ -917,6 +918,62 @@ async def _run_session(ws):
 
 
 # ── 진입점 ────────────────────────────────────────────────────────
+def _ensure_mlx_running() -> None:
+    '''BACKEND=mlx 일 때 mlx_lm.server 헬스체크 후 없으면 spawn.
+
+    한 번 띄운 mlx 서버는 detach 되어 harness 가 죽어도 살아있음
+    (27B 4bit 모델 첫 로드 비용이 크기 때문에 매 재시작 시 재로드 회피).
+    로그는 .harness/mlx.log 에 append.
+    '''
+    if config.BACKEND != 'mlx':
+        return
+
+    import subprocess
+    import urllib.parse
+    import requests as _req
+
+    base = config.MLX_BASE_URL.rstrip('/')
+    parsed = urllib.parse.urlparse(base)
+    host = parsed.hostname or '127.0.0.1'
+    port = parsed.port or 8080
+
+    # 이미 떠 있으면 그대로 사용 (어떤 응답이든 = 살아있음)
+    try:
+        _req.get(f'{base}/v1/models', timeout=2)
+        print(f'mlx_lm.server  {base}  (이미 실행 중)', flush=True)
+        return
+    except _req.RequestException:
+        pass
+
+    # 실행 파일 위치 — 현 venv 우선, 없으면 PATH
+    venv_cli = os.path.join(os.path.dirname(sys.executable), 'mlx_lm.server')
+    cli = venv_cli if os.path.exists(venv_cli) else 'mlx_lm.server'
+
+    # 로그 파일 — 진단을 위해 .harness/ 아래 보관
+    log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.harness')
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, 'mlx.log')
+    log_fp = open(log_path, 'a', buffering=1)
+    log_fp.write(f'\n=== mlx_lm.server start {time.strftime("%Y-%m-%d %H:%M:%S")} model={config.MODEL} ===\n')
+
+    cmd = [cli, '--model', config.MODEL, '--host', host, '--port', str(port)]
+    print(f'mlx_lm.server  spawning  {config.MODEL} → {base}  (log: {log_path})', flush=True)
+    subprocess.Popen(cmd, stdout=log_fp, stderr=subprocess.STDOUT, start_new_session=True)
+
+    # 헬스 폴링 — 첫 로드(메모리 매핑+워밍업) 시간 고려해 180s 한도
+    deadline = time.time() + 180
+    while time.time() < deadline:
+        try:
+            _req.get(f'{base}/v1/models', timeout=2)
+            print('mlx_lm.server  ready', flush=True)
+            return
+        except _req.RequestException:
+            time.sleep(2)
+
+    print(f'ERROR: mlx_lm.server 가 180초 내 응답하지 않음. 로그 확인: {log_path}', file=sys.stderr)
+    sys.exit(1)
+
+
 async def main():
     import logging
     logging.getLogger('websockets').setLevel(logging.CRITICAL)
@@ -927,6 +984,8 @@ async def main():
         print('  여러 토큰은 쉼표로 구분: HARNESS_TOKENS=token1,token2', file=sys.stderr)
         print('  인증 없는 서버 기동을 거부합니다.', file=sys.stderr)
         sys.exit(1)
+
+    _ensure_mlx_running()
 
     # 스타트업 시 이전 실행의 잔재 파일 정리
     if os.path.exists(_REMOTE_ACTIVE_PATH):
