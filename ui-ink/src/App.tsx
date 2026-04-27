@@ -134,14 +134,17 @@ export const App: React.FC = () => {
     sendNow(text)
   }, [busy, sendNow])
 
-  // AR-04: busy=true → false 전환 시 큐에서 다음 인풋 dequeue + send
+  // AR-04: busy=false + 큐에 항목이 있을 때 다음 인풋 dequeue + send.
+  // queueLen 도 deps 에 포함 — busy 토글이 React batching 으로 한 번만 보이는 경우에도
+  // 큐 길이 변화로 effect 가 재발화되어 큐 끝까지 한 항목씩 처리된다.
+  // (busy 가 true 로 다시 막히면 early return 으로 멈춤 — 한 턴당 1개 인젝션 보장.)
+  const queueLen = useInputQueueStore((s) => s.queue.length)
   useEffect(() => {
     if (busy) return
-    const queue = useInputQueueStore.getState().queue
-    if (queue.length === 0) return
+    if (queueLen === 0) return
     const next = useInputQueueStore.getState().dequeue()
     if (next) sendNow(next.text)
-  }, [busy, sendNow])
+  }, [busy, queueLen, sendNow])
 
   const columns = useTerminalColumns()
 
