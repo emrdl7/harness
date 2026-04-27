@@ -72,9 +72,20 @@ function splitByCodeFence(content: string, streaming?: boolean): ContentSegment[
   return segments
 }
 
-// **bold**, *italic*, `inline code`, [link](url) 인라인 파싱
+// **bold**, *italic*, `inline code`, [link](url), path/file.ext(:line(:col)?)? 인라인 파싱
+// R3: 파일 경로 패턴 — 확장자 첫 글자 알파벳 강제로 1.5/2.0 같은 숫자 false-positive 회피
+//   foo.ts · src/foo.ts · src/foo.ts:42 · src/foo.ts:42:7 · ~/.zshrc
+const PATH_PATTERN = String.raw`\b[\w./~-]*\w+\.[a-zA-Z]\w{0,5}(?::\d+(?::\d+)?)?\b`
+// alternation 안에 backtick(\x60) 패턴 포함 — String.raw 안에서 raw backtick 삽입이
+// template literal 종료 문자라 \x60 으로 표기. 매칭 결과상 동일.
+const INLINE_RE = new RegExp(
+  String.raw`(\*\*[^*\n]+\*\*|\*[^*\n]+\*|\x60[^\x60\n]+\x60|\[[^\]\n]+\]\([^)\n]+\)|` + PATH_PATTERN + ')',
+  'g'
+)
+
 function InlineText({text, baseKey}: {text: string; baseKey: string}): React.ReactElement {
-  const re = /(\*\*[^*\n]+\*\*|\*[^*\n]+\*|`[^`\n]+`|\[[^\]\n]+\]\([^)\n]+\))/g
+  // 새 RegExp 인스턴스로 stateful exec 격리 (모듈 레벨 RE 의 lastIndex 공유 회피)
+  const re = new RegExp(INLINE_RE.source, 'g')
   const parts: React.ReactElement[] = []
   let last = 0
   let m: RegExpExecArray | null
@@ -99,6 +110,9 @@ function InlineText({text, baseKey}: {text: string; baseKey: string}): React.Rea
       } else {
         parts.push(<Text key={`${baseKey}-t${i++}`}>{tok}</Text>)
       }
+    } else {
+      // R3: 파일 경로 — alternation 마지막 분기라 여기로만 떨어진다
+      parts.push(<Text key={`${baseKey}-p${i++}`} color='cyan' underline>{tok}</Text>)
     }
     last = re.lastIndex
   }
