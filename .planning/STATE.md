@@ -1,13 +1,13 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.1
-milestone_name: client-side-tool-execution
-status: Phase 1 context 작성 완료 (CONTEXT.md), planning 대기
-last_updated: "2026-04-27"
+milestone_name: Phases
+status: CONTEXT.md 작성 완료 (2026-04-27, Claude-driven, 사용자 위임)
+last_updated: "2026-04-27T13:05:43.537Z"
 progress:
   total_phases: 5
   completed_phases: 0
-  total_plans: 0
+  total_plans: 3
   completed_plans: 0
   percent: 0
 ---
@@ -95,3 +95,5 @@ v1.1 정정 항목: 협업 모델 ("백엔드 공유" → "모델 공유"), BB-2
 ---
 
 *State file maintained across phases and sessions.*
+
+**Planned Phase:** 01 (rpc-skeleton) — 3 plans — 2026-04-27T13:05:43.533Z
