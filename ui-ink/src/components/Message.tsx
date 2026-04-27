@@ -301,8 +301,23 @@ function InlineText({text, baseKey}: {text: string; baseKey: string}): React.Rea
   return <Text>{parts}</Text>
 }
 
+// R4: 스택트레이스 / 에러 패턴 — 자주 등장하는 흔한 형식만 컬러링.
+//   Python: 'Traceback (most recent call last):' / 'NameError: ...' / 'TypeError: ...'
+//   JS / 일반: 'TypeError: ...' / 'Error: ...'
+//   stack frame ('at fn (...)' / 'File "..."') 의 path:line 은 R3 PATH_PATTERN 이 자동 cyan
+const TRACEBACK_RE = /^Traceback /
+const ERROR_LINE_RE = /^(?:[A-Z][a-zA-Z]*)?(?:Error|Exception):/
+
 // 텍스트 한 줄 — 헤더 / 목록 / 수평선 / 일반 텍스트 분기
 function TextLine({line, lineKey}: {line: string; lineKey: string}): React.ReactElement {
+  // R4: traceback 헤더 — bold yellow
+  if (TRACEBACK_RE.test(line)) {
+    return <Text bold color='yellow'>{line}</Text>
+  }
+  // R4: 에러 라인 — bold red. 라인 안 PATH/숫자도 색상 유지하기 위해 InlineText 경유
+  if (ERROR_LINE_RE.test(line)) {
+    return <Text bold color='red' wrap='wrap'>{line}</Text>
+  }
   // 인용문 >
   const bq = line.match(/^>\s*(.+)/)
   if (bq) {
