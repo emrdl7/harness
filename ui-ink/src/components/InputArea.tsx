@@ -5,7 +5,7 @@
 // 본 Plan 은 실제 WS 송신이나 messages store push 를 수행하지 않음
 // onSubmit 은 상위(App.tsx) 가 WS 송신을 처리함
 import React from 'react'
-import {Box} from 'ink'
+import {Box, Text} from 'ink'
 import {useTerminalColumns} from '../hooks/useTerminalColumns.js'
 import {useShallow} from 'zustand/react/shallow'
 import {useInputStore} from '../store/input.js'
@@ -110,9 +110,27 @@ export const InputArea: React.FC<InputAreaProps> = ({onSubmit, disabled}) => {
     return spaceIdx === -1 ? buffer : buffer.slice(0, spaceIdx)
   }, [buffer])
 
+  // IX-02 (단순 hint 버전): 인자 받는 명령(usage 정의된 것) + 공백 입력 후 hint 한 줄 표시.
+  //   /cd <path> · /model <name> · /save [name] 같이 catalog 의 usage 그대로 노출.
+  //   enum 자동완성은 추후 — 현재는 사용자 발견성 향상이 주목적.
+  const argHint = React.useMemo(() => {
+    if (!buffer.startsWith('/')) return null
+    const spaceIdx = buffer.indexOf(' ')
+    if (spaceIdx === -1) return null
+    const cmdName = buffer.slice(1, spaceIdx)
+    const cmd = SLASH_CATALOG.find((c) => c.name === cmdName)
+    return cmd?.usage ?? null
+  }, [buffer])
+
   return (
     <Box flexDirection='column' width={columns} paddingY={0} paddingX={2} borderStyle="single" borderLeft={false} borderRight={false} borderColor="gray">
       <MultilineInput onSubmit={onSubmit} disabled={disabled} />
+      {!slashOpen && argHint && (
+        <Box paddingX={2}>
+          <Text dimColor>인자: </Text>
+          <Text color='cyan' dimColor>{argHint}</Text>
+        </Box>
+      )}
       {slashOpen && (
         <SlashPopup
           query={slashQuery}
