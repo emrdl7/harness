@@ -174,6 +174,8 @@ class Session:
         self._confirm_bash_event: asyncio.Event | None = None
         self._confirm_bash_result: bool = False
         self.compact_count: int = 0
+        # RX-02 (단순 버전): 자동 저장 파일명 — 첫 turn 에서 생성, 이후 같은 파일에 덮어쓰기
+        self.session_filename: str | None = None
 
 
 # ── 공유 룸 (BB-2 Phase 1+2.5) ───────────────────────────────────
@@ -368,6 +370,19 @@ async def run_agent(ws, room: 'Room', user_input: str, plan_mode: bool = False,
             await asyncio.get_event_loop().run_in_executor(None, _run)
     finally:
         _leave_ollama_queue()
+
+    # RX-02 (단순 버전): 정상 turn (ephemeral 제외) 종료 시 자동 저장.
+    # 첫 turn 은 새 파일 생성, 이후 같은 파일에 덮어쓰기 — timestamp 파일 폭발 방지.
+    # 실패는 silent — turn 완료 broadcast 흐름에 영향 없게.
+    if not is_ephemeral:
+        try:
+            if state.session_filename is None:
+                state.session_filename = session_store.save(state.messages, state.working_dir)
+            else:
+                session_store.save_named(state.session_filename, state.messages, state.working_dir)
+        except Exception:
+            pass
+
     await broadcast(room, type='agent_end')
 
 

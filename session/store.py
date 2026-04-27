@@ -21,6 +21,15 @@ def save(messages: list, working_dir: str) -> str:
     ts = datetime.now().strftime('%Y%m%d_%H%M%S')
     dir_hash = hashlib.md5(working_dir.encode()).hexdigest()[:6]
     filename = f'{ts}_{dir_hash}.json'
+    return save_named(filename, messages, working_dir)
+
+
+def save_named(filename: str, messages: list, working_dir: str) -> str:
+    '''동일 세션 동안 같은 파일에 덮어쓰기 — auto-save 용 (timestamp 파일 폭발 방지).
+    save() 와 달리 호출자가 filename 을 결정. 첫 turn 에서 save() 로 생성한 filename 을
+    Session 객체에 보존하고 이후 turn 마다 save_named 로 update.
+    '''
+    _ensure_dir()
     path = os.path.join(SESSION_DIR, filename)
     with open(path, 'w', encoding='utf-8') as f:
         json.dump({'working_dir': working_dir, 'messages': messages}, f, ensure_ascii=False, indent=2)
