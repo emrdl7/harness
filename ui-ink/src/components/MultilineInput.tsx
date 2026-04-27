@@ -115,8 +115,10 @@ export const MultilineInput: React.FC<MultilineInputProps> = ({onSubmit, disable
       return
     }
 
-    // IX-01: filePickerOpen 시 Enter/Tab 은 FilePicker 가 path 치환 처리 → submit 안 함
-    if (filePickerOpen && (key.return || key.tab)) return
+    // slashOpen / filePickerOpen 시 Enter/Tab 은 popup 이 처리 → MultilineInput 의 submit 차단.
+    // (이전엔 popup onSelect 와 MultilineInput submit 이 동시 실행되어 React state batching 으로
+    // buffer 교체 전 원본 '/' 가 서버로 보내져 '알 수 없는 명령' 에러 발생.)
+    if ((slashOpen || filePickerOpen) && (key.return || key.tab || key.upArrow || key.downArrow)) return
 
     // Enter (단독) → 제출
     // AR-04: busy 중에도 onSubmit 호출 — App.tsx 가 busy 분기로 enqueue/send 결정
@@ -124,14 +126,11 @@ export const MultilineInput: React.FC<MultilineInputProps> = ({onSubmit, disable
       const text = joinLines(lines)
       if (text.trim() === '') return
       pushHistory(text)
-      clearBuffer()
       setCursor({row: 0, col: 0})
+      clearBuffer()
       onSubmit(text)
       return
     }
-
-    // slashOpen / filePickerOpen 중에는 ↑↓·Enter 를 popup 에 패스스루
-    if ((slashOpen || filePickerOpen) && (key.upArrow || key.downArrow || key.return)) return
 
     // history ↑↓
     if (key.upArrow) {

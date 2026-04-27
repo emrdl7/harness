@@ -12,6 +12,7 @@ import {useInputStore} from '../store/input.js'
 import {MultilineInput} from './MultilineInput.js'
 import {SlashPopup} from './SlashPopup.js'
 import {FilePicker} from './FilePicker.js'
+import {SLASH_CATALOG} from '../slash-catalog.js'
 
 interface InputAreaProps {
   onSubmit: (text: string) => void
@@ -61,12 +62,21 @@ export const InputArea: React.FC<InputAreaProps> = ({onSubmit, disabled}) => {
 
   const handleSlashSelect = React.useCallback(
     (commandName: string) => {
-      // 선택된 명령으로 buffer 를 교체하고 trailing space 추가
-      // INPT-08(Tab 인자 자동완성) 확장 훅 — 실제 인자 자동완성은 후속 Plan 에서 구현
-      setBuffer(commandName + ' ')
-      setSlashOpen(false)
+      // 인자 없는 명령은 즉시 submit. 인자 있는 명령(usage 정의됨)은 buffer 교체 후
+      // 사용자가 인자 입력 + Enter. (이전엔 buffer 교체만 하고 onSubmit 은 MultilineInput
+      // 의 Enter 가 동시 처리했으나 React batching 으로 원본 '/' 가 서버에 도달 → 에러.)
+      const name = commandName.replace(/^\//, '')
+      const cmd = SLASH_CATALOG.find((c) => c.name === name)
+      if (cmd?.usage) {
+        setBuffer(commandName + ' ')
+        setSlashOpen(false)
+      } else {
+        setBuffer('')
+        setSlashOpen(false)
+        onSubmit(commandName)
+      }
     },
-    [setBuffer, setSlashOpen]
+    [setBuffer, setSlashOpen, onSubmit]
   )
 
   const handleSlashClose = React.useCallback(() => {
