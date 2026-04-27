@@ -161,10 +161,15 @@ class Session:
     def __init__(self):
         self.working_dir = os.environ.get('HARNESS_CWD') or os.getcwd()
         self.profile = prof.load(self.working_dir)
-        # 원격 사용자는 무조건 fs 샌드박스 + 모든 write/bash 확인 필수
+        # fs 샌드박스는 working_dir 격리용이라 항상 강제 (Claude Code 의 작업 디렉토리 격리와 동등)
         self.profile['fs_sandbox'] = True
-        self.profile['confirm_writes'] = True
-        self.profile['confirm_bash'] = True
+        # confirm_writes/confirm_bash 는 외부 노출(HARNESS_BIND=0.0.0.0 등) 시에만 강제 True.
+        # 로컬 전용(127.0.0.1) 은 .harness.toml 의 설정을 존중 — 신뢰 환경에서 confirm
+        # 우회를 원하는 사용자는 confirm_writes=false / confirm_bash=false 로 끄면 된다
+        # (Claude Code 의 bypass permissions on 과 동등).
+        if BIND != '127.0.0.1':
+            self.profile['confirm_writes'] = True
+            self.profile['confirm_bash'] = True
         self.messages: list = []
         self.undo_count: int = 0
         self._confirm_event: asyncio.Event | None = None
