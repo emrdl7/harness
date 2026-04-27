@@ -40,4 +40,25 @@ describe('parseServerMsg', () => {
     const result = parseServerMsg('{"data":"no type field"}')
     expect(result).toBeNull()
   })
+
+  // RPC-01: tool_request 페이로드 파싱 회귀 (D-01, D-02)
+  it('tool_request 메시지를 파싱해 ToolRequestMsg 반환', () => {
+    const r = parseServerMsg('{"type":"tool_request","call_id":"abc","name":"read_file","args":{"path":"a.txt"}}')
+    expect(r).not.toBeNull()
+    expect(r?.type).toBe('tool_request')
+    if (r?.type === 'tool_request') {
+      expect(r.call_id).toBe('abc')
+      expect(r.name).toBe('read_file')
+      expect(r.args['path']).toBe('a.txt')
+    }
+  })
+
+  it('tool_request 의 args 가 offset/limit 도 포함', () => {
+    const r = parseServerMsg('{"type":"tool_request","call_id":"x1","name":"read_file","args":{"path":"a.txt","offset":3,"limit":2}}')
+    expect(r?.type).toBe('tool_request')
+    if (r?.type === 'tool_request') {
+      expect(r.args['offset']).toBe(3)
+      expect(r.args['limit']).toBe(2)
+    }
+  })
 })

@@ -16,6 +16,13 @@ export interface ErrorMsg        { type: 'error';               text: string }  
 export interface InfoMsg         { type: 'info';                text: string }
 export interface ConfirmWriteMsg { type: 'confirm_write';       path: string; old_content?: string }  // PEXT-02: diff 기반 UX용
 export interface ConfirmBashMsg  { type: 'confirm_bash';        command: string }
+// RPC-01: 서버 → 클라 (D-01, D-02) — 클라 측 도구 실행 위임 요청
+export interface ToolRequestMsg {
+  type: 'tool_request'
+  call_id: string                                   // uuid v4 — call 1:1 correlation (D-01)
+  name: string                                       // Phase 1 = 'read_file' (D-10)
+  args: Record<string, unknown>                      // {path, offset?, limit?}
+}
 export interface CplanConfirmMsg { type: 'cplan_confirm';       task: string }
 export interface ReadyMsg        { type: 'ready';               room: string }
 export interface RoomJoinedMsg   {  // Pitfall H 수정: 서버 실제 전송 구조와 일치
@@ -53,6 +60,7 @@ export interface FileListResponseMsg { type: 'file_list_response'; files: string
 // discriminated union — 모든 서버 메시지
 export type ServerMsg =
   | TokenMsg | ToolStartMsg | ToolEndMsg
+  | ToolRequestMsg                                   // RPC-01
   | AgentStartMsg | AgentEndMsg | AgentCancelledMsg  // PEXT-05 추가
   | ErrorMsg | InfoMsg
   | ConfirmWriteMsg | ConfirmBashMsg | CplanConfirmMsg
@@ -73,10 +81,19 @@ export interface SlashMsg             { type: 'slash';                  name: st
 export interface PingMsg              { type: 'ping' }
 export interface CancelMsg            { type: 'cancel' }
 export interface FileListRequestMsg   { type: 'file_list_request' }  // IX-01
+// RPC-01: 클라 → 서버 (D-02) — 클라 측 도구 실행 결과 회신
+export interface ToolResultMsg {
+  type: 'tool_result'
+  call_id: string
+  ok: boolean
+  result?: Record<string, unknown>                  // ok=true 시 — Python read_file 의 content/total_lines 등이 그대로
+  error?: { kind: string; message: string }          // ok=false 시 (D-02)
+}
 
 export type ClientMsg =
   | InputMsg | ConfirmWriteResponse | ConfirmBashResponse | SlashMsg | PingMsg | CancelMsg
   | FileListRequestMsg
+  | ToolResultMsg                                    // RPC-01
 
 // ─── exhaustive switch 가드 ───────────────────────────────────────────────────
 // dispatch.ts 에서 미처리 이벤트를 컴파일 에러로 탐지하는 헬퍼
