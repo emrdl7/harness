@@ -1,7 +1,15 @@
 import os
 import re
 import glob as _glob
+import fnmatch
 import difflib
+
+# list_files / 향후 walk 기반 도구의 공통 prune 목록 — 거대 디렉토리 traversal 차단
+_PRUNE_DIRS = frozenset({
+    '.git', '.venv', '.harness', '.harness_bak',
+    'node_modules', '__pycache__', '.pytest_cache',
+    'dist', 'build', '.next', '.cache',
+})
 
 
 def _unified_diff(old: str, new: str, path: str) -> str:
@@ -189,7 +197,33 @@ def list_files(pattern: str = None, path: str = None) -> dict:
         expanded = os.path.expanduser(pattern)
         if not os.path.isabs(expanded) and _sandbox_root is not None:
             expanded = os.path.join(_sandbox_root, expanded)
-        matches = _glob.glob(expanded, recursive=True)
+
+        # `**` 재귀 패턴은 glob.glob(recursive=True) 가 node_modules / .git / .venv 등
+        # 거대 디렉토리를 모두 traverse 해서 사실상 hang. os.walk + prune 으로 교체.
+        # `**` 없는 단순 glob 은 기존 로직 유지 (단일 디렉토리 매칭, 빠름).
+        if '**' in expanded:
+            base, _, suffix = expanded.partition('**')
+            base = base.rstrip(os.sep) or '.'
+            suffix = suffix.lstrip(os.sep)
+            if not os.path.isdir(base):
+                # base 가 디렉토리가 아니면 일반 glob fallback
+                matches = _glob.glob(expanded, recursive=True)
+            else:
+                matches = []
+                for root, dirs, files in os.walk(base):
+                    dirs[:] = [d for d in dirs if d not in _PRUNE_DIRS]
+                    for fname in files:
+                        full = os.path.join(root, fname)
+                        if not suffix:
+                            matches.append(full)
+                            continue
+                        rel = os.path.relpath(full, base)
+                        # `**/foo.ext` → suffix='foo.ext'. rel 또는 fname 둘 중 매치 시 채택
+                        if fnmatch.fnmatch(rel, suffix) or fnmatch.fnmatch(fname, suffix):
+                            matches.append(full)
+        else:
+            matches = _glob.glob(expanded, recursive=False)
+
         # 샌드박스 on이면 밖 경로 필터링 (symlink escape 방지)
         if _sandbox_root is not None:
             root_prefix = _sandbox_root if _sandbox_root.endswith(os.sep) else _sandbox_root + os.sep
