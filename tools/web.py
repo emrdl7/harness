@@ -48,6 +48,11 @@ def search_web(query: str, max_results: int = 5) -> dict:
     '''DuckDuckGo로 웹 검색. API 키 불필요.'''
     if not _DDGS_AVAILABLE:
         return {'ok': False, 'error': 'duckduckgo_search 패키지가 없습니다. pip install duckduckgo_search'}
+    # 모델이 max_results 를 "5" 같은 문자열로 넘기는 케이스 — int 강제 변환
+    try:
+        max_results = int(max_results) if max_results is not None else 5
+    except (TypeError, ValueError):
+        max_results = 5
     original = query
     query = _clean_query(query)
     try:
@@ -106,6 +111,11 @@ class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
 
 
 def fetch_page(url: str, max_chars: int = 4000) -> dict:
+    # 모델이 max_chars 를 "4000" 같은 문자열로 넘기는 케이스 — int 강제 변환
+    try:
+        max_chars = int(max_chars) if max_chars is not None else 4000
+    except (TypeError, ValueError):
+        max_chars = 4000
     '''URL에서 텍스트 내용을 가져옴 (HTML 태그 제거).
 
     CONCERNS.md §2.7 대응: scheme 제한 + 내부망 차단 + 리다이렉트 금지.
