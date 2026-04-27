@@ -21,7 +21,9 @@ interface TextSegment { type: 'text'; text: string }
 interface CodeSegment { type: 'code'; text: string; lang?: string }
 // R1: GitHub 스타일 마크다운 표 — | h | h |\n|---|---|\n| v | v |
 interface TableSegment { type: 'table'; headers: string[]; rows: string[][] }
-type ContentSegment = TextSegment | CodeSegment | TableSegment
+// R2: 모델이 자연어 안에 직접 출력한 JSON (object/array)
+interface JsonSegment { type: 'json'; text: string }
+type ContentSegment = TextSegment | CodeSegment | TableSegment | JsonSegment
 
 function highlightCode(code: string, lang?: string): string {
   try {
@@ -138,6 +140,74 @@ function splitByTable(text: string): ContentSegment[] {
   }
   flushBuf()
   return out
+}
+
+// R2: text segment 안에서 multi-line JSON object/array 감지. 라인 시작이 `{`/`[` 이고
+//   괄호 균형 + JSON.parse 검증 통과 시에만 JsonSegment 로 추출. 잘못 감지 위험을 막기 위해
+//   문자열 안의 brace 도 포함되는 단순 depth count 후 JSON.parse 로 최종 검증.
+function splitByJson(text: string): ContentSegment[] {
+  const lines = text.split('\n')
+  const out: ContentSegment[] = []
+  let buffer: string[] = []
+  const flushBuf = () => {
+    if (buffer.length > 0) {
+      out.push({type: 'text', text: buffer.join('\n')})
+      buffer = []
+    }
+  }
+  let i = 0
+  while (i < lines.length) {
+    const line = lines[i]!
+    const trimmed = line.trim()
+    const open = trimmed[0]
+    if (open === '{' || open === '[') {
+      const close = open === '{' ? '}' : ']'
+      // depth 기반 끝 라인 후보 탐색 (string 내부 brace 도 셈 — JSON.parse 로 보정)
+      let depth = 0
+      let endIdx = -1
+      for (let j = i; j < lines.length; j++) {
+        for (const c of lines[j]!) {
+          if (c === open) depth++
+          else if (c === close) depth--
+        }
+        if (depth === 0) { endIdx = j; break }
+      }
+      if (endIdx === -1) {
+        buffer.push(line); i++; continue
+      }
+      const combined = lines.slice(i, endIdx + 1).join('\n')
+      try {
+        JSON.parse(combined)
+        flushBuf()
+        out.push({type: 'json', text: combined})
+        i = endIdx + 1
+        continue
+      } catch {
+        // JSON 아님 — 일반 텍스트
+      }
+    }
+    buffer.push(line); i++
+  }
+  flushBuf()
+  return out
+}
+
+// R2: JsonBlock — 정렬 pretty-print + cli-highlight('json') 컬러
+function JsonBlock({text, segKey}: {text: string; segKey: string}): React.ReactElement {
+  let pretty = text
+  try {
+    pretty = JSON.stringify(JSON.parse(text), null, 2)
+  } catch {
+    // 도달 안 함 (splitByJson 가 검증) — 방어
+  }
+  const highlighted = highlightCode(pretty, 'json')
+  return (
+    <Box flexDirection='column' marginY={0}>
+      <Text dimColor>╭─ json ─────</Text>
+      <Text key={`${segKey}-c`} wrap='wrap'>{highlighted}</Text>
+      <Text dimColor>╰────────────</Text>
+    </Box>
+  )
 }
 
 // R1: TableBlock — 컬럼 너비 = 셀 max(stringWidth). 셀 사이 ' │ ', 헤더 아래 '─┼─' 분리선.
@@ -352,18 +422,24 @@ const MessageBase: React.FC<MessageProps> = ({message, isStatic}) => {
 
   // AR-03a: content+streaming 키로 segments 캐시 — 동일 content 의 재파싱 비용 제거
   // R1: 표 패턴(`|---|`) 도 cheap detect 후 splitByTable 추가 적용
+  // R2: JSON 패턴(라인 시작이 `{`/`[`) 도 cheap detect 후 splitByJson 적용
   const segments: ContentSegment[] = React.useMemo(() => {
     const hasCodeFence = message.content.includes('```')
     const hasTable = message.content.includes('|---') || message.content.includes('| ---')
+    const hasJson = /^\s*[{[]/m.test(message.content)
     const codeSegs = hasCodeFence
       ? splitByCodeFence(message.content, message.streaming)
       : [{type: 'text', text: message.content} as ContentSegment]
-    if (!hasTable) return codeSegs
-    // text segment 만 splitByTable 추가 적용 — code segment 는 그대로 유지
+    if (!hasTable && !hasJson) return codeSegs
+    // text segment 만 추가 분리. table → json 순서 (table 우선, JSON 은 표 안 brace 와 충돌 회피)
     const expanded: ContentSegment[] = []
     for (const s of codeSegs) {
-      if (s.type === 'text') expanded.push(...splitByTable(s.text))
-      else expanded.push(s)
+      if (s.type !== 'text') { expanded.push(s); continue }
+      const tableSegs = hasTable ? splitByTable(s.text) : [s]
+      for (const ts of tableSegs) {
+        if (ts.type === 'text' && hasJson) expanded.push(...splitByJson(ts.text))
+        else expanded.push(ts)
+      }
     }
     return expanded
   }, [message.content, message.streaming])
@@ -394,6 +470,9 @@ const MessageBase: React.FC<MessageProps> = ({message, isStatic}) => {
           }
           if (seg.type === 'table') {
             return <TableBlock key={segKey} headers={seg.headers} rows={seg.rows} segKey={segKey} />
+          }
+          if (seg.type === 'json') {
+            return <JsonBlock key={segKey} text={seg.text} segKey={segKey} />
           }
           const lines = seg.text.split('\n')
           return (
