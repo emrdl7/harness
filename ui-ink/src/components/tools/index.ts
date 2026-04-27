@@ -10,12 +10,15 @@
 import {DefaultToolBlock} from './DefaultToolBlock.js'
 import {BashBlock} from './BashBlock.js'
 import {ReadFileBlock} from './ReadFileBlock.js'
+import {FileEditBlock} from './FileEditBlock.js'
 import type {ToolBlockComponent} from './types.js'
 
 export const TOOL_REGISTRY: Record<string, ToolBlockComponent> = {
   run_command: BashBlock,
   run_python:  BashBlock,
   read_file:   ReadFileBlock,
+  write_file:  FileEditBlock,
+  edit_file:   FileEditBlock,
 }
 
 export function getToolRenderer(name: string): ToolBlockComponent {

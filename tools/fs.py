@@ -1,6 +1,16 @@
 import os
 import re
 import glob as _glob
+import difflib
+
+
+def _unified_diff(old: str, new: str, path: str) -> str:
+    '''파일 경로 기준 unified diff 문자열 생성. 변화 없으면 빈 문자열.'''
+    return ''.join(difflib.unified_diff(
+        old.splitlines(keepends=True),
+        new.splitlines(keepends=True),
+        fromfile=path, tofile=path, n=3,
+    ))
 
 # ── 경로 샌드박스 (원격 사용자 격리용) ──────────────────────────────
 # None이면 샌드박스 off (CLI 로컬 사용자), 경로 설정 시 그 디렉토리 밖 접근 차단
@@ -65,10 +75,22 @@ def write_file(path: str, content: str) -> dict:
     if not ok:
         return {'ok': False, 'error': resolved}
     try:
+        is_new = not os.path.exists(resolved)
+        old_content = ''
+        if not is_new:
+            try:
+                with open(resolved, 'r', encoding='utf-8') as f:
+                    old_content = f.read()
+            except (OSError, UnicodeDecodeError):
+                # 바이너리/권한 등으로 읽기 불가 — diff 생략하고 기록만 진행
+                old_content = ''
         os.makedirs(os.path.dirname(resolved) or '.', exist_ok=True)
         with open(resolved, 'w', encoding='utf-8') as f:
             f.write(content)
-        return {'ok': True}
+        if is_new:
+            # AR-01 FileEditBlock 신규 파일 분기용 필드
+            return {'ok': True, 'path': path, 'is_new_file': True, 'new_content': content}
+        return {'ok': True, 'path': path, 'file_diff': _unified_diff(old_content, content, path)}
     except Exception as e:
         return {'ok': False, 'error': str(e)}
 
@@ -87,7 +109,11 @@ def edit_file(path: str, old_string: str, new_string: str, replace_all: bool = F
         new_content = content.replace(old_string, new_string) if replace_all else content.replace(old_string, new_string, 1)
         with open(resolved, 'w', encoding='utf-8') as f:
             f.write(new_content)
-        return {'ok': True, 'replaced': count if replace_all else 1}
+        return {
+            'ok': True, 'path': path,
+            'replaced': count if replace_all else 1,
+            'file_diff': _unified_diff(content, new_content, path),
+        }
     except Exception as e:
         return {'ok': False, 'error': str(e)}
 

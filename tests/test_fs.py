@@ -112,6 +112,41 @@ class TestReadWriteEdit:
         assert path.read_text() == 'X X X'
 
 
+class TestFileChangeDiff:
+    '''Feature A — write_file/edit_file 결과의 diff/신규파일 필드 회귀 방지.
+
+    UI-RENDER-PLAN.md V1 Feature A: AR-01 FileEditBlock 이 이 필드들을 보고
+    신규파일/diff/실패 분기를 결정한다. 필드 누락 시 fallback 표시로 떨어짐.
+    '''
+
+    def test_write_new_file_marks_is_new_file(self, tmp_path):
+        path = tmp_path / 'new.txt'
+        result = fs.write_file(str(path), 'hello\nworld\n')
+        assert result['ok'] is True
+        assert result.get('is_new_file') is True
+        assert result.get('new_content') == 'hello\nworld\n'
+        assert result.get('path') == str(path)
+
+    def test_write_overwrite_returns_unified_diff(self, tmp_path):
+        path = tmp_path / 'over.txt'
+        path.write_text('a\nb\nc\n')
+        result = fs.write_file(str(path), 'a\nB\nc\n')
+        assert result['ok'] is True
+        assert result.get('is_new_file') is None  # 덮어쓰기엔 키 없음
+        diff = result.get('file_diff', '')
+        assert '-b' in diff and '+B' in diff
+
+    def test_edit_returns_unified_diff(self, tmp_path):
+        path = tmp_path / 'edit.txt'
+        path.write_text('foo bar baz\n')
+        result = fs.edit_file(str(path), 'bar', 'BAR')
+        assert result['ok'] is True
+        diff = result.get('file_diff', '')
+        assert '-foo bar baz' in diff
+        assert '+foo BAR baz' in diff
+        assert result.get('path') == str(path)
+
+
 class TestGrepAndList:
     def test_grep_finds_matches(self, tmp_path):
         (tmp_path / 'a.txt').write_text('hello world\nfoo bar\n')
