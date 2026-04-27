@@ -1,11 +1,12 @@
 // Message — Gemini CLI 스타일 마크다운 렌더 (RND-06, RND-10, RND-11)
 // 코드블록: 라인 번호 + 신택스 하이라이트
-// 텍스트: **bold**, `inline code`, # 헤더, - / 1. 목록, --- 수평선
+// 텍스트: **bold**, `inline code`, # 헤더, - / 1. 목록, --- 수평선, R1 표
 import React from 'react'
 import {Box, Text} from 'ink'
 import Link from 'ink-link'
 import {useTerminalColumns} from '../hooks/useTerminalColumns.js'
 import {highlight} from 'cli-highlight'
+import {stringWidth} from '../utils/stringWidth.js'
 import type {Message as MessageType} from '../store/messages.js'
 import {useRoomStore} from '../store/room.js'
 import {userColor} from '../utils/userColor.js'
@@ -18,7 +19,9 @@ interface MessageProps {
 
 interface TextSegment { type: 'text'; text: string }
 interface CodeSegment { type: 'code'; text: string; lang?: string }
-type ContentSegment = TextSegment | CodeSegment
+// R1: GitHub 스타일 마크다운 표 — | h | h |\n|---|---|\n| v | v |
+interface TableSegment { type: 'table'; headers: string[]; rows: string[][] }
+type ContentSegment = TextSegment | CodeSegment | TableSegment
 
 function highlightCode(code: string, lang?: string): string {
   try {
@@ -70,6 +73,103 @@ function splitByCodeFence(content: string, streaming?: boolean): ContentSegment[
   if (remaining) segments.push({type: 'text', text: remaining})
   if (segments.length === 0) segments.push({type: 'text', text: content})
   return segments
+}
+
+// R1: 마크다운 표 감지/분리. text segment 안에서 다음 패턴을 TableSegment 로 추출.
+//   | a | b |
+//   |---|---|
+//   | 1 | 2 |
+function isTableHeaderLine(line: string): boolean {
+  const t = line.trim()
+  if (!t.startsWith('|') || !t.endsWith('|')) return false
+  // 최소 1개 cell — '|x|' 형태도 허용 (split 길이 ≥ 3: '', x, '')
+  return t.split('|').length >= 3
+}
+
+function isTableSeparatorLine(line: string): boolean {
+  const t = line.trim()
+  if (!t.startsWith('|') || !t.endsWith('|')) return false
+  // 각 셀은 -, :, 공백 으로만 구성하며 최소 1개 - 포함
+  const cells = t.slice(1, -1).split('|')
+  return cells.length > 0 && cells.every(c => /^[\s\-:]+$/.test(c) && c.includes('-'))
+}
+
+function parseTableRow(line: string): string[] {
+  return line.trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map(s => s.trim())
+}
+
+function splitByTable(text: string): ContentSegment[] {
+  const lines = text.split('\n')
+  const out: ContentSegment[] = []
+  let buffer: string[] = []
+  const flushBuf = () => {
+    if (buffer.length > 0) {
+      out.push({type: 'text', text: buffer.join('\n')})
+      buffer = []
+    }
+  }
+  let i = 0
+  while (i < lines.length) {
+    const line = lines[i]!
+    // 표 시작 후보 — 이 라인이 |..| 형태 + 다음 라인이 |---| separator
+    if (isTableHeaderLine(line) && i + 1 < lines.length && isTableSeparatorLine(lines[i + 1]!)) {
+      flushBuf()
+      const headers = parseTableRow(line)
+      const colCount = headers.length
+      i += 2  // header + separator skip
+      const rows: string[][] = []
+      while (i < lines.length && isTableHeaderLine(lines[i]!)) {
+        const row = parseTableRow(lines[i]!)
+        // 셀 수 정규화 (부족하면 빈 셀 채움, 초과하면 자름)
+        while (row.length < colCount) row.push('')
+        if (row.length > colCount) row.length = colCount
+        rows.push(row)
+        i++
+      }
+      out.push({type: 'table', headers, rows})
+    } else {
+      buffer.push(line)
+      i++
+    }
+  }
+  flushBuf()
+  return out
+}
+
+// R1: TableBlock — 컬럼 너비 = 셀 max(stringWidth). 셀 사이 ' │ ', 헤더 아래 '─┼─' 분리선.
+//   stringWidth 가 CJK wide-char 폭을 정확히 처리해 한글/한자 표도 정렬.
+function TableBlock({headers, rows, segKey}: {
+  headers: string[]; rows: string[][]; segKey: string
+}): React.ReactElement {
+  const colW = headers.map((h, i) => {
+    let max = stringWidth(h)
+    for (const r of rows) {
+      const w = stringWidth(r[i] ?? '')
+      if (w > max) max = w
+    }
+    return max
+  })
+  const SEP = ' │ '
+  const padCell = (text: string, width: number) => {
+    const pad = Math.max(0, width - stringWidth(text))
+    return text + ' '.repeat(pad)
+  }
+  const sepLine = colW.map(w => '─'.repeat(w)).join('─┼─')
+  return (
+    <Box flexDirection='column' marginY={0}>
+      <Text bold>{headers.map((h, i) => padCell(h, colW[i] ?? 0)).join(SEP)}</Text>
+      <Text dimColor>{sepLine}</Text>
+      {rows.map((r, ri) => (
+        <Text key={`${segKey}-r${ri}`}>
+          {r.map((c, i) => padCell(c, colW[i] ?? 0)).join(SEP)}
+        </Text>
+      ))}
+    </Box>
+  )
 }
 
 // **bold**, *italic*, `inline code`, [link](url), path/file.ext(:line(:col)?)? 인라인 파싱
@@ -251,11 +351,21 @@ const MessageBase: React.FC<MessageProps> = ({message, isStatic}) => {
     : null
 
   // AR-03a: content+streaming 키로 segments 캐시 — 동일 content 의 재파싱 비용 제거
+  // R1: 표 패턴(`|---|`) 도 cheap detect 후 splitByTable 추가 적용
   const segments: ContentSegment[] = React.useMemo(() => {
     const hasCodeFence = message.content.includes('```')
-    return hasCodeFence
+    const hasTable = message.content.includes('|---') || message.content.includes('| ---')
+    const codeSegs = hasCodeFence
       ? splitByCodeFence(message.content, message.streaming)
-      : [{type: 'text', text: message.content}]
+      : [{type: 'text', text: message.content} as ContentSegment]
+    if (!hasTable) return codeSegs
+    // text segment 만 splitByTable 추가 적용 — code segment 는 그대로 유지
+    const expanded: ContentSegment[] = []
+    for (const s of codeSegs) {
+      if (s.type === 'text') expanded.push(...splitByTable(s.text))
+      else expanded.push(s)
+    }
+    return expanded
   }, [message.content, message.streaming])
 
   // ── user ──────────────────────────────────────────────────────
@@ -281,6 +391,9 @@ const MessageBase: React.FC<MessageProps> = ({message, isStatic}) => {
           const segKey = `${message.id}-seg-${idx}`
           if (seg.type === 'code') {
             return <CodeBlock key={segKey} text={seg.text} lang={seg.lang} segKey={segKey} columns={columns} messageWidth={messageWidth} streaming={message.streaming} />
+          }
+          if (seg.type === 'table') {
+            return <TableBlock key={segKey} headers={seg.headers} rows={seg.rows} segKey={segKey} />
           }
           const lines = seg.text.split('\n')
           return (
