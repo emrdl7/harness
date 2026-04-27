@@ -7,6 +7,7 @@ import {useStatusStore} from '../store/status.js'
 import {useRoomStore} from '../store/room.js'
 import {useConfirmStore} from '../store/confirm.js'
 import {useFileListStore} from '../store/files.js'
+import {runClientTool} from '../tools/registry.js'
 
 let _exit: (() => void) | null = null
 
@@ -73,6 +74,14 @@ export function dispatch(msg: ServerMsg): void {
       messages.appendToolEnd(msg.name, msg.result)
       status.setActiveTool(null)
       break
+
+    case 'tool_request': {
+      // RPC-01: 서버가 클라 측 도구 실행을 요청한다. registry 의 runClientTool 이
+      // 결과를 boundClient.send 로 회신. dispatch() 는 sync 이므로 fire-and-forget (void 캐스팅).
+      // tool_request 는 사용자 가시 텍스트가 아니므로 flushPendingTokens 호출 불필요.
+      void runClientTool(msg.call_id, msg.name, msg.args)
+      break
+    }
 
     case 'agent_start':
       flushPendingTokens()

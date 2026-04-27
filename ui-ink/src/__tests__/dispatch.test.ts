@@ -1,10 +1,17 @@
 // dispatch exhaustive switch 단위 테스트 (FND-04, FND-05)
-import {describe, it, expect, beforeEach} from 'vitest'
+import {describe, it, expect, beforeEach, vi} from 'vitest'
 import {dispatch, flushPendingTokens} from '../ws/dispatch.js'
 import {useMessagesStore} from '../store/messages.js'
 import {useStatusStore} from '../store/status.js'
 import {useRoomStore} from '../store/room.js'
 import {useConfirmStore} from '../store/confirm.js'
+
+// RPC-01: dispatch 핸드오프 회귀용 — runClientTool 이 호출됐는지 검증한다.
+// vi.mock 은 호이스팅되므로 import 위치와 무관하게 실제 호출이 mock 으로 대체된다.
+vi.mock('../tools/registry.js', () => ({
+  runClientTool: vi.fn(() => Promise.resolve()),
+  bindToolClient: vi.fn(),
+}))
 
 describe('dispatch', () => {
   // 각 테스트 전 모든 store 초기화
@@ -135,5 +142,13 @@ describe('dispatch', () => {
     const {completedMessages} = useMessagesStore.getState()
     const found = completedMessages.some((m) => m.content.includes('사용 가능한 명령어 목록'))
     expect(found).toBe(true)
+  })
+
+  // RPC-01: tool_request 위임 회귀
+  it('tool_request 가 runClientTool(call_id, name, args) 로 위임된다', async () => {
+    const {runClientTool} = await import('../tools/registry.js')
+    ;(runClientTool as ReturnType<typeof vi.fn>).mockClear()
+    dispatch({type: 'tool_request', call_id: 'X1', name: 'read_file', args: {path: '/tmp/a'}})
+    expect(runClientTool).toHaveBeenCalledWith('X1', 'read_file', {path: '/tmp/a'})
   })
 })

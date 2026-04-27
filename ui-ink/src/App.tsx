@@ -9,6 +9,7 @@ import {useInputStore} from './store/input.js'
 import {useInputQueueStore} from './store/inputQueue.js'
 import {useConfirmStore, bindConfirmClient} from './store/confirm.js'
 import {bindFilesClient} from './store/files.js'
+import {bindToolClient} from './tools/registry.js'
 import {useRoomStore} from './store/room.js'
 import {HarnessClient} from './ws/client.js'
 import {bindExit} from './ws/dispatch.js'
@@ -74,9 +75,11 @@ export const App: React.FC = () => {
     clientRef.current = client
     bindConfirmClient(client)
     bindFilesClient(client)
+    bindToolClient(client)                              // RPC-01: 클라 측 도구 실행 결과 회신용
     return () => {
       bindConfirmClient(null)
       bindFilesClient(null)
+      bindToolClient(null)
       client.close()
       clientRef.current = null
     }
