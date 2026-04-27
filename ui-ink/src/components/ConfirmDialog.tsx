@@ -31,20 +31,23 @@ export function classifyCommand(cmd: string): 'safe' | 'dangerous' {
 
 export function ConfirmDialog(): React.ReactElement | null {
   // useShallow 로 필요한 필드만 subscribe (CLAUDE.md 금지 사항: 전체 store selector 금지)
-  const {mode, payload, resolve, addDenied, isDenied, clearConfirm} = useConfirmStore(
+  const {mode, payload, resolve, addDenied, isDenied, addAllowed, isAllowed, clearConfirm} = useConfirmStore(
     useShallow((s) => ({
       mode: s.mode,
       payload: s.payload,
       resolve: s.resolve,
       addDenied: s.addDenied,
       isDenied: s.isDenied,
+      addAllowed: s.addAllowed,
+      isAllowed: s.isAllowed,
       clearConfirm: s.clearConfirm,
     }))
   )
   const activeIsSelf = useRoomStore((s) => s.activeIsSelf)
   const [showDiff, setShowDiff] = useState(false)
 
-  // CNF-03 sticky-deny 자동 판정: mode 가 활성화되는 순간 1회 체크
+  // CNF-03 sticky 자동 판정: mode 가 활성화되는 순간 1회 체크
+  // B1 sticky-allow 가 sticky-deny 보다 우선 (사용자가 'a' 로 명시 허용한 게 우선)
   useEffect(() => {
     if (mode === 'none') return
     const key =
@@ -53,10 +56,14 @@ export function ConfirmDialog(): React.ReactElement | null {
       undefined
     if (!key) return
     const kind: 'path' | 'cmd' = mode === 'confirm_write' ? 'path' : 'cmd'
+    if (isAllowed(kind, key)) {
+      resolve(true)
+      return
+    }
     if (isDenied(kind, key)) {
       resolve(false)
     }
-  }, [mode, payload, resolve, isDenied])
+  }, [mode, payload, resolve, isAllowed, isDenied])
 
   // mode 가 없으면 렌더하지 않는다 (App.tsx 에서 이미 분기하지만 이중 가드)
   if (mode === 'none') return null
@@ -67,6 +74,18 @@ export function ConfirmDialog(): React.ReactElement | null {
   }
 
   const handleAccept = () => {
+    resolve(true)
+    setShowDiff(false)
+  }
+  // B1: 항상 허용 — 동일 path/cmd 는 다음부터 자동 통과
+  const handleAlwaysAllow = () => {
+    const key =
+      mode === 'confirm_write' ? (payload['path'] as string | undefined) :
+      mode === 'confirm_bash'  ? (payload['command'] as string | undefined) :
+      undefined
+    if (key) {
+      addAllowed(mode === 'confirm_write' ? 'path' : 'cmd', key)
+    }
     resolve(true)
     setShowDiff(false)
   }
@@ -88,6 +107,7 @@ export function ConfirmDialog(): React.ReactElement | null {
   // 주의: 관전자 분기(!activeIsSelf) 이후 useInput 호출 — CNF-04 보안 요구사항으로 의도된 위치
   useInput((ch, key) => {
     if (ch === 'y' || ch === 'Y') { handleAccept(); return }
+    if (ch === 'a' || ch === 'A') { handleAlwaysAllow(); return }  // B1
     if (ch === 'n' || ch === 'N') { handleDeny(); return }
     if (key.escape) { handleDeny(); return }
     if ((ch === 'd' || ch === 'D') && mode === 'confirm_write') {
@@ -109,7 +129,7 @@ export function ConfirmDialog(): React.ReactElement | null {
         <Text>경로: <Text bold>{path}</Text></Text>
         {showDiff && <DiffPreview path={path} newContent={content} oldContent={oldContent} />}
         <Text dimColor>
-          <Text color='green'>y</Text> 허용 · <Text color='red'>n</Text> 거부 · <Text color='cyan'>d</Text> 미리보기 · <Text color='gray'>Esc</Text> 취소
+          <Text color='green'>y</Text> 허용 · <Text color='green'>a</Text> 항상 허용 · <Text color='red'>n</Text> 거부 · <Text color='cyan'>d</Text> 미리보기 · <Text color='gray'>Esc</Text> 취소
         </Text>
       </Box>
     )
@@ -126,7 +146,7 @@ export function ConfirmDialog(): React.ReactElement | null {
         </Text>
         <Text>커맨드: <Text bold>{command}</Text></Text>
         <Text dimColor>
-          <Text color='green'>y</Text> 허용 · <Text color='red'>n</Text> 거부 · <Text color='gray'>Esc</Text> 취소
+          <Text color='green'>y</Text> 허용 · <Text color='green'>a</Text> 항상 허용 · <Text color='red'>n</Text> 거부 · <Text color='gray'>Esc</Text> 취소
         </Text>
       </Box>
     )

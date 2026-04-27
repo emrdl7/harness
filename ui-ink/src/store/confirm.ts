@@ -17,11 +17,17 @@ interface ConfirmState {
   payload: Record<string, unknown>
   deniedPaths: Set<string>
   deniedCmds: Set<string>
+  // B1: sticky-allow — 'a 항상 허용' 으로 등록된 path/cmd 는 다음부터 자동 통과
+  allowedPaths: Set<string>
+  allowedCmds: Set<string>
   setConfirm: (mode: ConfirmMode, payload: Record<string, unknown>) => void
   clearConfirm: () => void
   addDenied: (kind: DenyKind, key: string) => void
   isDenied: (kind: DenyKind, key: string) => boolean
   clearDenied: () => void
+  addAllowed: (kind: DenyKind, key: string) => void
+  isAllowed: (kind: DenyKind, key: string) => boolean
+  clearAllowed: () => void
   resolve: (accept: boolean) => void
 }
 
@@ -30,6 +36,8 @@ export const useConfirmStore = create<ConfirmState>((set, get) => ({
   payload: {},
   deniedPaths: new Set<string>(),
   deniedCmds: new Set<string>(),
+  allowedPaths: new Set<string>(),
+  allowedCmds: new Set<string>(),
 
   setConfirm: (mode, payload) => set({mode, payload}),
   clearConfirm: () => set({mode: 'none', payload: {}}),
@@ -49,6 +57,22 @@ export const useConfirmStore = create<ConfirmState>((set, get) => ({
   },
 
   clearDenied: () => set({deniedPaths: new Set(), deniedCmds: new Set()}),
+
+  addAllowed: (kind, key) => set((s) => {
+    if (kind === 'path') {
+      const next = new Set(s.allowedPaths); next.add(key)
+      return {allowedPaths: next}
+    }
+    const next = new Set(s.allowedCmds); next.add(key)
+    return {allowedCmds: next}
+  }),
+
+  isAllowed: (kind, key) => {
+    const s = get()
+    return kind === 'path' ? s.allowedPaths.has(key) : s.allowedCmds.has(key)
+  },
+
+  clearAllowed: () => set({allowedPaths: new Set(), allowedCmds: new Set()}),
 
   resolve: (accept) => {
     const s = get()

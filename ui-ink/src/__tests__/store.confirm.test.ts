@@ -14,6 +14,8 @@ describe('useConfirmStore (stickyDeny + resolve)', () => {
       payload: {},
       deniedPaths: new Set<string>(),
       deniedCmds: new Set<string>(),
+      allowedPaths: new Set<string>(),
+      allowedCmds: new Set<string>(),
     })
     // mock client 주입
     bindConfirmClient(mockClient)
@@ -28,6 +30,8 @@ describe('useConfirmStore (stickyDeny + resolve)', () => {
       payload: {},
       deniedPaths: new Set<string>(),
       deniedCmds: new Set<string>(),
+      allowedPaths: new Set<string>(),
+      allowedCmds: new Set<string>(),
     })
   })
 
@@ -86,5 +90,38 @@ describe('useConfirmStore (stickyDeny + resolve)', () => {
     // cplan_confirm 은 서버 응답 타입이 없으므로 send 호출 안 함
     expect(mockClient.send).not.toHaveBeenCalled()
     expect(useConfirmStore.getState().mode).toBe('none')
+  })
+
+  // B1: sticky-allow — 'a 항상 허용' 으로 등록된 path/cmd 는 다음부터 자동 통과
+  it('Test 9 (B1): 초기 allowedPaths/allowedCmds 는 비어있고 deny 와 독립', () => {
+    const s = useConfirmStore.getState()
+    expect(s.allowedPaths.size).toBe(0)
+    expect(s.allowedCmds.size).toBe(0)
+    s.addDenied('path', '/foo')
+    expect(s.isAllowed('path', '/foo')).toBe(false)  // deny 와 별개 Set
+  })
+
+  it('Test 10 (B1): addAllowed("path", "/foo") → isAllowed true, 다른 path 는 false', () => {
+    useConfirmStore.getState().addAllowed('path', '/foo')
+    expect(useConfirmStore.getState().isAllowed('path', '/foo')).toBe(true)
+    expect(useConfirmStore.getState().isAllowed('path', '/bar')).toBe(false)
+  })
+
+  it('Test 11 (B1): addAllowed("cmd", "ls") → cmd 격리 — path 와 cross 안 됨', () => {
+    useConfirmStore.getState().addAllowed('cmd', 'ls')
+    expect(useConfirmStore.getState().isAllowed('cmd', 'ls')).toBe(true)
+    expect(useConfirmStore.getState().isAllowed('path', 'ls')).toBe(false)
+  })
+
+  it('Test 12 (B1): clearAllowed() → 모두 비워짐 (clearDenied 와 독립)', () => {
+    const s = useConfirmStore.getState()
+    s.addAllowed('path', '/p')
+    s.addAllowed('cmd', 'c')
+    s.addDenied('path', '/d')
+    s.clearAllowed()
+    const after = useConfirmStore.getState()
+    expect(after.allowedPaths.size).toBe(0)
+    expect(after.allowedCmds.size).toBe(0)
+    expect(after.isDenied('path', '/d')).toBe(true)  // deny 는 보존
   })
 })
