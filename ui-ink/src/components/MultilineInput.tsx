@@ -63,7 +63,7 @@ const killToEnd = (lines: string[], cur: Cursor): {lines: string[]; cursor: Curs
 }
 
 export const MultilineInput: React.FC<MultilineInputProps> = ({onSubmit, disabled}) => {
-  const {buffer, setBuffer, clearBuffer, pushHistory, historyUp, historyDown, slashOpen} = useInputStore(
+  const {buffer, setBuffer, clearBuffer, pushHistory, historyUp, historyDown, slashOpen, filePickerOpen} = useInputStore(
     useShallow((s) => ({
       buffer: s.buffer,
       setBuffer: s.setBuffer,
@@ -72,6 +72,7 @@ export const MultilineInput: React.FC<MultilineInputProps> = ({onSubmit, disable
       historyUp: s.historyUp,
       historyDown: s.historyDown,
       slashOpen: s.slashOpen,
+      filePickerOpen: s.filePickerOpen,
     }))
   )
 
@@ -114,6 +115,9 @@ export const MultilineInput: React.FC<MultilineInputProps> = ({onSubmit, disable
       return
     }
 
+    // IX-01: filePickerOpen 시 Enter/Tab 은 FilePicker 가 path 치환 처리 → submit 안 함
+    if (filePickerOpen && (key.return || key.tab)) return
+
     // Enter (단독) → 제출
     // AR-04: busy 중에도 onSubmit 호출 — App.tsx 가 busy 분기로 enqueue/send 결정
     if (key.return && !key.shift) {
@@ -126,8 +130,8 @@ export const MultilineInput: React.FC<MultilineInputProps> = ({onSubmit, disable
       return
     }
 
-    // slashOpen 중에는 ↑↓·Enter 를 SelectInput 에 패스스루
-    if (slashOpen && (key.upArrow || key.downArrow || key.return)) return
+    // slashOpen / filePickerOpen 중에는 ↑↓·Enter 를 popup 에 패스스루
+    if ((slashOpen || filePickerOpen) && (key.upArrow || key.downArrow || key.return)) return
 
     // history ↑↓
     if (key.upArrow) {

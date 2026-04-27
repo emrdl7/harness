@@ -826,6 +826,15 @@ async def _dispatch_loop(ws, room: 'Room', queue: asyncio.Queue):
         elif t == 'ping':
             await send(ws, type='pong')
 
+        elif t == 'file_list_request':
+            # IX-01: @ 파일 픽커용 — working_dir 의 prune 된 파일 목록 (1500개 cap).
+            # 절대경로 pattern 으로 working_dir 명시 — list_files 의 ** 분기가 walk + _PRUNE_DIRS 적용
+            from tools import fs as _fs
+            pattern = state.working_dir.rstrip('/') + '/**/*'
+            r = _fs.list_files(pattern=pattern)
+            files = r.get('files', [])[:1500] if r.get('ok') else []
+            await send(ws, type='file_list_response', files=files)
+
 
 async def _run_session(ws):
     # 룸 식별: 헤더 있으면 공유 룸, 없으면 연결 단위 솔로 룸 (UUID).

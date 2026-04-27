@@ -6,6 +6,7 @@ import {useMessagesStore} from '../store/messages.js'
 import {useStatusStore} from '../store/status.js'
 import {useRoomStore} from '../store/room.js'
 import {useConfirmStore} from '../store/confirm.js'
+import {useFileListStore} from '../store/files.js'
 
 let _exit: (() => void) | null = null
 
@@ -241,6 +242,11 @@ export function dispatch(msg: ServerMsg): void {
       // AR-02: token 과 동일 coalesce 경로
       _pendingTokens += msg.text
       scheduleFlush()
+      break
+
+    case 'file_list_response':
+      // IX-01: @ 파일 픽커 캐시 채움
+      useFileListStore.getState().setFiles(Array.isArray(msg.files) ? msg.files : [])
       break
 
     default:

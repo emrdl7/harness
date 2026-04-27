@@ -41,12 +41,14 @@ interface InputState {
   history: string[]         // 오래된 → 최신 순
   historyIndex: number      // -1 = 미선택 (buffer 편집 중)
   slashOpen: boolean
+  filePickerOpen: boolean   // IX-01: @ 파일 픽커 열림 여부
   setBuffer: (v: string) => void
   clearBuffer: () => void
   pushHistory: (entry: string) => void
   historyUp: () => void     // 이전 history 를 buffer 에 로드
   historyDown: () => void   // 최신 방향으로 이동
   setSlashOpen: (open: boolean) => void
+  setFilePickerOpen: (open: boolean) => void  // IX-01
   hydrate: () => void       // 마운트 시 1회 — history.txt 로드
 }
 
@@ -55,6 +57,7 @@ export const useInputStore = create<InputState>((set, get) => ({
   history: [],
   historyIndex: -1,
   slashOpen: false,
+  filePickerOpen: false,
 
   setBuffer: (v) => set({buffer: v}),
   clearBuffer: () => set({buffer: '', historyIndex: -1}),
@@ -92,6 +95,7 @@ export const useInputStore = create<InputState>((set, get) => ({
   }),
 
   setSlashOpen: (open) => set({slashOpen: open}),
+  setFilePickerOpen: (open) => set({filePickerOpen: open}),
 
   // App.tsx 마운트 시 useEffect 에서 1회 호출 — history.txt 를 메모리로 로드
   hydrate: () => {

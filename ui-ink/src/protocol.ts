@@ -47,8 +47,10 @@ export interface PongMsg         { type: 'pong' }
 export interface ClaudeStartMsg  { type: 'claude_start' }
 export interface ClaudeEndMsg    { type: 'claude_end' }
 export interface ClaudeTokenMsg  { type: 'claude_token';        text: string }
+// IX-01: @ 파일 픽커 — 클라가 file_list_request 보내면 서버가 working_dir 의 prune 된 파일 목록 반환
+export interface FileListResponseMsg { type: 'file_list_response'; files: string[] }
 
-// discriminated union — 모든 서버 메시지 (26종)
+// discriminated union — 모든 서버 메시지
 export type ServerMsg =
   | TokenMsg | ToolStartMsg | ToolEndMsg
   | AgentStartMsg | AgentEndMsg | AgentCancelledMsg  // PEXT-05 추가
@@ -60,6 +62,7 @@ export type ServerMsg =
   | SlashResultMsg
   | QuitMsg | QueueMsg | QueueReadyMsg | PongMsg
   | ClaudeStartMsg | ClaudeEndMsg | ClaudeTokenMsg
+  | FileListResponseMsg  // IX-01
 
 // ─── 클라 → 서버 메시지 타입들 ───────────────────────────────────────────────
 
@@ -69,9 +72,11 @@ export interface ConfirmBashResponse  { type: 'confirm_bash_response';  accept: 
 export interface SlashMsg             { type: 'slash';                  name: string; args?: string }
 export interface PingMsg              { type: 'ping' }
 export interface CancelMsg            { type: 'cancel' }
+export interface FileListRequestMsg   { type: 'file_list_request' }  // IX-01
 
 export type ClientMsg =
   | InputMsg | ConfirmWriteResponse | ConfirmBashResponse | SlashMsg | PingMsg | CancelMsg
+  | FileListRequestMsg
 
 // ─── exhaustive switch 가드 ───────────────────────────────────────────────────
 // dispatch.ts 에서 미처리 이벤트를 컴파일 에러로 탐지하는 헬퍼

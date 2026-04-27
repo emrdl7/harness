@@ -8,6 +8,7 @@ import {useStatusStore} from './store/status.js'
 import {useInputStore} from './store/input.js'
 import {useInputQueueStore} from './store/inputQueue.js'
 import {useConfirmStore, bindConfirmClient} from './store/confirm.js'
+import {bindFilesClient} from './store/files.js'
 import {useRoomStore} from './store/room.js'
 import {HarnessClient} from './ws/client.js'
 import {bindExit} from './ws/dispatch.js'
@@ -72,8 +73,10 @@ export const App: React.FC = () => {
     client.connect()
     clientRef.current = client
     bindConfirmClient(client)
+    bindFilesClient(client)
     return () => {
       bindConfirmClient(null)
+      bindFilesClient(null)
       client.close()
       clientRef.current = null
     }
