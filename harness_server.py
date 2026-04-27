@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 '''WebSocket 서버 — Ink UI와 통신하는 Python 백엔드'''
 import asyncio
+import concurrent.futures
 import hashlib
 import json
 import os
@@ -305,6 +306,34 @@ async def run_agent(ws, room: 'Room', user_input: str, plan_mode: bool = False,
             pass
         return state._confirm_bash_result
 
+    def rpc_call(name: str, args: dict, timeout: float = 30.0) -> dict:
+        '''agent (sync 스레드) 가 호출. ws 로 tool_request 송신 후 tool_result 까지 wait.
+
+        confirm_write (line 274-290) 와 동일 패턴 — Event 대신 Future (결과값 운반).
+        D-11 timeout 30s default. D-12 disconnect 시 _run_session finally 가 cancel.
+        '''
+        call_id = uuid.uuid4().hex
+        future: asyncio.Future = loop.create_future()
+        ws._pending_calls[call_id] = future
+        try:
+            asyncio.run_coroutine_threadsafe(
+                send(ws, type='tool_request', call_id=call_id, name=name, args=args), loop
+            )
+            # asyncio.shield 로 외부 cancel 이 우리 future 를 직접 cancel 못하게 보호.
+            # disconnect cleanup 은 명시적으로 future.cancel() 호출 (이중 보호).
+            wait_future = asyncio.run_coroutine_threadsafe(
+                asyncio.wait_for(asyncio.shield(future), timeout=timeout), loop
+            )
+            return wait_future.result(timeout=timeout + 1)
+        except asyncio.TimeoutError:
+            return {'ok': False, 'error': f'tool_call timeout ({timeout}s)'}
+        except (asyncio.CancelledError, concurrent.futures.CancelledError):
+            return {'ok': False, 'error': 'tool_call aborted (disconnect)'}
+        except Exception as e:
+            return {'ok': False, 'error': f'tool_call error: {e}'}
+        finally:
+            ws._pending_calls.pop(call_id, None)
+
     # 외부 주입값 우선, 없으면 자체 계산
     snippets = context_snippets or (
         context.search(user_input, state.working_dir) if context.is_indexed(state.working_dir) else ''
@@ -357,6 +386,7 @@ async def run_agent(ws, room: 'Room', user_input: str, plan_mode: bool = False,
                     confirm_write=confirm_write if run_profile.get('confirm_writes', True) else None,
                     confirm_bash=confirm_bash if run_profile.get('confirm_bash', True) else None,
                     hooks=run_profile.get('hooks', {}),
+                    rpc_call=rpc_call,  # RPC-01: 클라 위임 도구 진입점
                 )
             else:
                 _, state.messages = agent.run(
@@ -371,6 +401,7 @@ async def run_agent(ws, room: 'Room', user_input: str, plan_mode: bool = False,
                     confirm_write=confirm_write if state.profile.get('confirm_writes', True) else None,
                     confirm_bash=confirm_bash if state.profile.get('confirm_bash', True) else None,
                     hooks=state.profile.get('hooks', {}),
+                    rpc_call=rpc_call,  # RPC-01: 클라 위임 도구 진입점
                 )
         except Exception as e:
             asyncio.run_coroutine_threadsafe(
@@ -843,6 +874,28 @@ async def _dispatch_loop(ws, room: 'Room', queue: asyncio.Queue):
             if state._confirm_bash_event:
                 state._confirm_bash_event.set()
 
+        elif t == 'tool_result':
+            # RPC-01: 클라가 보낸 도구 실행 결과를 pending Future 에 주입.
+            # 1ws=1session 이라 active_input_from 가드 불필요 — call_id 는 ws scope 에서 unique.
+            # late/duplicate (이미 done) 은 silent drop.
+            call_id = msg.get('call_id')
+            if not call_id:
+                continue
+            pending = getattr(ws, '_pending_calls', None)
+            if not pending:
+                continue
+            future = pending.get(call_id)
+            if future is None or future.done():
+                continue
+            if msg.get('ok'):
+                result_payload = msg.get('result') or {}
+                # envelope 의 ok 는 True 로 평탄화 + result dict 의 키 그대로 노출 (Python 도구 schema 일치)
+                future.set_result({'ok': True, **result_payload})
+            else:
+                err = msg.get('error') or {}
+                err_msg = err.get('message') if isinstance(err, dict) else str(err)
+                future.set_result({'ok': False, 'error': err_msg or '도구 실행 오류 (메시지 없음)'})
+
         elif t == 'cancel':
             # PEXT-05: 입력 주체(active_input_from)만 취소 가능 — confirm_write_response와 동일한 DQ2 가드 (T-03-02-02)
             if ws is not room.active_input_from:
@@ -889,6 +942,10 @@ async def _run_session(ws):
     room = _get_or_create_room(room_name)
     room.subscribers.add(ws)
     state = room.state  # 같은 룸의 모든 ws가 같은 Session 공유
+
+    # RPC-01 (D-05, D-06): 1 ws ↔ pending tool_call 들. BB-2 폐기 후에도 ws scope 그대로 유지.
+    # call_id (uuid v4 hex) → asyncio.Future. tool_result 도착 시 set_result, disconnect 시 cancel.
+    ws._pending_calls: dict[str, asyncio.Future] = {}
 
     # B4: 이 ws의 토큰을 저장해두어 room_member_joined에서 user 필드 계산에 사용
     ws_token = (ws.request.headers.get('x-harness-token', '') or '').strip()
@@ -967,6 +1024,14 @@ async def _run_session(ws):
             # 진행 중인 input task는 자연 종료를 기대.
             # 끊긴 ws에 대한 broadcast는 dead 정리 로직이 자동 처리.
     finally:
+        # RPC-01 (D-12): ws disconnect 시 pending tool_call 일괄 cancel.
+        # rpc_call 의 wait_future 가 CancelledError → {'ok': False, 'error': 'tool_call aborted (disconnect)'}.
+        for _cid, _fut in list(getattr(ws, '_pending_calls', {}).items()):
+            if not _fut.done():
+                _fut.cancel()
+        if hasattr(ws, '_pending_calls'):
+            ws._pending_calls.clear()
+
         room.subscribers.discard(ws)
         # Phase 3-A: 다른 멤버에게 이탈 알림 (룸이 비어 정리되기 전에 한 번)
         if is_shared and room.subscribers:
