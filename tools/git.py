@@ -32,7 +32,30 @@ def git_diff(cwd: str = '.', staged: bool = False) -> dict:
 
 
 def git_log(cwd: str = '.', n: int = 10) -> dict:
-    return _git(['log', f'-{n}', '--oneline', '--graph'], cwd)
+    '''커밋 N개를 구조화된 dict 로 반환 (T5 GitLogBlock 시각화용).
+    실패 시 _git 의 기본 {ok, stdout, stderr} 형식 그대로 반환.
+    성공 시 stdout(원본 oneline) + commits([{hash, short, author, date, subject}]) 둘 다 포함 — 모델은 stdout, UI 는 commits 사용.
+    '''
+    # \x09 = 탭. subject 안 탭은 거의 없음 (git 이 자동 escape).
+    fmt = '%H%x09%h%x09%an%x09%ar%x09%s'
+    r = _git(['log', f'-{n}', '--pretty=format:' + fmt], cwd)
+    if not r['ok']:
+        return r
+    commits = []
+    for line in r['stdout'].splitlines():
+        parts = line.split('\t')
+        if len(parts) < 5:
+            continue
+        commits.append({
+            'hash': parts[0],
+            'short': parts[1],
+            'author': parts[2],
+            'date': parts[3],
+            'subject': parts[4],
+        })
+    # stdout 도 oneline 형식으로 재생성 (모델 호환 — 기존 사용자가 stdout 만 보던 케이스)
+    oneline = '\n'.join(f'{c["short"]} {c["subject"]}' for c in commits)
+    return {'ok': True, 'commits': commits, 'stdout': oneline, 'stderr': ''}
 
 
 def git_diff_full(cwd: str = '.') -> dict:
