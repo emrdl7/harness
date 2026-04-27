@@ -9,6 +9,8 @@ import {Message} from './Message.js'
 export const MessageList: React.FC = () => {
   const completed = useMessagesStore((s) => s.completedMessages)
   const active = useMessagesStore(useShallow((s) => s.activeMessage))
+  // 진행 중 tool — Static 의 in-place 업데이트 한계 회피용 (assistant active 와 동일 패턴)
+  const activeTool = useMessagesStore(useShallow((s) => s.activeToolMessage))
 
   return (
     <>
@@ -16,6 +18,8 @@ export const MessageList: React.FC = () => {
       <Static items={completed}>
         {(m) => <Message key={m.id} message={m} isStatic/>}
       </Static>
+      {/* 진행 중 tool 카드 (tool_end 시 completedMessages 로 이동) */}
+      {activeTool ? <Message message={activeTool}/> : null}
       {/* 현재 입력 중이거나 생성 중인 메시지만 하단에 렌더링 */}
       {active ? <Message message={active}/> : null}
     </>

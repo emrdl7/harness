@@ -13,8 +13,11 @@ export interface Message {
 }
 
 interface MessagesState {
-  completedMessages: Message[]    // <Static> 전용 append-only — agent_end 시에만 push
+  completedMessages: Message[]    // <Static> 전용 append-only — agent_end / tool_end 시에만 push
   activeMessage: Message | null   // 스트리밍 중 assistant — 일반 트리에만 렌더
+  // 진행 중 tool — Static 의 in-place 업데이트가 화면에 안 반영되는 문제 회피.
+  // tool_start 시 set, tool_end 시 streaming=false + toolPayload 부착해서 completedMessages 로 이동.
+  activeToolMessage: Message | null
   snapshotKey: number             // Phase 3: Static key remount 트리거 (REM-03)
   pendingUserMessage: Message | null  // 재연결 시 state_snapshot 덮어쓰기 방지용
   appendUserMessage: (content: string, meta?: Record<string, unknown>) => void
@@ -31,6 +34,7 @@ interface MessagesState {
 export const useMessagesStore = create<MessagesState>((set) => ({
   completedMessages: [],
   activeMessage: null,
+  activeToolMessage: null,
   snapshotKey: 0,
   pendingUserMessage: null,
 
@@ -77,41 +81,47 @@ export const useMessagesStore = create<MessagesState>((set) => ({
     }
   }),
 
-  appendToolStart: (name, args) => set((s) => ({
-    completedMessages: [...s.completedMessages, {
+  // tool_start: activeToolMessage 슬롯에만 set. completedMessages 에 push 하면
+  // Ink <Static> 의 append-only 특성상 tool_end 시 in-place 업데이트가 화면에 반영되지 않음.
+  appendToolStart: (name, args) => set(() => ({
+    activeToolMessage: {
       id: crypto.randomUUID(),
       role: 'tool',
-      content: `[${name}] ${JSON.stringify(args)}`,   // 하위호환: registry 미매칭 시 fallback 표시
+      content: `[${name}] ${JSON.stringify(args)}`,
       toolName: name,
-      toolArgs: args,                                  // AR-01: 구조화 인자 보존
+      toolArgs: args,
       streaming: true,
-    }],
+    },
   })),
 
-  // tool 은 completedMessages 안에서 in-place 업데이트 (streaming → false)
-  // AR-01: payload 는 dict (백엔드가 dict broadcast). content 는 fallback 표시용 string 유지
+  // tool_end: activeToolMessage 를 streaming=false + toolPayload 부착해서 completedMessages 로 이동.
+  // AR-01: payload 는 dict (백엔드가 dict broadcast). content 는 fallback 표시용 string 유지.
   appendToolEnd: (name, payload) => set((s) => {
-    const revIdx = [...s.completedMessages].reverse().findIndex(
-      (m) => m.role === 'tool' && m.toolName === name && m.streaming,
-    )
-    if (revIdx === -1) return {}
-    const realIdx = s.completedMessages.length - 1 - revIdx
-    // fallback content: payload 가 string 이면 그대로, 아니면 짧은 JSON
     const fallback = typeof payload === 'string'
       ? payload
       : JSON.stringify(payload).slice(0, 200)
-    const updated = {
-      ...s.completedMessages[realIdx],
+    // 매칭 실패 (snapshot 로드 / tool_start 없이 tool_end 도달) → 새 메시지로 직접 push
+    if (!s.activeToolMessage || s.activeToolMessage.toolName !== name) {
+      return {
+        completedMessages: [...s.completedMessages, {
+          id: crypto.randomUUID(),
+          role: 'tool',
+          content: `[${name}] ${fallback}`,
+          toolName: name,
+          toolPayload: payload,
+          streaming: false,
+        }],
+      }
+    }
+    const finished: Message = {
+      ...s.activeToolMessage,
       content: `[${name}] ${fallback}`,
-      toolPayload: payload,                            // AR-01: 구조화 결과 보존
+      toolPayload: payload,
       streaming: false,
     }
     return {
-      completedMessages: [
-        ...s.completedMessages.slice(0, realIdx),
-        updated,
-        ...s.completedMessages.slice(realIdx + 1),
-      ],
+      activeToolMessage: null,
+      completedMessages: [...s.completedMessages, finished],
     }
   }),
 
@@ -121,7 +131,7 @@ export const useMessagesStore = create<MessagesState>((set) => ({
     }],
   })),
 
-  clearMessages: () => set({completedMessages: [], activeMessage: null}),
+  clearMessages: () => set({completedMessages: [], activeMessage: null, activeToolMessage: null}),
 
   // Phase 3: state_snapshot 히스토리 일괄 로드 (REM-03)
   // T-03-03-01: rawMessages 악성 데이터 방어 — object만 허용, role 화이트리스트, content string 강제
@@ -147,6 +157,7 @@ export const useMessagesStore = create<MessagesState>((set) => ({
       snapshotKey: s.snapshotKey + 1,  // Static key remount 트리거
       completedMessages: hasPending ? [...parsed, pending] : parsed,
       activeMessage: null,
+      activeToolMessage: null,
     }
   }),
 }))
