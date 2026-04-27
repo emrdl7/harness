@@ -52,31 +52,10 @@ def _resolve_path(p: str) -> tuple[bool, str]:
     return False, f'경로가 샌드박스 밖입니다: {p} (sandbox: {_sandbox_root})'
 
 
-def read_file(path: str = None, file_path: str = None, offset: int = 1, limit: int = 0) -> dict:
-    path = path or file_path
-    '''offset: 시작 줄(1-based), limit: 읽을 줄 수(0=전체)'''
-    ok, resolved = _resolve_path(path)
-    if not ok:
-        return {'ok': False, 'error': resolved}
-    try:
-        with open(resolved, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-        total = len(lines)
-        start = max(1, offset) - 1          # 0-based index
-        end   = (start + limit) if limit > 0 else total
-        end   = min(end, total)
-        sliced = lines[start:end]
-        # 줄 번호 prefix (cat -n 스타일)
-        content = ''.join(f'{start + i + 1:4d}\t{l}' for i, l in enumerate(sliced))
-        return {
-            'ok': True,
-            'content': content,
-            'total_lines': total,
-            'start_line': start + 1,
-            'end_line': start + len(sliced),
-        }
-    except Exception as e:
-        return {'ok': False, 'error': str(e)}
+# read_file 본체는 클라 측 (ui-ink/src/tools/fs.ts) 으로 이전됨 (RPC-03, D-18, Phase 1).
+# 서버는 agent.py:CLIENT_SIDE_TOOLS 분기로 위임 → ws tool_request 송신.
+# TOOL_DEFINITIONS 의 read_file schema 는 tools/__init__.py 에 유지 (LLM 호출 schema).
+
 
 def write_file(path: str, content: str) -> dict:
     ok, resolved = _resolve_path(path)

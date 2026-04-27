@@ -54,33 +54,15 @@ class TestSandbox:
 
 
 class TestReadWriteEdit:
+    # read_file 케이스 3건은 RPC-03/D-18 에 따라 deletion (Phase 1).
+    # 클라 측 vitest (ui-ink/src/__tests__/tools-fs.test.ts) 가 동등 회귀를 담당.
+
     def test_write_and_read_round_trip(self, tmp_path):
+        '''write_file 결과를 직접 read 로 검증 — fs.read_file 본체는 클라 측 이전됨.'''
         path = tmp_path / 'sample.txt'
         result = fs.write_file(str(path), 'hello\nworld\n')
         assert result['ok'] is True
-        result = fs.read_file(str(path))
-        assert result['ok'] is True
-        assert result['total_lines'] == 2
-        assert 'hello' in result['content']
-        assert 'world' in result['content']
-
-    def test_read_offset_limit(self, tmp_path):
-        path = tmp_path / 'multi.txt'
-        path.write_text(''.join(f'line{i}\n' for i in range(10)))
-        result = fs.read_file(str(path), offset=3, limit=2)
-        assert result['ok'] is True
-        assert result['start_line'] == 3
-        assert result['end_line'] == 4
-        assert 'line2' in result['content']
-        assert 'line3' in result['content']
-        assert 'line0' not in result['content']
-
-    def test_read_accepts_file_path_alias(self, tmp_path):
-        '''profile/legacy 호환: file_path 인자도 받아야 함.'''
-        path = tmp_path / 'a.txt'
-        path.write_text('x')
-        result = fs.read_file(file_path=str(path))
-        assert result['ok'] is True
+        assert path.read_text() == 'hello\nworld\n'
 
     def test_edit_single_occurrence(self, tmp_path):
         path = tmp_path / 'edit.txt'

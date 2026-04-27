@@ -1,4 +1,5 @@
-from .fs import read_file, write_file, edit_file, list_files, grep_search
+# read_file 은 클라 측 (RPC-02 / agent.CLIENT_SIDE_TOOLS) — 서버 import 제외 (D-18, Phase 1).
+from .fs import write_file, edit_file, list_files, grep_search
 from .shell import run_command, run_python
 from .git import git_status, git_diff, git_log, git_diff_full, git_add, git_commit, git_checkout, git_stash
 from .web import search_web, fetch_page
@@ -308,7 +309,7 @@ def register_mcp_tools(clients: 'dict[str, StdioMCPClient]') -> list[str]:
 
 
 TOOL_MAP = {
-    'read_file': read_file,
+    # read_file 본체는 클라 측 (RPC-03, D-18). agent.py:CLIENT_SIDE_TOOLS 분기가 TOOL_MAP lookup 보다 먼저 가로챔.
     'write_file': write_file,
     'edit_file': edit_file,
     'grep_search': grep_search,

@@ -37,9 +37,13 @@ class TestToolMap:
         assert len(tools.TOOL_MAP) > 0
 
     def test_definitions_match_map(self):
-        '''모든 등록 정의에 대해 TOOL_MAP에 콜러블이 있어야 함.'''
+        '''모든 등록 정의에 대해 TOOL_MAP에 콜러블이 있어야 함 (단, CLIENT_SIDE_TOOLS 는 클라 위임이므로 TOOL_MAP 부재가 정상).'''
+        from agent import CLIENT_SIDE_TOOLS
         for tool_def in tools.TOOL_DEFINITIONS:
             name = tool_def['name']
+            if name in CLIENT_SIDE_TOOLS:
+                assert name not in tools.TOOL_MAP, f'클라 위임 도구가 서버 TOOL_MAP 에 잔존: {name}'
+                continue
             assert name in tools.TOOL_MAP, f'TOOL_MAP에 누락: {name}'
             assert callable(tools.TOOL_MAP[name]), f'{name} 콜러블 아님'
 
