@@ -11,6 +11,7 @@ import {DefaultToolBlock} from './DefaultToolBlock.js'
 import {BashBlock} from './BashBlock.js'
 import {ReadFileBlock} from './ReadFileBlock.js'
 import {FileEditBlock} from './FileEditBlock.js'
+import {GrepResultBlock} from './GrepResultBlock.js'
 import type {ToolBlockComponent} from './types.js'
 
 export const TOOL_REGISTRY: Record<string, ToolBlockComponent> = {
@@ -19,6 +20,7 @@ export const TOOL_REGISTRY: Record<string, ToolBlockComponent> = {
   read_file:   ReadFileBlock,
   write_file:  FileEditBlock,
   edit_file:   FileEditBlock,
+  grep_search: GrepResultBlock,
 }
 
 export function getToolRenderer(name: string): ToolBlockComponent {
