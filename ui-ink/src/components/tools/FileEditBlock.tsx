@@ -151,7 +151,9 @@ export const FileEditBlock: React.FC<ToolBlockProps> = (props) => {
   const {add, del} = diffStats(diff)
   // diff 는 헤더 라인(+++/---/@@) 포함이라 본문 30줄 + 여유 5
   const {text, hidden} = clampLines(diff, MAX_LINES + 5)
-  const highlighted = safeHighlight(text, 'diff')
+  // cli-highlight('diff') 가 ANSI 색을 입히지 않는 케이스가 있어 직접 라인 파싱.
+  // Message.tsx 의 DiffBlock 과 동일한 컬러 규칙 — git diff 표준.
+  const diffLines = text.split('\n')
 
   return (
     <Box flexDirection='column' marginY={0}>
@@ -166,7 +168,15 @@ export const FileEditBlock: React.FC<ToolBlockProps> = (props) => {
       </Box>
       <Box flexDirection='column' paddingLeft={2}>
         <Text dimColor>╭─ diff ─────────</Text>
-        <Text wrap='wrap'>{highlighted}</Text>
+        {diffLines.map((line, i) => {
+          const color =
+            line.startsWith('+++') || line.startsWith('---') ? 'yellow' :
+            line.startsWith('+')                              ? 'green'  :
+            line.startsWith('-')                              ? 'red'    :
+            line.startsWith('@@')                             ? 'cyan'   :
+            undefined
+          return <Text key={`d${i}`} color={color} wrap='wrap'>{line}</Text>
+        })}
         {hidden > 0 && <Text dimColor>… +{hidden}줄</Text>}
         <Text dimColor>╰───────────────</Text>
       </Box>
