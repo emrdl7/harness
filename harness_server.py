@@ -610,11 +610,12 @@ async def handle_slash(ws, room: 'Room', cmd: str):
 # ── 상태 전송 ─────────────────────────────────────────────────────
 def _state_payload(state: Session) -> dict:
     turns = len([m for m in state.messages if m['role'] == 'user'])
-    model = os.environ.get('HARNESS_MODEL', 'qwen3-coder:30b')
+    # config.MODEL — main() 진입부의 runtime_override(.harness.toml) 가 적용된 활성 모델.
+    # 환경변수 직접 읽기는 .harness.toml 변경을 무시했음(과거 버그).
     return dict(
         type='state',
         working_dir=state.working_dir,
-        model=model,
+        model=config.MODEL,
         turns=turns,
         indexed=context.is_indexed(state.working_dir),
         claude_available=claude_available(),
