@@ -68,12 +68,35 @@ def _summarize(messages_to_summarize: list) -> str:
             content = ' '.join(c.get('text', '') for c in content if isinstance(c, dict))
         lines.append(f'[{role}] {content[:300]}')
 
+    messages = [
+        {'role': 'system', 'content': _SUMMARY_SYSTEM},
+        {'role': 'user', 'content': _SUMMARY_PROMPT + '\n'.join(lines)},
+    ]
+
+    # 백엔드 분기 — agent.py 의 _stream_response 와 동일한 패턴
+    if config.BACKEND == 'mlx':
+        url = f'{config.MLX_BASE_URL}/v1/chat/completions'
+        payload = {
+            'model': config.MODEL,
+            'messages': messages,
+            'stream': False,
+            'temperature': config.OLLAMA_OPTIONS.get('temperature', 0.2),
+            'max_tokens': 512,
+            'chat_template_kwargs': {'enable_thinking': config.MLX_THINKING},
+        }
+        try:
+            resp = requests.post(url, json=payload, timeout=60)
+            resp.raise_for_status()
+            choices = resp.json().get('choices') or []
+            text = (choices[0].get('message', {}).get('content', '') if choices else '').strip()
+            return text or ''
+        except Exception:
+            return ''
+
+    # Ollama 경로
     payload = {
         'model': config.MODEL,
-        'messages': [
-            {'role': 'system', 'content': _SUMMARY_SYSTEM},
-            {'role': 'user', 'content': _SUMMARY_PROMPT + '\n'.join(lines)},
-        ],
+        'messages': messages,
         'stream': False,
         'options': {**config.OLLAMA_OPTIONS, 'num_predict': 512},
     }
