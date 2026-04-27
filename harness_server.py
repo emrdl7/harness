@@ -987,8 +987,10 @@ async def main():
         sys.exit(1)
 
     # .harness.toml 적용 — Session.__init__ 에서도 다시 로드되지만,
-    # _ensure_mlx_running() 이 config.BACKEND 를 보기 전에 서버 cwd 기준으로 한 번 갱신해야 함.
-    config.runtime_override(prof.load(os.getcwd()))
+    # _ensure_mlx_running() 이 config.BACKEND 를 보기 전에 서버 기준으로 한 번 갱신해야 함.
+    # cwd 가 아닌 스크립트 디렉토리 — 래퍼(~/.bun/bin/harness_server) 가 cd 안 하므로
+    # 사용자가 ~ 에서 명령 쳐도 harness/.harness.toml 을 정확히 읽도록 고정.
+    config.runtime_override(prof.load(os.path.dirname(os.path.abspath(__file__))))
 
     _ensure_mlx_running()
 
