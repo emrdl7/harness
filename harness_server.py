@@ -177,6 +177,21 @@ class Session:
         # RX-02 (단순 버전): 자동 저장 파일명 — 첫 turn 에서 생성, 이후 같은 파일에 덮어쓰기
         self.session_filename: str | None = None
 
+        # RX-02: auto_resume=True 면 working_dir 별 latest 세션 자동 복원 + 같은 파일 이어쓰기.
+        # /clear 슬래시로 명시 reset 가능 (별도 핸들러). 실패는 silent — 새 세션으로 출발.
+        if self.profile.get('auto_resume'):
+            try:
+                latest = session_store.load_latest(self.working_dir)
+                if latest and latest.get('messages'):
+                    self.messages = latest['messages']
+                    # latest filename 추출 — list_sessions 첫 매칭 항목과 동일
+                    for s in session_store.list_sessions():
+                        if s['working_dir'] == self.working_dir:
+                            self.session_filename = s['filename']
+                            break
+            except Exception:
+                pass
+
 
 # ── 공유 룸 (BB-2 Phase 1+2.5) ───────────────────────────────────
 # 같은 room_name으로 접속한 WS들이 하나의 Session을 공유한다.
@@ -456,6 +471,8 @@ async def handle_slash(ws, room: 'Room', cmd: str):
         # 상태 변경은 harness_core에 위임. UI 호환 메시지는 그대로 유지.
         result = harness_core.dispatch(cmd, _to_core_state(state))
         _apply_core_result(state, result)
+        # RX-02: auto-save 파일 분리 — /clear 후 새 turn 은 새 timestamp 파일 생성
+        state.session_filename = None
         await broadcast(room, type='slash_result', cmd='clear')
 
     elif name == '/undo':
@@ -897,6 +914,8 @@ async def _run_session(ws):
                 state.messages = data.get('messages', [])
                 if 'working_dir' in data:
                     state.working_dir = data['working_dir']
+                # RX-02: 명시 resume 한 파일에 이후 turn 자동 저장 (auto-save 가 새 파일 생성 X)
+                state.session_filename = resume_session_id
             except FileNotFoundError:
                 await send(ws, type='error', text=f'세션 없음: {resume_session_id}')
             except Exception as e:

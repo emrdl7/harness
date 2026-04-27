@@ -40,6 +40,8 @@ DEFAULTS = {
     'approval_mode':  '',
     # @claude / /claude 명령에 사용할 모델 (비워두면 Claude Code 기본값)
     'claude_model':   '',
+    # RX-02: working_dir 별 마지막 세션을 startup 시 자동 복원 (opt-in, default false)
+    'auto_resume':    False,
 }
 
 # 환경변수 → 설정 키 매핑 (값 타입 포함)
