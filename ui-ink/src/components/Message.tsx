@@ -246,10 +246,17 @@ function TableBlock({headers, rows, segKey}: {
 // R3: 파일 경로 패턴 — 확장자 첫 글자 알파벳 강제로 1.5/2.0 같은 숫자 false-positive 회피
 //   foo.ts · src/foo.ts · src/foo.ts:42 · src/foo.ts:42:7 · ~/.zshrc
 const PATH_PATTERN = String.raw`\b[\w./~-]*\w+\.[a-zA-Z]\w{0,5}(?::\d+(?::\d+)?)?\b`
+// R5: 숫자 + 단위 메트릭 — 245ms · 1.2 MB · 98.5% · 42s 등. 단위는 흔한 것만 등록 (false-positive 회피).
+// 끝 \b 는 % 같은 non-word 문자 뒤에서 매치 실패해서 lookahead 로 word 끝 또는 비-단어/끝을 강제.
+const NUMBER_UNIT_PATTERN = String.raw`\b\d+(?:\.\d+)?\s?(?:ms|us|ns|µs|s|min|h|day|days|B|KB|MB|GB|TB|fps|%)(?![\w])`
 // alternation 안에 backtick(\x60) 패턴 포함 — String.raw 안에서 raw backtick 삽입이
 // template literal 종료 문자라 \x60 으로 표기. 매칭 결과상 동일.
+// 순서 — bold/italic/code/link 가장 먼저, 그 다음 NUMBER_UNIT (PATH 보다 먼저: '1.2MB' 가
+// PATH 의 '1.5' false-positive 회피 패턴에 안 잡히므로 NUMBER 가 명시적으로 잡아야 함),
+// 마지막 PATH (가장 광범위).
 const INLINE_RE = new RegExp(
-  String.raw`(\*\*[^*\n]+\*\*|\*[^*\n]+\*|\x60[^\x60\n]+\x60|\[[^\]\n]+\]\([^)\n]+\)|` + PATH_PATTERN + ')',
+  String.raw`(\*\*[^*\n]+\*\*|\*[^*\n]+\*|\x60[^\x60\n]+\x60|\[[^\]\n]+\]\([^)\n]+\)|`
+  + NUMBER_UNIT_PATTERN + '|' + PATH_PATTERN + ')',
   'g'
 )
 
@@ -280,6 +287,9 @@ function InlineText({text, baseKey}: {text: string; baseKey: string}): React.Rea
       } else {
         parts.push(<Text key={`${baseKey}-t${i++}`}>{tok}</Text>)
       }
+    } else if (/^\d/.test(tok)) {
+      // R5: 숫자 + 단위 (245ms · 1.2 MB · 98.5%) — yellow 강조
+      parts.push(<Text key={`${baseKey}-n${i++}`} color='yellow'>{tok}</Text>)
     } else {
       // R3: 파일 경로 — alternation 마지막 분기라 여기로만 떨어진다
       parts.push(<Text key={`${baseKey}-p${i++}`} color='cyan' underline>{tok}</Text>)
