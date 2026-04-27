@@ -170,6 +170,9 @@ PLAN_PROMPT = '''다음 작업을 실행하기 전에 단계별 계획을 먼저
 
 
 def _stream_response(messages: list, on_token=None, on_thought=None, on_thought_end=None) -> dict:
+    # 백엔드 분기 — MLX 면 OpenAI 호환 경로, 기본은 Ollama
+    if config.BACKEND == 'mlx':
+        return _stream_mlx_response(messages, on_token, on_thought, on_thought_end)
     payload = {
         'model': config.MODEL,
         'messages': messages,
@@ -230,6 +233,102 @@ def _stream_response(messages: list, on_token=None, on_thought=None, on_thought_
     # assistant 메시지에 _thinking 필드 부착 (완료된 마지막 블록 기준).
     # Ollama는 payload의 unknown 필드를 무시하므로 세션에 그대로 보관해도 안전.
     # /think 슬래시가 이 필드를 읽는다.
+    result = {'role': 'assistant', 'content': parser.accumulated, 'tool_calls': tool_calls}
+    if parser._thinkings:
+        result['_thinking'] = parser._thinkings[-1]
+    return result
+
+
+def _stream_mlx_response(messages: list, on_token=None, on_thought=None, on_thought_end=None) -> dict:
+    '''mlx_lm.server (OpenAI /v1/chat/completions) 백엔드.
+
+    Ollama 와 다른 점:
+    - SSE 프레임 (`data: {...}\\n\\n`, `data: [DONE]` 종료, `:keepalive` 주석 무시)
+    - delta.content 로 토큰 도착, delta.tool_calls 는 완성 형태로 한 번에 옴
+    - delta.reasoning 필드 (Qwen3.6 thinking) 는 on_thought 로 라우팅
+    '''
+    payload = {
+        'model': config.MODEL,
+        'messages': messages,
+        'tools': TOOL_DEFINITIONS,
+        'stream': True,
+        'temperature': config.OLLAMA_OPTIONS.get('temperature', 0.2),
+        'top_p': config.OLLAMA_OPTIONS.get('top_p', 0.9),
+        'max_tokens': config.OLLAMA_OPTIONS.get('num_predict', 4096),
+        'chat_template_kwargs': {'enable_thinking': config.MLX_THINKING},
+    }
+    url = f'{config.MLX_BASE_URL}/v1/chat/completions'
+
+    # 재시도 — Ollama 경로와 동일 정책 (3회, 지수 백오프, 5xx/Connection/Timeout 만 재시도)
+    resp = None
+    for attempt in range(3):
+        try:
+            resp = requests.post(url, json=payload, stream=True, timeout=300)
+            if 500 <= resp.status_code < 600:
+                resp.close()
+                raise requests.HTTPError(f'HTTP {resp.status_code}', response=resp)
+            resp.raise_for_status()
+            break
+        except (requests.ConnectionError, requests.Timeout) as e:
+            if attempt == 2:
+                raise
+            delay = 2 ** attempt
+            if on_token:
+                on_token(f'\n[MLX 재연결 {attempt + 2}/3 — {delay}s 대기: {type(e).__name__}]\n')
+            time.sleep(delay)
+        except requests.HTTPError as e:
+            status = e.response.status_code if e.response is not None else 0
+            if status < 500 or attempt == 2:
+                raise
+            delay = 2 ** attempt
+            if on_token:
+                on_token(f'\n[MLX 재연결 {attempt + 2}/3 — {delay}s 대기: HTTP {status}]\n')
+            time.sleep(delay)
+
+    parser = _ThinkingParser(
+        on_answer=on_token,
+        on_thought=on_thought,
+        on_thought_end=on_thought_end,
+    )
+    tool_calls = []
+
+    for raw in resp.iter_lines():
+        if not raw:
+            continue
+        line = raw.decode('utf-8') if isinstance(raw, bytes) else raw
+        # SSE 주석(:keepalive ...) 과 비-data 라인은 무시
+        if not line.startswith('data: '):
+            continue
+        data = line[6:]
+        if data.strip() == '[DONE]':
+            break
+        try:
+            chunk = json.loads(data)
+        except json.JSONDecodeError:
+            continue
+        choices = chunk.get('choices') or []
+        if not choices:
+            continue
+        delta = choices[0].get('delta', {})
+        content = delta.get('content', '')
+        if content:
+            parser.feed(content)
+        # Qwen3.6 reasoning 필드 → thought 콜백 (있을 때만)
+        reasoning = delta.get('reasoning', '')
+        if reasoning and on_thought:
+            on_thought(reasoning)
+        if delta.get('tool_calls'):
+            for tc in delta['tool_calls']:
+                fn = tc.get('function', {})
+                tool_calls.append({
+                    'function': {
+                        'name': fn.get('name', ''),
+                        # arguments 는 stringified JSON — agent loop 가 str/dict 둘 다 처리
+                        'arguments': fn.get('arguments', '{}'),
+                    }
+                })
+    parser.flush()
+
     result = {'role': 'assistant', 'content': parser.accumulated, 'tool_calls': tool_calls}
     if parser._thinkings:
         result['_thinking'] = parser._thinkings[-1]
