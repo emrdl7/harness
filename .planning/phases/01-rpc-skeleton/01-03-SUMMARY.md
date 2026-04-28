@@ -41,9 +41,21 @@ pytest: **232 passed** (234 baseline → -3 read_file deletion + 1 test_tools_re
 
 **Commit:** `cc24f3c refactor(01-03): tools/fs.py read_file 본체 deletion (D-18, RPC-03)`
 
-### Task 3 — 외부 PC 수동 검증 (D-19)
+### Task 3 — 외부 PC 수동 검증 (D-19) ✅ PASSED (2026-04-28)
 
-**상태: CHECKPOINT — 사용자 수동 검증 대기.**
+**검증 PC**: johyeonchangs-Mac-mini (VPN 통해 ws://192.168.0.222:7891 접속)
+**결정적 시나리오**:
+- mac-mini 의 `/tmp/mac-mini-proof.txt` 에 `MAC-MINI-PROOF` 1줄 작성
+- 서버 PC 에는 해당 파일 미존재 (`ls /tmp/mac-mini-proof.txt` → No such file or directory)
+- ui-ink 에서 `"/tmp/mac-mini-proof.txt 읽어줘"` 입력
+- LLM 응답에 `MAC-MINI-PROOF` 내용 인용됨 → **클라 측 read_file 실행 확정**
+
+**의의**:
+- CLIENT_SIDE_TOOLS = {'read_file'} 분기 정상 동작
+- WS RPC 라운드트립 (서버 tool_request → 클라 dispatch → 클라 fs.ts:readFile → 클라 tool_result → 서버 future.set_result) 전 구간 검증
+- 1인 1세션 모델 + RPC 위임 = Claude Code 셀프호스팅 패턴 동작 확인
+
+**Phase 1 Goal 달성**: "외부 PC 클라가 자기 PC `read_file` 결과 받는 것 수동 검증" ✓
 
 수동 검증 시나리오 (D-19):
 
