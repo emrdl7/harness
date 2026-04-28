@@ -49,6 +49,9 @@ export class HarnessClient {
       useRoomStore.getState().setWsState('connected')
       // confirm 응답 전송용 client 바인딩 (CNF-03)
       bindConfirmClient(this)
+      // RPC-07: 연결 직후 클라 cwd 를 서버에 동기화 — LLM 의 args.path 가 사용자 PC 기준 경로가 되도록.
+      // process.cwd() 가 절대경로 보장 (ui-ink 가 사용자가 띄운 위치).
+      this.send({type: 'client_hello', cwd: process.cwd()})
       // WSR-01: 30초 안정 후 attempts 리셋
       this._onConnectedStable()
       // heartbeat

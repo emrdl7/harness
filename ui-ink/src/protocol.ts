@@ -89,11 +89,18 @@ export interface ToolResultMsg {
   result?: Record<string, unknown>                  // ok=true 시 — Python read_file 의 content/total_lines 등이 그대로
   error?: { kind: string; message: string }          // ok=false 시 (D-02)
 }
+// RPC-07: 클라 → 서버 (연결 직후 1회) — 클라 cwd 를 서버 state.working_dir 로 동기화.
+// 서버측 LLM 이 args.path 를 만들 때 사용자 PC 기준 경로가 되도록 함.
+export interface ClientHelloMsg {
+  type: 'client_hello'
+  cwd: string                                        // 클라 측 process.cwd() — 사용자가 ui-ink 띄운 디렉토리
+}
 
 export type ClientMsg =
   | InputMsg | ConfirmWriteResponse | ConfirmBashResponse | SlashMsg | PingMsg | CancelMsg
   | FileListRequestMsg
   | ToolResultMsg                                    // RPC-01
+  | ClientHelloMsg                                   // RPC-07
 
 // ─── exhaustive switch 가드 ───────────────────────────────────────────────────
 // dispatch.ts 에서 미처리 이벤트를 컴파일 에러로 탐지하는 헬퍼

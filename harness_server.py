@@ -919,6 +919,16 @@ async def _dispatch_loop(ws, room: 'Room', queue: asyncio.Queue):
         elif t == 'ping':
             await send(ws, type='pong')
 
+        elif t == 'client_hello':
+            # RPC-07: 클라 측 cwd 를 서버 working_dir 로 동기화 (ws 연결 직후 1회).
+            # LLM 의 args.path 가 사용자 PC 기준 경로가 되도록 함 (D-19 의 missing piece).
+            # 보안: cwd 는 클라가 보낸 절대경로. 서버는 검증 없이 신뢰 (1인 1세션 모델).
+            new_cwd = msg.get('cwd')
+            if isinstance(new_cwd, str) and new_cwd.startswith('/'):
+                state.working_dir = new_cwd
+                # broadcast_state 로 StatusBar 의 path 세그먼트 갱신
+                await broadcast_state(room)
+
         elif t == 'file_list_request':
             # IX-01: @ 파일 픽커용 — working_dir 의 prune 된 파일 목록 (1500개 cap).
             # 절대경로 pattern 으로 working_dir 명시 — list_files 의 ** 분기가 walk + _PRUNE_DIRS 적용
