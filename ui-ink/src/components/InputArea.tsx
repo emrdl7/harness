@@ -12,7 +12,7 @@ import {useInputStore} from '../store/input.js'
 import {MultilineInput} from './MultilineInput.js'
 import {SlashPopup} from './SlashPopup.js'
 import {FilePicker} from './FilePicker.js'
-import {SLASH_CATALOG} from '../slash-catalog.js'
+import {SLASH_CATALOG, filterSlash} from '../slash-catalog.js'
 
 interface InputAreaProps {
   onSubmit: (text: string) => void
@@ -44,9 +44,12 @@ export const InputArea: React.FC<InputAreaProps> = ({onSubmit, disabled}) => {
     return {token: after, start: atIdx}
   }, [buffer])
 
-  // buffer 가 '/' 로 시작하면 slash popup 자동 open, 아니면 자동 close
+  // buffer 가 '/' 로 시작 + 매칭 명령이 1개 이상일 때만 slash popup open.
+  // 매칭 없으면 popup 안 띄움 → '/tmp/foo.txt' 같은 절대경로 입력도 일반 submit 가능.
   React.useEffect(() => {
-    const shouldOpen = buffer.startsWith('/')
+    const slashStart = buffer.startsWith('/')
+    const query = slashStart ? (buffer.slice(1).split(/\s/)[0] ?? '') : ''
+    const shouldOpen = slashStart && filterSlash(query).length > 0
     if (shouldOpen !== slashOpen) {
       setSlashOpen(shouldOpen)
     }
