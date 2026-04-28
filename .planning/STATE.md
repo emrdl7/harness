@@ -1,15 +1,15 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.1
-milestone_name: Phases
-status: executing
-last_updated: "2026-04-27T13:28:16.726Z"
+milestone_name: client-side-tool-execution
+status: Phase 01 완료 (RPC 골격 + read_file PoC). Phase 02 대기.
+last_updated: "2026-04-28"
 progress:
   total_phases: 5
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 2
-  percent: 67
+  completed_plans: 3
+  percent: 20
 ---
 
 # harness — v1.1 Client-side Tool Execution Milestone State

@@ -16,10 +16,10 @@
 - 변경: `protocol.ts` `tool_request`/`tool_result` 타입 · `harness_server.py` `pending_calls` + dispatch · `agent.py` `CLIENT_SIDE_TOOLS = {'read_file'}` 분기 · `ui-ink/src/tools/{registry,fs}.ts` 의 `read_file` · `ws/dispatch.ts` `tool_request` 핸들러
 - 삭제: `tools/fs.py:read_file` + 관련 pytest
 - REQ: RPC-01, RPC-02, RPC-03 (read_file 부분), RPC-05 (read_file)
-- **Plans:** 3 plans (Wave 1/2/3 직렬)
+- **Plans:** 3 plans (Wave 1/2/3 직렬) — ✅ COMPLETE 2026-04-28
   - [x] 01-01-PLAN.md — TS 측: protocol.ts RPC 메시지 + tools/{fs,registry}.ts + dispatch.ts + App.tsx 배선 (RPC-01, RPC-03) — completed 2026-04-27
   - [x] 01-02-PLAN.md — Python 측: harness_server.py pending_calls + rpc_call + tool_result dispatch + agent.py CLIENT_SIDE_TOOLS 분기 (RPC-01, RPC-02) — completed 2026-04-27
-  - [ ] 01-03-PLAN.md — vitest 5케이스 + Python read_file deletion + 외부 PC 수동 검증 (RPC-03, RPC-05)
+  - [x] 01-03-PLAN.md — vitest 5케이스 + Python read_file deletion + 외부 PC PoC PASSED (RPC-03, RPC-05) — completed 2026-04-28 (D-19 mac-mini 클라 위임 확정)
 
 ### Phase 2 — fs-tools (fs 도구 전체 클라 이전)
 - dir: `.planning/phases/02-fs-tools/`
@@ -75,7 +75,7 @@ archive: [`milestones/v1.0-ROADMAP.md`](milestones/v1.0-ROADMAP.md), [`milestone
 
 | Phase | Plans | Status | Completed |
 |-------|-------|--------|-----------|
-| 1. RPC 골격 + read_file PoC | 2/3 | In progress | — |
+| 1. RPC 골격 + read_file PoC | 3/3 | ✅ Complete | 2026-04-28 |
 | 2. fs 도구 전체 클라 이전 | 0/? | Not started | — |
 | 3. shell + git 클라 이전 | 0/? | Not started | — |
 | 4. BB-2 deletion + RX-02 세션 이전 | 0/? | Not started | — |
@@ -83,4 +83,4 @@ archive: [`milestones/v1.0-ROADMAP.md`](milestones/v1.0-ROADMAP.md), [`milestone
 
 ---
 
-*Last updated: 2026-04-27 — v1.1 phase breakdown*
+*Last updated: 2026-04-28 — Phase 1 complete (D-19 PASSED)*
