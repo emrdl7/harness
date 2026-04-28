@@ -787,8 +787,16 @@ async def _handle_input(ws, room: 'Room', text: str):
     이 함수를 spawn한다 (race 회피).
     '''
     try:
+        # 슬래시 명령 분기 — KNOWN_COMMANDS 매칭일 때만 slash 처리.
+        # '/tmp/foo.txt' 같은 절대경로/일반 메시지는 LLM 으로 fallback.
         if text.startswith('/'):
-            await handle_slash(ws, room, text)
+            from harness_core.router import KNOWN_COMMANDS
+            cmd_name = text[1:].split(maxsplit=1)[0] if len(text) > 1 else ''
+            if cmd_name in KNOWN_COMMANDS:
+                await handle_slash(ws, room, text)
+            else:
+                await run_agent(ws, room, text)
+                await broadcast_state(room)
         elif text.startswith('@claude '):
             await run_claude(ws, room, text[8:].strip(), add_to_session=True)
         else:
